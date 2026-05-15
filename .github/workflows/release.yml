@@ -1,0 +1,118 @@
+name: Build & Release APK
+
+# Triggers on any tag like v1.0.0, v1.2.3, etc.
+# To publish: git tag v1.0.0 && git push --tags
+on:
+  push:
+    tags:
+      - 'v*'
+  # Optional: also allow manual runs from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build signed release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Source ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Java ────────────────────────────────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── 3. Gradle cache (speeds up subsequent builds a lot) ────────────────
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      # ── 4. Decode keystore from secret ────────────────────────────────────
+      #
+      # To generate your keystore (one-time, keep the file safe):
+      #   keytool -genkey -v -keystore analogvault.keystore \
+      #     -alias analogvault -keyalg RSA -keysize 2048 -validity 10000
+      #
+      # Then base64-encode it and store as a GitHub Secret:
+      #   base64 -i analogvault.keystore | pbcopy   # macOS
+      #   base64 analogvault.keystore | xclip        # Linux
+      #
+      # Add these secrets in repo Settings → Secrets and variables → Actions:
+      #   KEYSTORE_BASE64   — the base64 string above
+      #   KEY_ALIAS         — e.g. analogvault
+      #   KEY_PASSWORD      — key password
+      #   STORE_PASSWORD    — store password
+      #
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > $RUNNER_TEMP/release.keystore
+
+      # ── 5. Build ───────────────────────────────────────────────────────────
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build release APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      # ── 6. Rename APK to include version tag ──────────────────────────────
+      - name: Rename APK
+        run: |
+          TAG=${GITHUB_REF_NAME}          # e.g. v1.0.0
+          SRC=app/build/outputs/apk/release/app-release.apk
+          DST=app/build/outputs/apk/release/AnalogVault-${TAG}.apk
+          mv "$SRC" "$DST"
+          echo "APK_PATH=$DST" >> $GITHUB_ENV
+          echo "APK_NAME=AnalogVault-${TAG}.apk" >> $GITHUB_ENV
+
+      # ── 7. Upload artifact (always available, even without a tag) ──────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_PATH }}
+          retention-days: 30
+
+      # ── 8. Create GitHub Release and attach APK ────────────────────────────
+      #    Only runs on tag pushes (not manual workflow_dispatch without a tag)
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Analog Vault ${{ github.ref_name }}
+          body: |
+            ## Analog Vault ${{ github.ref_name }}
+
+            ### Install
+            1. Download `AnalogVault-${{ github.ref_name }}.apk` below
+            2. On your Android device: Settings → Apps → Install unknown apps → allow your browser/Files app
+            3. Open the downloaded APK and tap Install
+
+            ### What's included
+            - All film/camera/lens/accessory tracking
+            - Shot log with GPS, CameraX photo capture
+            - Darkroom chemical tracker
+            - Live light meter (CameraX)
+            - OpenWeatherMap weather
+            - Local backup / restore (JSON)
+
+            ### Changelog
+            _Add your changes here, or use a CHANGELOG.md and reference it._
+          files: ${{ env.APK_PATH }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}  # v1.0.0-beta → prerelease
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

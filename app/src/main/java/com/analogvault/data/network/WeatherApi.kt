@@ -1,0 +1,42 @@
+package com.analogvault.data.network
+
+import retrofit2.http.GET
+import retrofit2.http.Query
+
+interface WeatherApi {
+    @GET("data/2.5/weather")
+    suspend fun getCurrentWeather(
+        @Query("lat") lat: Double,
+        @Query("lon") lon: Double,
+        @Query("appid") apiKey: String,
+        @Query("units") units: String = "metric"
+    ): WeatherResponse
+}
+
+data class WeatherResponse(
+    val name: String,
+    val main: MainData,
+    val weather: List<WeatherDesc>,
+    val wind: WindData,
+    val clouds: CloudData,
+    val visibility: Int?,
+    val sys: SysData?
+)
+
+data class MainData(
+    val temp: Double,
+    val feels_like: Double,
+    val humidity: Int,
+    val pressure: Int
+)
+
+data class WeatherDesc(
+    val id: Int,
+    val main: String,
+    val description: String,
+    val icon: String
+)
+
+data class WindData(val speed: Double, val deg: Int?)
+data class CloudData(val all: Int)
+data class SysData(val country: String?)

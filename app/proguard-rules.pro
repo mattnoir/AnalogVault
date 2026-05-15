@@ -1,0 +1,6 @@
+-keepattributes SourceFile,LineNumberTable
+-keep class com.analogvault.data.model.** { *; }
+-keep class com.analogvault.data.network.** { *; }
+-keepclassmembers class * { @androidx.room.* <methods>; }
+-dontwarn okhttp3.**
+-dontwarn retrofit2.**
