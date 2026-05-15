@@ -18,6 +18,8 @@ jobs:
   build:
     name: Build signed release APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create/update GitHub Releases
 
     steps:
       # ── 1. Source ──────────────────────────────────────────────────────────
@@ -134,5 +136,4 @@ jobs:
           files: ${{ env.APK_PATH }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}  # v1.0.0-beta → prerelease
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_name }}
