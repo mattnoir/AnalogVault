@@ -3,6 +3,7 @@ package com.analogvault.ui.screens
 import android.Manifest
 import android.content.Context
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -72,6 +73,10 @@ fun ActiveScreen(vm: MainViewModel) {
     var showLoadSheet  by remember { mutableStateOf(false) }
 
     val selectedRoll = selectedRollId?.let { id -> rolls.find { it.id == id } }
+
+    BackHandler(enabled = selectedRollId != null) {
+        selectedRollId = null
+    }
 
     if (selectedRoll != null) {
         val film = films.find { it.id == selectedRoll.filmId }

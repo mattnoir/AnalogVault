@@ -3,6 +3,7 @@ package com.analogvault
 import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -59,7 +60,14 @@ fun VaultApp() {
     val rolls by vm.rolls.collectAsState()
 
     var currentTab by remember { mutableStateOf(Tab.STASH) }
+    var stashTab by remember { mutableIntStateOf(0) }
     val activeCount = rolls.count { !it.developed }
+
+    // Other bottom tabs → home (Stash / Film)
+    BackHandler(enabled = currentTab != Tab.STASH) {
+        currentTab = Tab.STASH
+        stashTab = 0
+    }
 
     Scaffold(
         containerColor = Bg,
@@ -109,7 +117,7 @@ fun VaultApp() {
                 .background(Bg)
         ) {
             when (currentTab) {
-                Tab.STASH   -> StashScreen(vm)
+                Tab.STASH   -> StashScreen(vm, stashTab, onStashTabChange = { stashTab = it })
                 Tab.ACTIVE  -> ActiveScreen(vm)
                 Tab.DARK    -> DarkroomScreen(vm)
                 Tab.METER   -> MeterScreen(vm)
