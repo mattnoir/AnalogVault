@@ -184,12 +184,19 @@ fun AutoCompleteField(
     modifier: Modifier = Modifier,
     placeholder: String = ""
 ) {
-    val filtered = remember(value, suggestions) {
-        if (value.isBlank()) emptyList()
+    // Track the last value the user confirmed from the list — hide suggestions after pick
+    var lastConfirmed by remember { mutableStateOf("") }
+    val filtered = remember(value, lastConfirmed, suggestions) {
+        if (value.isBlank() || value == lastConfirmed) emptyList()
         else suggestions.filter { it.contains(value, ignoreCase = true) }.take(5)
     }
     Column(modifier = modifier) {
-        VaultTextField(value = value, onValueChange = onValueChange, label = label, placeholder = placeholder)
+        VaultTextField(
+            value = value,
+            onValueChange = { lastConfirmed = ""; onValueChange(it) },
+            label = label,
+            placeholder = placeholder
+        )
         if (filtered.isNotEmpty()) {
             Column(
                 modifier = Modifier
@@ -203,7 +210,7 @@ fun AutoCompleteField(
                         s, color = TextPrimary, fontSize = 13.sp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onValueChange(s) }
+                            .clickable { lastConfirmed = s; onValueChange(s) }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     )
                 }

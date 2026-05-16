@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -32,42 +31,47 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            AnalogVaultTheme {
-                VaultApp()
-            }
-        }
+        setContent { AnalogVaultTheme { VaultApp() } }
     }
 }
 
-// ─── Nav destinations ─────────────────────────────────────────────────────────
-
 private enum class Tab(val label: String, val icon: ImageVector) {
-    STASH("Stash", Icons.Default.Inventory),
-    ACTIVE("Active", Icons.Default.CameraRoll),
-    DARK("Darkroom", Icons.Default.Science),
-    METER("Meter", Icons.Default.WbSunny),
-    WEATHER("Weather", Icons.Default.Cloud),
-    STATS("Stats", Icons.Default.BarChart),
+    DASH("Home",     Icons.Default.Home),
+    STASH("Stash",   Icons.Default.Inventory),
+    ACTIVE("Rolls",  Icons.Default.CameraRoll),
+    DARK("Lab",      Icons.Default.Science),
+    METER("Meter",   Icons.Default.WbSunny),
+    WEATHER("Sky",   Icons.Default.Cloud),
+    STATS("Stats",   Icons.Default.BarChart),
     BACKUP("Backup", Icons.Default.CloudDownload)
 }
-
-// ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
 fun VaultApp() {
     val vm: MainViewModel = hiltViewModel()
-    val rolls by vm.rolls.collectAsState()
-
-    var currentTab by remember { mutableStateOf(Tab.STASH) }
-    var stashTab by remember { mutableIntStateOf(0) }
+    val rolls     by vm.rolls.collectAsState()
     val activeCount = rolls.count { !it.developed }
 
-    // Other bottom tabs → home (Stash / Film)
-    BackHandler(enabled = currentTab != Tab.STASH) {
-        currentTab = Tab.STASH
-        stashTab = 0
+    // Back stack — list of tabs visited, Dashboard is always the root
+    var backStack by remember { mutableStateOf(listOf(Tab.DASH)) }
+    val currentTab = backStack.last()
+
+    fun navigateTo(tab: Tab) {
+        if (tab == currentTab) return
+        backStack = (backStack + tab)
+            .takeLast(8)        // cap stack depth
     }
+    fun navigateToIndex(idx: Int) {
+        val tab = Tab.entries.getOrNull(idx) ?: return
+        navigateTo(tab)
+    }
+
+    // Back: pop stack; if at root (Dashboard), let system handle (exits app)
+    BackHandler(enabled = backStack.size > 1) {
+        backStack = backStack.dropLast(1)
+    }
+
+    // Stash internal tab state — passed down so back nav can restore it
 
     Scaffold(
         containerColor = Bg,
@@ -82,21 +86,20 @@ fun VaultApp() {
             ) {
                 Text("Analog Vault", color = AmberBright, fontSize = 22.sp)
                 Text("FILM & GEAR TRACKER", color = TextTertiary, fontSize = 9.sp,
-                    letterSpacing = androidx.compose.ui.unit.TextUnit(0.15f, androidx.compose.ui.unit.TextUnitType.Em))
+                    letterSpacing = androidx.compose.ui.unit.TextUnit(
+                        0.15f, androidx.compose.ui.unit.TextUnitType.Em))
             }
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = Bg2,
-                tonalElevation = 0.dp,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
+            NavigationBar(containerColor = Bg2, tonalElevation = 0.dp,
+                modifier = Modifier.navigationBarsPadding()) {
                 Tab.entries.forEach { tab ->
-                    val label = if (tab == Tab.ACTIVE && activeCount > 0) "Active($activeCount)" else tab.label
+                    val label = if (tab == Tab.ACTIVE && activeCount > 0)
+                        "Rolls($activeCount)" else tab.label
                     NavigationBarItem(
                         selected = currentTab == tab,
-                        onClick = { currentTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navigateTo(tab) },
+                        icon = { Icon(tab.icon, null, modifier = Modifier.size(20.dp)) },
                         label = { Text(label, fontSize = 8.sp) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = AmberBright,
@@ -110,14 +113,10 @@ fun VaultApp() {
             }
         }
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(Bg)
-        ) {
+        Box(Modifier.fillMaxSize().padding(padding).background(Bg)) {
             when (currentTab) {
-                Tab.STASH   -> StashScreen(vm, stashTab, onStashTabChange = { stashTab = it })
+                Tab.DASH    -> DashboardScreen(vm, onNavigate = { navigateToIndex(it) })
+                Tab.STASH   -> StashScreen(vm)
                 Tab.ACTIVE  -> ActiveScreen(vm)
                 Tab.DARK    -> DarkroomScreen(vm)
                 Tab.METER   -> MeterScreen(vm)
