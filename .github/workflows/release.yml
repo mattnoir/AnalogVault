@@ -8,26 +8,16 @@ on:
       - 'v*'
   # Optional: also allow manual runs from the Actions tab
   workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Git ref to build (branch or tag). Use master for latest code.'
-        required: false
-        default: 'master'
 
 jobs:
   build:
     name: Build signed release APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # required to create/update GitHub Releases
 
     steps:
       # ── 1. Source ──────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # Tag pushes use the tagged commit; manual runs default to master.
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       # ── 2. Java ────────────────────────────────────────────────────────────
       - name: Set up JDK 17
@@ -67,18 +57,6 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > $RUNNER_TEMP/release.keystore
 
       # ── 5. Build ───────────────────────────────────────────────────────────
-      - name: Verify Gradle wrapper
-        run: |
-          if [ ! -f ./gradlew ]; then
-            echo "::error::gradlew is missing. Tags must point at a commit that includes gradlew, gradlew.bat, and gradle/wrapper/gradle-wrapper.jar."
-            echo "Your tag likely predates the wrapper commit. Recreate it on master, then push:"
-            echo "  git tag -d v0.0.1"
-            echo "  git push origin :refs/tags/v0.0.1"
-            echo "  git tag v0.0.1"
-            echo "  git push origin v0.0.1"
-            exit 1
-          fi
-
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
@@ -136,4 +114,5 @@ jobs:
           files: ${{ env.APK_PATH }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}  # v1.0.0-beta → prerelease
-          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -113,4 +113,46 @@ object Constants {
         val a2 = t * 2.0.pow(targetEV) * (iso / 100.0)
         return sqrt(maxOf(a2, 1.0))
     }
+    // Film metadata: name -> Triple(brand, iso, type)
+    val FILM_METADATA: Map<String, Triple<String, Int, String>> = mapOf(
+        "Kodak Portra 160"       to Triple("Kodak",      160,  "Color Negative (C-41)"),
+        "Kodak Portra 400"       to Triple("Kodak",      400,  "Color Negative (C-41)"),
+        "Kodak Portra 800"       to Triple("Kodak",      800,  "Color Negative (C-41)"),
+        "Kodak Ektar 100"        to Triple("Kodak",      100,  "Color Negative (C-41)"),
+        "Kodak ColorPlus 200"    to Triple("Kodak",      200,  "Color Negative (C-41)"),
+        "Kodak UltraMax 400"     to Triple("Kodak",      400,  "Color Negative (C-41)"),
+        "Kodak Gold 200"         to Triple("Kodak",      200,  "Color Negative (C-41)"),
+        "Kodak T-Max 100"        to Triple("Kodak",      100,  "Black & White"),
+        "Kodak T-Max 400"        to Triple("Kodak",      400,  "Black & White"),
+        "Kodak Tri-X 400"        to Triple("Kodak",      400,  "Black & White"),
+        "Kodak Double-X 250"     to Triple("Kodak",      250,  "Black & White"),
+        "Fujifilm Provia 100F"   to Triple("Fujifilm",   100,  "Slide (E-6)"),
+        "Fujifilm Velvia 50"     to Triple("Fujifilm",   50,   "Slide (E-6)"),
+        "Fujifilm Velvia 100"    to Triple("Fujifilm",   100,  "Slide (E-6)"),
+        "Fujifilm Superia 200"   to Triple("Fujifilm",   200,  "Color Negative (C-41)"),
+        "Fujifilm Superia X-TRA 400" to Triple("Fujifilm", 400, "Color Negative (C-41)"),
+        "Fujifilm Acros 100 II"  to Triple("Fujifilm",   100,  "Black & White"),
+        "Ilford HP5 Plus 400"    to Triple("Ilford",     400,  "Black & White"),
+        "Ilford FP4 Plus 125"    to Triple("Ilford",     125,  "Black & White"),
+        "Ilford Delta 100"       to Triple("Ilford",     100,  "Black & White"),
+        "Ilford Delta 400"       to Triple("Ilford",     400,  "Black & White"),
+        "Ilford Delta 3200"      to Triple("Ilford",     3200, "Black & White"),
+        "Ilford Pan F Plus 50"   to Triple("Ilford",     50,   "Black & White"),
+        "Ilford XP2 Super 400"   to Triple("Ilford",     400,  "Color Negative (C-41)"),
+        "Lomography Color Negative 100" to Triple("Lomography", 100, "Color Negative (C-41)"),
+        "Lomography Color Negative 400" to Triple("Lomography", 400, "Color Negative (C-41)"),
+        "Lomography Lady Grey 400" to Triple("Lomography", 400, "Black & White"),
+        "CineStill 50D"          to Triple("CineStill",  50,   "Color Negative (C-41)"),
+        "CineStill 800T"         to Triple("CineStill",  800,  "Color Negative (C-41)"),
+        "CineStill 400D"         to Triple("CineStill",  400,  "Color Negative (C-41)"),
+        "Rollei RPX 400"         to Triple("Rollei",     400,  "Black & White"),
+        "Rollei Infrared 400"    to Triple("Rollei",     400,  "Infrared"),
+        "Fomapan 100"            to Triple("Foma",       100,  "Black & White"),
+        "Fomapan 400"            to Triple("Foma",       400,  "Black & White"),
+        "Kentmere Pan 100"       to Triple("Ilford",     100,  "Black & White"),
+        "Kentmere Pan 400"       to Triple("Ilford",     400,  "Black & White"),
+        "Bergger Pancro 400"     to Triple("Bergger",    400,  "Black & White"),
+        "Adox CMS 20 II"         to Triple("Adox",       20,   "Black & White")
+    )
+
 }

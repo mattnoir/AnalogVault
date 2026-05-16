@@ -1,17 +1,13 @@
 package com.analogvault.ui.screens
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,76 +19,42 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.util.Constants
 import com.analogvault.ui.uid
-import kotlinx.coroutines.launch
 
 @Composable
-fun StashScreen(
-    vm: MainViewModel,
-    selectedTab: Int,
-    onStashTabChange: (Int) -> Unit
-) {
+fun StashScreen(vm: MainViewModel) {
     val films       by vm.films.collectAsState()
     val cameras     by vm.cameras.collectAsState()
     val lenses      by vm.lenses.collectAsState()
     val accessories by vm.accessories.collectAsState()
 
+    var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Film", "Cameras", "Lenses", "Accessories")
-    val pagerState = rememberPagerState(initialPage = selectedTab) { tabs.size }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(selectedTab) {
-        if (pagerState.currentPage != selectedTab) {
-            pagerState.animateScrollToPage(selectedTab)
-        }
-    }
-
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
-            if (page != selectedTab) onStashTabChange(page)
-        }
-    }
-
-    // Cameras / Lenses / Accessories → Film
-    BackHandler(enabled = selectedTab != 0) {
-        onStashTabChange(0)
-    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(
-            selectedTabIndex = selectedTab,
+            selectedTabIndex = tab,
             containerColor = Bg2,
             contentColor = Amber,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                    Modifier.tabIndicatorOffset(tabPositions[tab]),
                     color = Amber
                 )
             }
         ) {
             tabs.forEachIndexed { i, t ->
-                Tab(
-                    selected = selectedTab == i,
-                    onClick = {
-                        onStashTabChange(i)
-                        scope.launch { pagerState.animateScrollToPage(i) }
-                    },
+                Tab(selected = tab == i, onClick = { tab = i },
                     text = { Text(t, fontSize = 12.sp) },
                     selectedContentColor = Amber,
-                    unselectedContentColor = TextTertiary
-                )
+                    unselectedContentColor = TextTertiary)
             }
         }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
-            when (page) {
-                0 -> FilmStashTab(films, vm)
-                1 -> CameraStashTab(cameras, vm)
-                2 -> LensStashTab(lenses, vm)
-                3 -> AccessoryStashTab(accessories, vm)
-            }
+        when (tab) {
+            0 -> FilmStashTab(films, vm)
+            1 -> CameraStashTab(cameras, vm)
+            2 -> LensStashTab(lenses, vm)
+            3 -> AccessoryStashTab(accessories, vm)
         }
     }
 }
@@ -159,6 +121,16 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     var brand    by remember { mutableStateOf(ed?.brand ?: "") }
     var type     by remember { mutableStateOf(ed?.type ?: Constants.FILM_TYPES[0]) }
     var iso      by remember { mutableStateOf(ed?.iso?.toString() ?: "400") }
+
+    // Auto-fill brand + ISO when a known film is selected from autocomplete
+    fun onFilmSelected(filmName: String) {
+        name = filmName
+        Constants.FILM_METADATA[filmName]?.let { meta ->
+            if (brand.isBlank()) brand = meta.first
+            iso = meta.second.toString()
+            type = meta.third
+        }
+    }
     var shots    by remember { mutableStateOf(ed?.shots?.toString() ?: "36") }
     var expiry   by remember { mutableStateOf(ed?.expiryDate ?: "") }
     var storage  by remember { mutableStateOf(ed?.storage ?: Constants.STORAGE_TYPES[0]) }
@@ -166,7 +138,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     var notes    by remember { mutableStateOf(ed?.notes ?: "") }
 
     VaultSheet(title = if (ed != null) "Edit Film" else "Add Film", onDismiss = onDismiss) {
-        AutoCompleteField(name, { name = it }, "Film Stock", Constants.FILM_DB, placeholder = "e.g. Kodak Portra 400")
+        AutoCompleteField(name, { onFilmSelected(it) }, "Film Stock", Constants.FILM_DB, placeholder = "e.g. Kodak Portra 400")
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             VaultTextField(brand, { brand = it }, "Brand", modifier = Modifier.weight(1f))
