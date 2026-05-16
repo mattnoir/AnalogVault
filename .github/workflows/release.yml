@@ -10,9 +10,10 @@ on:
 
   # Optional: also allow manual runs from the Actions tab
   workflow_dispatch:
-   permissions:
-   contents: write
   
+permissions:
+ contents: write
+
 
 jobs:
   build:
