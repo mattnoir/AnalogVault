@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.analogvault.ui.theme.BlueInfo
+import androidx.compose.ui.unit.width
 import com.analogvault.data.model.*
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
@@ -66,6 +68,8 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     var showSheet by remember { mutableStateOf(false) }
     var editing   by remember { mutableStateOf<FilmStock?>(null) }
     var confirmDelete by remember { mutableStateOf<FilmStock?>(null) }
+    var viewingFilm   by remember { mutableStateOf<FilmStock?>(null) }
+    var loadingFilm   by remember { mutableStateOf<FilmStock?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -91,7 +95,15 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                     VaultTag(film.storage)
                     if (film.quantity > 1) VaultTag("×${film.quantity}", textColor = AmberBright)
                 }
+                if (film.notes.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(film.notes, color = TextTertiary, fontSize = 11.sp, maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                    IconButton(onClick = { viewingFilm = film }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Info, null, tint = BlueInfo.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                    }
                     IconButton(onClick = { editing = film; showSheet = true }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
                     }
@@ -111,6 +123,19 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     }
     confirmDelete?.let { film ->
         ConfirmDialog("Delete \"${film.name}\"?", onConfirm = { vm.deleteFilm(film); confirmDelete = null }, onDismiss = { confirmDelete = null })
+    }
+    viewingFilm?.let { film ->
+        FilmInfoDialog(
+            film = film,
+            onDismiss = { viewingFilm = null },
+            onEdit    = { viewingFilm = null; editing = film; showSheet = true },
+            onLoad    = { viewingFilm = null; loadingFilm = film }
+        )
+    }
+    loadingFilm?.let { film ->
+        // Navigate to Active tab would need a callback; for now show a note sheet
+        // that pre-fills the film — simpler and keeps StashScreen self-contained
+        FilmLoadHint(film.name, onDismiss = { loadingFilm = null })
     }
 }
 
@@ -153,7 +178,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultTextField(expiry, { expiry = it }, "Expiry (YYYY-MM-DD)", modifier = Modifier.weight(1f))
+            VaultTextField(expiry, { expiry = it }, "Expiry (YYYY-MM)", placeholder = "2026-12", modifier = Modifier.weight(1f))
             VaultDropdown("Storage", storage, Constants.STORAGE_TYPES, { storage = it }, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
@@ -441,4 +466,77 @@ fun AccessorySheet(ed: Accessory?, onDismiss: () -> Unit, onSave: (Accessory) ->
             onSave(Accessory(id = ed?.id ?: uid(), name = name, type = type, brand = brand, condition = condition, notes = notes))
         })
     }
+}
+
+// ─── Film Info Dialog ─────────────────────────────────────────────────────────
+
+@Composable
+fun FilmInfoDialog(
+    film: FilmStock,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onLoad: () -> Unit
+) {
+    val (exLabel, exColor, expired) = expiryStatus(
+        film.expiryDate.let { if (it.length == 7) "$it-01" else it }
+    )
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = com.analogvault.ui.theme.Bg3,
+        title = { Text(film.name.ifBlank { "Film" }, color = com.analogvault.ui.theme.AmberBright) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (film.brand.isNotBlank()) InfoRow("Brand", film.brand)
+                InfoRow("Type", film.type)
+                InfoRow("ISO", film.iso.toString())
+                InfoRow("Exposures", "${film.shots}")
+                InfoRow("Storage", film.storage)
+                if (film.quantity > 1) InfoRow("Quantity", "${film.quantity} rolls")
+                if (exLabel.isNotBlank()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Expiry", color = com.analogvault.ui.theme.TextTertiary, fontSize = 12.sp)
+                        com.analogvault.ui.components.VaultTag(exLabel, textColor = exColor)
+                    }
+                }
+                if (film.notes.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(film.notes, color = com.analogvault.ui.theme.TextSecondary, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.analogvault.ui.components.VaultButton("Load Film", small = true, onClick = onLoad)
+                com.analogvault.ui.components.VaultButton("Edit", small = true, ghost = true, onClick = onEdit)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = com.analogvault.ui.theme.TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, color = com.analogvault.ui.theme.TextTertiary, fontSize = 12.sp,
+            modifier = Modifier.width(80.dp))
+        Text(value, color = com.analogvault.ui.theme.TextPrimary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+fun FilmLoadHint(filmName: String, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = com.analogvault.ui.theme.Bg3,
+        title = { Text("Load $filmName", color = com.analogvault.ui.theme.AmberBright) },
+        text = { Text("Go to the Rolls tab and tap '+ Load Film into Camera' to load this film.",
+            color = com.analogvault.ui.theme.TextSecondary) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("OK", color = com.analogvault.ui.theme.Amber) }
+        }
+    )
 }

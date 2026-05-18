@@ -6,10 +6,6 @@ on:
   push:
     tags:
       - 'v*'
-
-permissions:
-  contents: write
-
   # Optional: also allow manual runs from the Actions tab
   workflow_dispatch:
 
