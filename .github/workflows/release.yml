@@ -6,6 +6,8 @@ on:
   push:
     tags:
       - 'v*'
+
+
   # Optional: also allow manual runs from the Actions tab
   workflow_dispatch:
 
@@ -13,6 +15,8 @@ jobs:
   build:
     name: Build signed release APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create/update GitHub Releases
 
     steps:
       # ── 1. Source ──────────────────────────────────────────────────────────
