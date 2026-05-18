@@ -4,7 +4,7 @@
             "outputFile": "com.analogvault.app-mergeDebugResources-71:/values-watch-v20/values-watch-v20.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\Tomas\\.gradle\\caches\\8.9\\transforms\\246e11cdb2e43e8ae28e72c224cf23d6\\transformed\\appcompat-1.7.0\\res\\values-watch-v20\\values-watch-v20.xml",
+                    "source": "C:\\Users\\Tomas\\.gradle\\caches\\8.9\\transforms\\ac28c371c05dd10e069e594c607ba19e\\transformed\\appcompat-1.7.0\\res\\values-watch-v20\\values-watch-v20.xml",
                     "from": {
                         "startLines": "2,5,8",
                         "startColumns": "4,4,4",

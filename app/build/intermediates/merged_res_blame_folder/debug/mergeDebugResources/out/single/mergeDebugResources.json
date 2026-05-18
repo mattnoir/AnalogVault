@@ -8,6 +8,10 @@
         "source": "com.analogvault.app-main-75:/mipmap-mdpi/ic_launcher_round.xml"
     },
     {
+        "merged": "com.analogvault.app-debug-73:/xml_file_paths.xml.flat",
+        "source": "com.analogvault.app-main-75:/xml/file_paths.xml"
+    },
+    {
         "merged": "com.analogvault.app-debug-73:/mipmap-xxhdpi_ic_launcher.xml.flat",
         "source": "com.analogvault.app-main-75:/mipmap-xxhdpi/ic_launcher.xml"
     },
@@ -46,10 +50,6 @@
     {
         "merged": "com.analogvault.app-debug-73:/drawable_ic_launcher_foreground.xml.flat",
         "source": "com.analogvault.app-main-75:/drawable/ic_launcher_foreground.xml"
-    },
-    {
-        "merged": "C:\\Users\\Tomas\\.gradle\\daemon\\8.9\\com.analogvault.app-debug-73:\\xml_file_paths.xml.flat",
-        "source": "C:\\Users\\Tomas\\.gradle\\daemon\\8.9\\com.analogvault.app-main-75:\\xml\\file_paths.xml"
     },
     {
         "merged": "com.analogvault.app-debug-73:/drawable_ic_launcher_background.xml.flat",
