@@ -3,13 +3,17 @@ package com.analogvault.ui.screens
 import android.Manifest
 import android.content.Context
 import android.net.Uri
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CaptureResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -21,6 +25,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
@@ -35,14 +43,18 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
-import java.util.concurrent.Executors
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlin.math.*
 import kotlin.math.roundToInt
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
 @Composable
-fun MeterScreen(vm: MainViewModel, onUseInShot: ((shutter: String, aperture: String, iso: String) -> Unit)? = null) {
+fun MeterScreen(
+    vm: MainViewModel,
+    onUseInShot: ((shutter: String, aperture: String, iso: String) -> Unit)? = null
+) {
     val zoomLevels by vm.zoomLevels.collectAsState()
     val displayZooms = remember(zoomLevels) {
         zoomLevels.distinctBy { it.label to it.mm }.sortedBy { it.mm }
@@ -52,11 +64,26 @@ fun MeterScreen(vm: MainViewModel, onUseInShot: ((shutter: String, aperture: Str
         ActivityResultContracts.RequestPermission()
     ) { hasCamPerm = it }
     LaunchedEffect(Unit) { permLauncher.launch(Manifest.permission.CAMERA) }
-    MeterContent(vm, displayZooms, hasCamPerm, onRequestPerm = { permLauncher.launch(Manifest.permission.CAMERA) }, onUseInShot = onUseInShot)
+    MeterContent(vm, displayZooms, hasCamPerm, { permLauncher.launch(Manifest.permission.CAMERA) }, onUseInShot)
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Metering engine state ────────────────────────────────────────────────────
 
+data class MeterReading(
+    /** Scene EV derived from Camera2 AE metadata — device/scene truth */
+    val sceneEV: Double,
+    /** Raw sensor ISO used by AE */
+    val sensorIso: Int,
+    /** Raw shutter used by AE, seconds */
+    val sensorShutterSec: Double,
+    /** Lens aperture used by AE */
+    val sensorAperture: Double,
+    val source: String = "camera2"
+)
+
+// ─── Main content ─────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalCamera2Interop::class)
 @Composable
 fun MeterContent(
     vm: MainViewModel,
@@ -68,31 +95,30 @@ fun MeterContent(
     val context        = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // ── Exposure inputs ───────────────────────────────────────────────────────
-    var iso      by remember { mutableIntStateOf(400) }
-    var shutter  by remember { mutableStateOf("1/125") }
-    var metering by remember { mutableStateOf(Constants.METERING_TYPES[0]) }
+    // ── User inputs ───────────────────────────────────────────────────────────
+    var filmIso      by remember { mutableIntStateOf(400) }
+    var shutter      by remember { mutableStateOf("1/125") }
+    var metering     by remember { mutableStateOf(Constants.METERING_TYPES[0]) }
+    var calibOffset  by remember { mutableStateOf(0.0) }   // user EV correction, persists
 
-    // ── Camera state ──────────────────────────────────────────────────────────
-    var cameraOn      by remember { mutableStateOf(false) }
-    var cameraControl by remember { mutableStateOf<CameraControl?>(null) }
-    var cameraInfo    by remember { mutableStateOf<CameraInfo?>(null) }
-    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+    // ── Camera ────────────────────────────────────────────────────────────────
+    var cameraOn     by remember { mutableStateOf(false) }
+    var cameraCtrl   by remember { mutableStateOf<CameraControl?>(null) }
+    var cameraInfoObj by remember { mutableStateOf<CameraInfo?>(null) }
 
-    // ── EV state ──────────────────────────────────────────────────────────────
-    // liveEV: raw from analyser (never written to by user)
-    // manualEV: user-controlled slider — never overwritten by analyser
-    // evLocked: true = use manualEV even when camera on
-    // calibOffset: user-adjustable stops to add to live reading (per-environment calibration)
-    var liveEV      by remember { mutableStateOf<Double?>(null) }
-    var manualEV    by remember { mutableStateOf(12.0) }
-    var evLocked    by remember { mutableStateOf(false) }
-    var calibOffset by remember { mutableStateOf(0.0) }  // stops, -5..+5
+    // ── Live metadata reading ─────────────────────────────────────────────────
+    var liveReading  by remember { mutableStateOf<MeterReading?>(null) }
+    val liveReadingRef = rememberUpdatedState(liveReading)
 
+    // ── Manual EV (slider) ────────────────────────────────────────────────────
+    var manualEV     by remember { mutableStateOf(12.0) }
+    var evLocked     by remember { mutableStateOf(false) }
+
+    // Effective EV for exposure calculation
     val effectiveEV = when {
-        evLocked          -> manualEV
-        liveEV != null    -> (liveEV!! + calibOffset).coerceIn(-2.0, 22.0)
-        else              -> manualEV
+        evLocked         -> manualEV
+        liveReading != null -> (liveReading!!.sceneEV + calibOffset).coerceIn(-2.0, 22.0)
+        else             -> manualEV
     }
 
     // ── Zoom ──────────────────────────────────────────────────────────────────
@@ -100,215 +126,214 @@ fun MeterContent(
     var showZoomEdit by remember { mutableStateOf(false) }
 
     // ── EXIF ──────────────────────────────────────────────────────────────────
-    var exifResult by remember { mutableStateOf<ExifReading?>(null) }
-    val exifPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    var exifResult   by remember { mutableStateOf<ExifReading?>(null) }
+    val exifPicker   = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { exifResult = readExif(context, it) }
     }
 
-    val solvedAperture = remember(iso, shutter, effectiveEV) {
-        "f/${"%.1f".format(Constants.calcAperture(iso, shutter, effectiveEV))}"
+    val solvedAperture = remember(filmIso, shutter, effectiveEV) {
+        "f/${"%.1f".format(Constants.calcAperture(filmIso, shutter, effectiveEV))}"
     }
 
-    // ── Layout ────────────────────────────────────────────────────────────────
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    // ── Layout ───────────────────────────────────────────────────────────────
+    // Outer Column is NOT scrollable — AndroidView breaks verticalScroll.
+    // Camera is fixed height. Scrollable section sits below.
+    Column(Modifier.fillMaxSize()) {
 
-        // 1. Camera viewfinder (collapsible, top so it's prominent when on)
+        // ── CAMERA VIEWFINDER — compact fixed height, always on top ───────────
         if (cameraOn && hasCamPerm) {
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .height(240.dp)
                     .background(Bg2)
             ) {
                 AndroidView(
                     factory = { ctx ->
-                        val pv = PreviewView(ctx)
-                        ProcessCameraProvider.getInstance(ctx).addListener({
-                            val provider = ProcessCameraProvider.getInstance(ctx).get()
-                            val preview = Preview.Builder().build()
-                                .also { it.setSurfaceProvider(pv.surfaceProvider) }
-                            val analysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                                .build()
-                            analysis.setAnalyzer(analysisExecutor) { proxy ->
-                                if (!evLocked) liveEV = analyzeEVCalibrated(proxy, metering)
-                                proxy.close()
+                        val pv = PreviewView(ctx).apply {
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                        }
+                        val future = ProcessCameraProvider.getInstance(ctx)
+                        future.addListener({
+                            val provider = future.get()
+
+                            // Build preview with Camera2Interop to capture metadata
+                            val previewBuilder = Preview.Builder()
+                            val captureCallback = object : android.hardware.camera2.CameraCaptureSession.CaptureCallback() {
+                                override fun onCaptureCompleted(
+                                    session: android.hardware.camera2.CameraCaptureSession,
+                                    request: android.hardware.camera2.CaptureRequest,
+                                    result: android.hardware.camera2.TotalCaptureResult
+                                ) {
+                                    if (evLocked) return
+                                    val isoVal    = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: return
+                                    val shutterNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: return
+                                    val apertureF = result.get(CaptureResult.LENS_APERTURE) ?: return
+
+                                    val shutterSec = shutterNs / 1_000_000_000.0
+                                    // EV = log2(N² / t) − log2(ISO/100)
+                                    // where N=aperture, t=shutter in seconds
+                                    // This gives scene EV at the measured exposure
+                                    val ev = log2((apertureF * apertureF) / shutterSec) - log2(isoVal / 100.0)
+
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        liveReading = MeterReading(
+                                            sceneEV       = ev.coerceIn(-6.0, 24.0),
+                                            sensorIso     = isoVal,
+                                            sensorShutterSec = shutterSec,
+                                            sensorAperture = apertureF.toDouble()
+                                        )
+                                    }
+                                }
                             }
+                            Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(captureCallback)
+                            val preview = previewBuilder.build().also { it.setSurfaceProvider(pv.surfaceProvider) }
+
                             try {
                                 provider.unbindAll()
                                 val cam = provider.bindToLifecycle(
-                                    lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis
+                                    lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview
                                 )
-                                cameraControl = cam.cameraControl
-                                cameraInfo    = cam.cameraInfo
+                                cameraCtrl    = cam.cameraControl
+                                cameraInfoObj = cam.cameraInfo
                             } catch (e: Exception) { e.printStackTrace() }
                         }, ContextCompat.getMainExecutor(ctx))
                         pv
                     },
                     update = {
+                        // Apply zoom
                         activeZoom?.mm?.toFloat()?.let { mm ->
-                            cameraInfo?.zoomState?.value?.let { state ->
+                            cameraInfoObj?.zoomState?.value?.let { state ->
                                 val ratio = (mm / 23f).coerceIn(state.minZoomRatio, state.maxZoomRatio)
-                                cameraControl?.setZoomRatio(ratio)
+                                cameraCtrl?.setZoomRatio(ratio)
                             }
                         }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
-                // Metering mode visual overlay
-                MeteringOverlay(metering = metering, modifier = Modifier.fillMaxSize())
-
-                // EV overlay
+                // Metering overlay
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawMeteringOverlay(metering)
+                }
+                // EV status chip
                 Box(
-                    Modifier.align(Alignment.TopStart).padding(8.dp)
-                        .clip(RoundedCornerShape(6.dp)).background(Bg.copy(alpha = 0.80f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                    Modifier.align(Alignment.BottomStart).padding(8.dp)
+                        .clip(RoundedCornerShape(4.dp)).background(Bg.copy(alpha = 0.80f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
+                    val src = liveReading?.source ?: "—"
                     Text(
-                        text = if (evLocked) "MANUAL EV ${"%.1f".format(effectiveEV)}"
-                               else "LIVE EV ${"%.1f".format(effectiveEV)}  +${"%.1f".format(calibOffset)}stop cal",
+                        if (evLocked) "LOCKED EV ${"%.1f".format(effectiveEV)}"
+                        else if (liveReading != null) "LIVE ${"%.1f".format(effectiveEV)} · $src"
+                        else "Waiting for AE…",
                         color = if (evLocked) OrangeWarn else AmberBright,
-                        fontSize = 11.sp
+                        fontSize = 10.sp
                     )
                 }
-                // Close camera button
-                Box(
-                    Modifier.align(Alignment.TopEnd).padding(8.dp)
-                        .clip(RoundedCornerShape(6.dp)).background(Bg.copy(alpha = 0.80f))
-                ) {
-                    IconButton(onClick = { cameraOn = false; liveEV = null }) {
-                        Icon(imageVector = Icons.Default.VideocamOff, contentDescription = "Close camera", tint = TextSecondary)
+                // Sensor info chip
+                liveReading?.let { r ->
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).padding(8.dp)
+                            .clip(RoundedCornerShape(4.dp)).background(Bg.copy(alpha = 0.80f))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            "ISO${r.sensorIso} · 1/${(1.0/r.sensorShutterSec).roundToInt()} · f${"%.1f".format(r.sensorAperture)}",
+                            color = TextSecondary, fontSize = 9.sp
+                        )
                     }
                 }
             }
         }
 
-        Column(Modifier.padding(horizontal = 16.dp).padding(top = 12.dp)) {
+        // ── SCROLLABLE LOWER SECTION ──────────────────────────────────────────
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
 
-            // 2. ── EXIF panel (highest priority — bypasses everything) ────────
-            exifResult?.let { exif ->
-                ExifPanel(
-                    exif = exif,
-                    onDismiss = { exifResult = null },
-                    onUseEV = { ev -> manualEV = ev; evLocked = true },
-                    onApplyInputs = {
-                        exif.iso?.let { iso = it }
-                        exif.shutter?.let { shutter = it }
-                    }
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-
-            // 3. ── EV display + manual slider ─────────────────────────────────
+            // EV result card
             EVCard(
-                effectiveEV   = effectiveEV,
+                effectiveEV    = effectiveEV,
                 solvedAperture = solvedAperture,
-                iso            = iso,
+                filmIso        = filmIso,
                 shutter        = shutter,
-                isLive         = !evLocked && liveEV != null
+                isLive         = !evLocked && liveReading != null
             )
 
             Spacer(Modifier.height(10.dp))
 
-            // Manual EV slider — always visible and editable
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("Manual EV", color = TextSecondary, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("%.1f".format(manualEV), color = Amber, fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace)
-                    if (cameraOn && !evLocked) {
-                        Text("(live)", color = TextTertiary, fontSize = 10.sp)
-                    }
+            // Camera controls row (when camera is on)
+            if (cameraOn) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VaultButton(
+                        text = if (evLocked) "🔒 EV Locked" else "🔓 Lock EV",
+                        modifier = Modifier.weight(1f), ghost = true, small = true,
+                        onClick = {
+                            evLocked = !evLocked
+                            if (evLocked) manualEV = effectiveEV
+                        }
+                    )
+                    VaultButton("✕ Camera", ghost = true, small = true,
+                        onClick = { cameraOn = false; liveReading = null; evLocked = false })
                 }
-            }
-            Slider(
-                value = manualEV.toFloat(),
-                onValueChange = { manualEV = it.toDouble(); evLocked = true },
-                valueRange = -2f..22f,
-                steps = 95,
-                colors = SliderDefaults.colors(
-                    thumbColor = Amber, activeTrackColor = Amber, inactiveTrackColor = Border
-                )
-            )
+                Spacer(Modifier.height(8.dp))
 
-            // 4. ── Camera calibration offset (shown when camera on, unlocked) ─
-            if (cameraOn && !evLocked) {
-                Spacer(Modifier.height(4.dp))
+                // Cal offset — only relevant when camera is live
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        Text("Calibration offset", color = TextSecondary, fontSize = 12.sp)
-                        Text("Adjust if reading feels off for your environment",
-                            color = TextTertiary, fontSize = 10.sp)
+                    Text("Cal offset", color = TextSecondary, fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${if (calibOffset >= 0) "+" else ""}${"%.1f".format(calibOffset)}",
+                            color = if (calibOffset == 0.0) TextTertiary else OrangeWarn,
+                            fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        if (calibOffset != 0.0) {
+                            TextButton(onClick = { calibOffset = 0.0 },
+                                contentPadding = PaddingValues(0.dp)) {
+                                Text("reset", color = TextTertiary, fontSize = 10.sp)
+                            }
+                        }
                     }
-                    Text(
-                        "${if (calibOffset >= 0) "+" else ""}${"%.1f".format(calibOffset)} EV",
-                        color = if (calibOffset == 0.0) TextTertiary else OrangeWarn,
-                        fontSize = 12.sp, fontFamily = FontFamily.Monospace
-                    )
                 }
                 Slider(
                     value = calibOffset.toFloat(),
                     onValueChange = { calibOffset = it.toDouble() },
-                    valueRange = -5f..5f,
-                    steps = 49,
-                    colors = SliderDefaults.colors(
-                        thumbColor = OrangeWarn, activeTrackColor = OrangeWarn, inactiveTrackColor = Border
-                    )
+                    valueRange = -5f..5f, steps = 49,
+                    colors = SliderDefaults.colors(thumbColor = OrangeWarn, activeTrackColor = OrangeWarn, inactiveTrackColor = Border)
                 )
-                if (calibOffset != 0.0) {
-                    TextButton(
-                        onClick = { calibOffset = 0.0 },
-                        contentPadding = PaddingValues(0.dp)
-                    ) { Text("Reset offset", color = TextTertiary, fontSize = 10.sp) }
+            } else {
+                // Camera off: show Live button + manual EV slider
+                VaultButton(
+                    text = if (hasCamPerm) "📷 Live Meter" else "📷 Enable Camera",
+                    modifier = Modifier.fillMaxWidth(), ghost = true,
+                    onClick = { if (hasCamPerm) { cameraOn = true; evLocked = false } else onRequestPerm() }
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Manual EV", color = TextSecondary, fontSize = 12.sp)
+                    Text("%.1f".format(manualEV), color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
-                Spacer(Modifier.height(4.dp))
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // 5. ── Camera toggle + Lock EV + EXIF button ─────────────────────
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                VaultButton(
-                    text = when {
-                        !hasCamPerm          -> "📷 Enable Camera"
-                        cameraOn && evLocked -> "🔒 EV Locked"
-                        cameraOn             -> "🔓 Lock EV"
-                        else                 -> "📷 Live Meter"
-                    },
-                    modifier = Modifier.weight(1f),
-                    ghost = true,
-                    onClick = {
-                        when {
-                            !hasCamPerm -> onRequestPerm()
-                            !cameraOn   -> { cameraOn = true; evLocked = false }
-                            else        -> {
-                                evLocked = !evLocked
-                                if (evLocked) manualEV = effectiveEV
-                            }
-                        }
-                    }
-                )
-                VaultButton(
-                    text = "📁 EXIF",
-                    ghost = true,
-                    small = true,
-                    onClick = { exifPicker.launch("image/*") }
+                Slider(
+                    value = manualEV.toFloat(),
+                    onValueChange = { manualEV = it.toDouble() },
+                    valueRange = -2f..22f, steps = 95,
+                    colors = SliderDefaults.colors(thumbColor = Amber, activeTrackColor = Amber, inactiveTrackColor = Border)
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // 6. ── Zoom row ───────────────────────────────────────────────────
+            // Zoom row
             if (zoomLevels.isNotEmpty()) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(zoomLevels) { z ->
                         val sel = activeZoom?.id == z.id
                         Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
+                            Modifier.clip(RoundedCornerShape(6.dp))
                                 .background(if (sel) AmberDark else Bg3)
                                 .border(1.dp, if (sel) Amber else Border, RoundedCornerShape(6.dp))
                                 .clickable { activeZoom = if (sel) null else z }
@@ -323,8 +348,7 @@ fun MeterContent(
                     }
                     item {
                         Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp)).background(Bg3)
+                            Modifier.clip(RoundedCornerShape(6.dp)).background(Bg3)
                                 .border(1.dp, Border, RoundedCornerShape(6.dp))
                                 .clickable { showZoomEdit = true }
                                 .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -332,129 +356,136 @@ fun MeterContent(
                         ) { Text("✎ Edit", color = TextTertiary, fontSize = 11.sp) }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
             }
 
-            // 7. ── Metering + ISO + Shutter (always editable) ─────────────────
-            // These are always in a scrollable column below the viewfinder so they
-            // are reachable even when camera is on
-            VaultDropdown("Metering Mode", metering, Constants.METERING_TYPES, { metering = it })
+            // Metering + ISO + Shutter in one compact row — below zoom
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                VaultDropdown("Metering", metering, Constants.METERING_TYPES,
+                    { metering = it }, modifier = Modifier.weight(1.4f))
+                VaultDropdown("ISO", filmIso.toString(), Constants.ISOS.map { it.toString() },
+                    { filmIso = it.toIntOrNull() ?: 400 }, modifier = Modifier.weight(1f))
+                VaultDropdown("Shutter", shutter, Constants.SHUTTER_SPEEDS,
+                    { shutter = it }, modifier = Modifier.weight(1f))
+            }
+
             Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                VaultDropdown(
-                    "ISO", iso.toString(), Constants.ISOS.map { it.toString() },
-                    { iso = it.toIntOrNull() ?: 400 },
-                    modifier = Modifier.weight(1f)
-                )
-                VaultDropdown(
-                    "Shutter", shutter, Constants.SHUTTER_SPEEDS,
-                    { shutter = it },
-                    modifier = Modifier.weight(1f)
-                )
-            }
 
-            Spacer(Modifier.height(14.dp))
-
-            // 8. ── Nearby combinations ────────────────────────────────────────
-            NearbyTable(iso = iso, shutter = shutter, effectiveEV = effectiveEV)
-
-            Spacer(Modifier.height(16.dp))
+            // Nearby combinations table
+            NearbyTable(filmIso, shutter, effectiveEV)
 
             // Use in Shot button
             if (onUseInShot != null) {
-                val apNum = "%.1f".format(Constants.calcAperture(iso, shutter, effectiveEV))
+                Spacer(Modifier.height(12.dp))
+                val apNum = "%.1f".format(Constants.calcAperture(filmIso, shutter, effectiveEV))
                 VaultButton(
-                    text = "📋 Use in Shot Log  ($shutter · f/$apNum · ISO $iso)",
+                    text = "📋 Use in Shot  $shutter · f/$apNum · ISO $filmIso",
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onUseInShot(shutter, apNum, iso.toString()) }
+                    onClick = { onUseInShot(shutter, apNum, filmIso.toString()) }
                 )
-                Spacer(Modifier.height(8.dp))
             }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 
     if (showZoomEdit) ZoomEditSheet(zoomLevels, vm) { showZoomEdit = false }
 }
 
+// ─── Canvas metering overlay ──────────────────────────────────────────────────
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay(metering: String) {
+    val w = size.width; val h = size.height
+    val cx = w / 2f; val cy = h / 2f
+    val stroke = Stroke(2.dp.toPx())
+    val color = Color(0xCCD4935A.toInt())
+
+    when (metering) {
+        "Spot" -> {
+            val r = minOf(w, h) / 6f
+            drawCircle(color, r, Offset(cx, cy), style = stroke)
+            val gap = r + 8.dp.toPx(); val len = 16.dp.toPx()
+            drawLine(color, Offset(cx - gap - len, cy), Offset(cx - gap, cy), stroke.width)
+            drawLine(color, Offset(cx + gap, cy),       Offset(cx + gap + len, cy), stroke.width)
+            drawLine(color, Offset(cx, cy - gap - len), Offset(cx, cy - gap), stroke.width)
+            drawLine(color, Offset(cx, cy + gap),       Offset(cx, cy + gap + len), stroke.width)
+        }
+        "Center-Weighted" -> {
+            drawCircle(color, minOf(w, h) / 3f, Offset(cx, cy), style = stroke)
+            val m = 20.dp.toPx(); val p = 10.dp.toPx()
+            listOf(
+                Offset(p, p) to Offset(p + m, p), Offset(p, p) to Offset(p, p + m),
+                Offset(w-p, p) to Offset(w-p-m, p), Offset(w-p, p) to Offset(w-p, p+m),
+                Offset(p, h-p) to Offset(p+m, h-p), Offset(p, h-p) to Offset(p, h-p-m),
+                Offset(w-p, h-p) to Offset(w-p-m, h-p), Offset(w-p, h-p) to Offset(w-p, h-p-m),
+            ).forEach { (a, b) -> drawLine(color, a, b, stroke.width) }
+        }
+        "Highlight-Weighted" -> {
+            drawRect(color, Offset(0f, 0f), Size(w, h / 4f), style = stroke)
+        }
+        else -> { // Evaluative — 3×3 grid
+            for (c in 1..2) drawLine(color, Offset(w * c / 3f, 0f), Offset(w * c / 3f, h), stroke.width / 2)
+            for (r in 1..2) drawLine(color, Offset(0f, h * r / 3f), Offset(w, h * r / 3f), stroke.width / 2)
+        }
+    }
+}
+
 // ─── Sub-composables ──────────────────────────────────────────────────────────
 
 @Composable
 private fun EVCard(
-    effectiveEV: Double,
-    solvedAperture: String,
-    iso: Int,
-    shutter: String,
-    isLive: Boolean
+    effectiveEV: Double, solvedAperture: String,
+    filmIso: Int, shutter: String, isLive: Boolean
 ) {
     Box(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp)).background(Bg3)
-            .border(1.dp, Border, RoundedCornerShape(10.dp))
-            .padding(16.dp)
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg3)
+            .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(16.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text("SCENE EV", color = TextTertiary, fontSize = 9.sp)
-                Text("%.1f".format(effectiveEV), color = Amber, fontSize = 44.sp,
-                    fontFamily = FontFamily.Monospace)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(3.dp))
-                            .background(if (isLive) GreenOk.copy(alpha = 0.15f) else Bg4)
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                    ) {
-                        Text(if (isLive) "LIVE" else "MANUAL",
-                            color = if (isLive) GreenOk else TextTertiary, fontSize = 9.sp)
-                    }
+                Text("%.1f".format(effectiveEV), color = Amber, fontSize = 44.sp, fontFamily = FontFamily.Monospace)
+                Box(Modifier.clip(RoundedCornerShape(3.dp))
+                    .background(if (isLive) GreenOk.copy(0.15f) else Bg4)
+                    .padding(horizontal = 5.dp, vertical = 2.dp)) {
+                    Text(if (isLive) "LIVE · camera2" else "MANUAL",
+                        color = if (isLive) GreenOk else TextTertiary, fontSize = 9.sp)
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text("USE APERTURE", color = TextTertiary, fontSize = 9.sp)
-                Text(solvedAperture, color = AmberBright, fontSize = 36.sp,
-                    fontFamily = FontFamily.Monospace)
-                Text("ISO $iso · $shutter", color = TextSecondary, fontSize = 10.sp)
+                Text(solvedAperture, color = AmberBright, fontSize = 36.sp, fontFamily = FontFamily.Monospace)
+                Text("ISO $filmIso · $shutter", color = TextSecondary, fontSize = 10.sp)
             }
         }
     }
 }
 
 @Composable
-private fun NearbyTable(iso: Int, shutter: String, effectiveEV: Double) {
+private fun NearbyTable(filmIso: Int, shutter: String, effectiveEV: Double) {
     Column(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp)).background(Bg3)
-            .border(1.dp, Border, RoundedCornerShape(10.dp))
-            .padding(12.dp)
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg3)
+            .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp)
     ) {
-        Text("NEARBY COMBINATIONS", color = TextTertiary, fontSize = 9.sp)
-        Spacer(Modifier.height(8.dp))
-        // Header
-        Row(Modifier.fillMaxWidth()) {
-            Text("SHUTTER", color = TextTertiary, fontSize = 9.sp, modifier = Modifier.weight(1f))
-            Text("APERTURE", color = TextTertiary, fontSize = 9.sp, modifier = Modifier.weight(1f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.End)
-        }
-        Spacer(Modifier.height(4.dp))
+        Text("EQUIVALENT EXPOSURES", color = TextTertiary, fontSize = 9.sp)
+        Spacer(Modifier.height(6.dp))
         HorizontalDivider(color = Border)
         Spacer(Modifier.height(4.dp))
         listOf(-2, -1, 0, 1, 2).forEach { offset ->
             val idx = (Constants.SHUTTER_SPEEDS.indexOf(shutter) + offset)
                 .coerceIn(0, Constants.SHUTTER_SPEEDS.lastIndex)
             val sh  = Constants.SHUTTER_SPEEDS[idx]
-            val ap  = "f/${"%.1f".format(Constants.calcAperture(iso, sh, effectiveEV))}"
+            val ap  = "f/${"%.1f".format(Constants.calcAperture(filmIso, sh, effectiveEV))}"
             val hl  = offset == 0
             Row(
                 Modifier.fillMaxWidth()
-                    .background(if (hl) AmberDark.copy(alpha = 0.15f) else androidx.compose.ui.graphics.Color.Transparent)
+                    .background(if (hl) AmberDark.copy(0.15f) else Color.Transparent)
                     .padding(vertical = 5.dp, horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(sh, color = if (hl) AmberBright else TextSecondary, fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace)
-                Text(ap, color = if (hl) AmberBright else TextSecondary, fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace)
+                Text(sh, color = if (hl) AmberBright else TextSecondary, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                Text(ap, color = if (hl) AmberBright else TextSecondary, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
             }
         }
     }
@@ -462,10 +493,8 @@ private fun NearbyTable(iso: Int, shutter: String, effectiveEV: Double) {
 
 @Composable
 private fun ExifPanel(
-    exif: ExifReading,
-    onDismiss: () -> Unit,
-    onUseEV: (Double) -> Unit,
-    onApplyInputs: () -> Unit
+    exif: ExifReading, onDismiss: () -> Unit,
+    onUseEV: (Double) -> Unit, onApplyInputs: () -> Unit
 ) {
     val exifEV = if (exif.iso != null && exif.shutter != null && exif.aperture != null) {
         val ap = exif.aperture.toDoubleOrNull() ?: 0.0
@@ -473,98 +502,33 @@ private fun ExifPanel(
         if (ap > 0 && t > 0) (log2(ap * ap / t) - log2(exif.iso / 100.0)) else null
     } else null
 
-    Box(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(BlueInfo.copy(alpha = 0.08f))
-            .border(1.dp, BlueInfo.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .padding(12.dp)
-    ) {
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+        .background(BlueInfo.copy(0.08f)).border(1.dp, BlueInfo.copy(0.35f), RoundedCornerShape(10.dp))
+        .padding(12.dp)) {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("EXIF DATA", color = BlueInfo, fontSize = 10.sp)
+                Text("EXIF", color = BlueInfo, fontSize = 10.sp)
                 IconButton(onClick = onDismiss, Modifier.size(24.dp)) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = "Dismiss",
+                    Icon(imageVector = Icons.Default.Close, contentDescription = null,
                         tint = TextTertiary, modifier = Modifier.size(14.dp))
                 }
             }
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                exif.iso?.let     { VaultTag("ISO $it",  textColor = AmberBright) }
-                exif.shutter?.let { VaultTag(it,          textColor = AmberBright) }
-                exif.aperture?.let { VaultTag("f/$it",   textColor = AmberBright) }
+                exif.iso?.let     { VaultTag("ISO $it", textColor = AmberBright) }
+                exif.shutter?.let { VaultTag(it, textColor = AmberBright) }
+                exif.aperture?.let { VaultTag("f/$it", textColor = AmberBright) }
             }
-            exif.lens?.let {
-                Spacer(Modifier.height(4.dp))
-                Text("Lens: $it", color = TextTertiary, fontSize = 10.sp)
-            }
+            exif.lens?.let { Text("Lens: $it", color = TextTertiary, fontSize = 10.sp) }
             exifEV?.let { ev ->
-                Spacer(Modifier.height(8.dp))
-                Text("Calculated EV: ${"%.1f".format(ev)}", color = TextSecondary, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
+                Text("EV ${"%.1f".format(ev)}", color = TextSecondary, fontSize = 11.sp)
+                Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    VaultButton("Use EV ${"%.1f".format(ev)}", small = true,
-                        onClick = { onUseEV(ev) })
-                    VaultButton("Apply ISO + Shutter", small = true, ghost = true,
-                        onClick = onApplyInputs)
+                    VaultButton("Use EV", small = true, onClick = { onUseEV(ev) })
+                    VaultButton("Apply ISO+Shutter", small = true, ghost = true, onClick = onApplyInputs)
                 }
-            }
-        }
-    }
-}
-
-
-// ─── Metering overlay ─────────────────────────────────────────────────────────
-
-@Composable
-private fun MeteringOverlay(metering: String, modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Canvas(modifier = modifier) {
-        val w = size.width; val h = size.height
-        val cx = w / 2f; val cy = h / 2f
-        val strokePx = 2.dp.toPx()
-        val color = androidx.compose.ui.graphics.Color(0xCCD4935A.toInt())  // amber 80%
-        when (metering) {
-            "Spot" -> {
-                val r = minOf(w, h) / 6f
-                drawCircle(color = color, radius = r, center = androidx.compose.ui.geometry.Offset(cx, cy),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(strokePx))
-                // Crosshair lines
-                val gap = r + 8.dp.toPx(); val len = 20.dp.toPx()
-                drawLine(color, androidx.compose.ui.geometry.Offset(cx - gap - len, cy), androidx.compose.ui.geometry.Offset(cx - gap, cy), strokePx)
-                drawLine(color, androidx.compose.ui.geometry.Offset(cx + gap, cy), androidx.compose.ui.geometry.Offset(cx + gap + len, cy), strokePx)
-                drawLine(color, androidx.compose.ui.geometry.Offset(cx, cy - gap - len), androidx.compose.ui.geometry.Offset(cx, cy - gap), strokePx)
-                drawLine(color, androidx.compose.ui.geometry.Offset(cx, cy + gap), androidx.compose.ui.geometry.Offset(cx, cy + gap + len), strokePx)
-            }
-            "Center-Weighted" -> {
-                val r = minOf(w, h) / 3f
-                drawCircle(color = color, radius = r, center = androidx.compose.ui.geometry.Offset(cx, cy),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(strokePx))
-                // Corner marks
-                val m = 24.dp.toPx(); val p = 12.dp.toPx()
-                listOf(
-                    androidx.compose.ui.geometry.Offset(p, p) to androidx.compose.ui.geometry.Offset(p + m, p),
-                    androidx.compose.ui.geometry.Offset(p, p) to androidx.compose.ui.geometry.Offset(p, p + m),
-                    androidx.compose.ui.geometry.Offset(w - p, p) to androidx.compose.ui.geometry.Offset(w - p - m, p),
-                    androidx.compose.ui.geometry.Offset(w - p, p) to androidx.compose.ui.geometry.Offset(w - p, p + m),
-                    androidx.compose.ui.geometry.Offset(p, h - p) to androidx.compose.ui.geometry.Offset(p + m, h - p),
-                    androidx.compose.ui.geometry.Offset(p, h - p) to androidx.compose.ui.geometry.Offset(p, h - p - m),
-                    androidx.compose.ui.geometry.Offset(w - p, h - p) to androidx.compose.ui.geometry.Offset(w - p - m, h - p),
-                    androidx.compose.ui.geometry.Offset(w - p, h - p) to androidx.compose.ui.geometry.Offset(w - p, h - p - m),
-                ).forEach { (a, b) -> drawLine(color, a, b, strokePx) }
-            }
-            "Highlight-Weighted" -> {
-                // Top third highlight band
-                val bandH = h / 4f
-                drawRect(color = color, topLeft = androidx.compose.ui.geometry.Offset(0f, 0f),
-                    size = androidx.compose.ui.geometry.Size(w, bandH),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(strokePx))
-                // Small label
-            }
-            else -> {
-                // Evaluative: 3x3 grid
-                for (col in 1..2) drawLine(color, androidx.compose.ui.geometry.Offset(w * col / 3f, 0f), androidx.compose.ui.geometry.Offset(w * col / 3f, h), strokePx / 2)
-                for (row in 1..2) drawLine(color, androidx.compose.ui.geometry.Offset(0f, h * row / 3f), androidx.compose.ui.geometry.Offset(w, h * row / 3f), strokePx / 2)
             }
         }
     }
@@ -609,10 +573,12 @@ fun ZoomEditSheet(zoomLevels: List<ZoomLevel>, vm: MainViewModel, onDismiss: () 
                     Row {
                         IconButton(onClick = { editingId = z.id; editLabel = z.label; editMm = z.mm.toString() },
                             Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Edit, null, Modifier.size(14.dp), tint = Amber)
+                            Icon(imageVector = Icons.Default.Edit, contentDescription = null,
+                                modifier = Modifier.size(14.dp), tint = Amber)
                         }
                         IconButton(onClick = { vm.deleteZoomLevel(z) }, Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Delete, null, Modifier.size(14.dp), tint = RedErr.copy(alpha = 0.7f))
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = null,
+                                modifier = Modifier.size(14.dp), tint = RedErr.copy(alpha = 0.7f))
                         }
                     }
                 }
@@ -638,7 +604,7 @@ fun ZoomEditSheet(zoomLevels: List<ZoomLevel>, vm: MainViewModel, onDismiss: () 
     }
 }
 
-// ─── EXIF ─────────────────────────────────────────────────────────────────────
+// ─── EXIF reading ─────────────────────────────────────────────────────────────
 
 data class ExifReading(val iso: Int?, val shutter: String?, val aperture: String?, val lens: String?)
 
@@ -662,46 +628,3 @@ private fun readExif(context: Context, uri: Uri): ExifReading = try {
         ExifReading(iso, shutterStr, apStr, exif.getAttribute(ExifInterface.TAG_LENS_MODEL))
     } ?: ExifReading(null, null, null, null)
 } catch (e: Exception) { ExifReading(null, null, null, null) }
-
-// ─── EV analysis (calibrated) ────────────────────────────────────────────────
-
-private fun analyzeEVCalibrated(imageProxy: ImageProxy, meteringMode: String): Double? = try {
-    val plane = imageProxy.planes[0]
-    val bytes = ByteArray(plane.buffer.remaining()).also { plane.buffer.get(it) }
-    val w = imageProxy.width; val h = imageProxy.height
-    val rs = plane.rowStride; val ps = plane.pixelStride
-    val step = 4
-    fun lin(c: Int): Double { val s = c / 255.0; return if (s <= 0.04045) s / 12.92 else ((s + 0.055) / 1.055).pow(2.4) }
-    fun lum(i: Int): Double {
-        if (i + 2 >= bytes.size) return 0.0
-        return 0.2126 * lin(bytes[i].toInt() and 0xFF) +
-               0.7152 * lin(bytes[i+1].toInt() and 0xFF) +
-               0.0722 * lin(bytes[i+2].toInt() and 0xFF)
-    }
-    val cx = w / 2.0; val cy = h / 2.0
-    var sumW = 0.0; var sumL = 0.0
-    val highlights = mutableListOf<Double>()
-    for (y in 0 until h step step) for (x in 0 until w step step) {
-        val l = lum(y * rs + x * ps)
-        val w2 = when (meteringMode) {
-            "Spot" -> {
-                val r2 = (minOf(w, h) / 6.0).pow(2)
-                if ((x - cx).pow(2) + (y - cy).pow(2) < r2) 1.0 else 0.0
-            }
-            "Center-Weighted" -> max(0.2, 1.0 - sqrt((x - cx).pow(2) + (y - cy).pow(2)) / (w / 2.0) * 0.8)
-            "Highlight-Weighted" -> { highlights.add(l); 1.0 }
-            else -> 1.0
-        }
-        sumL += l * w2; sumW += w2
-    }
-    val avg = when {
-        meteringMode == "Highlight-Weighted" ->
-            highlights.sortedDescending().take(max(1, (highlights.size * 0.1).toInt())).average()
-        sumW > 0 -> sumL / sumW
-        else -> return null
-    }
-    // Base calibration: log2(avg/0.18) + 12 maps 18% grey to EV12 (sunny 16 approx)
-    // -3 stops: phone AE keeps sensor in midrange regardless of scene, so raw pixels
-    // read consistently bright; offset corrects for this systematic bias
-    (log2(max(1e-6, avg) / 0.18) + 12.0 - 3.0).coerceIn(-2.0, 22.0)
-} catch (e: Exception) { null }

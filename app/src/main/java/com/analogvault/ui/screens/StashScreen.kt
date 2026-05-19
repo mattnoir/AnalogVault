@@ -76,46 +76,51 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { SectionTitle("Film Stash", "${films.size} stocks") }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Film Stash", color = Amber, fontSize = 18.sp)
+                Text("${films.size} stocks", color = TextTertiary, fontSize = 10.sp)
+                Spacer(Modifier.weight(1f))
+                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
+            }
+        }
         if (films.isEmpty()) item { EmptyState("No film stocks added yet") }
         items(films, key = { it.id }) { film ->
             val (exLabel, exColor, _) = expiryStatus(film.expiryDate)
-            VaultCard {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            VaultCard(onClick = { viewingFilm = film }) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(film.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp)
                         Text(film.type, color = TextSecondary, fontSize = 12.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            VaultTag("ISO ${film.iso}")
+                            VaultTag("${film.shots} exp")
+                            VaultTag(film.storage)
+                            if (film.quantity > 1) VaultTag("×${film.quantity}", textColor = AmberBright)
+                            if (exLabel.isNotBlank()) VaultTag(exLabel, textColor = exColor)
+                        }
+                        if (film.notes.isNotBlank()) {
+                            Spacer(Modifier.height(3.dp))
+                            Text(film.notes, color = TextTertiary, fontSize = 11.sp, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
                     }
-                    if (exLabel.isNotBlank()) VaultTag(exLabel, textColor = exColor)
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    VaultTag("ISO ${film.iso}")
-                    VaultTag("${film.shots} exp")
-                    VaultTag(film.storage)
-                    if (film.quantity > 1) VaultTag("×${film.quantity}", textColor = AmberBright)
-                }
-                if (film.notes.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(film.notes, color = TextTertiary, fontSize = 11.sp, maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                    IconButton(onClick = { viewingFilm = film }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Info, null, tint = BlueInfo.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { editing = film; showSheet = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { confirmDelete = film }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                    // Edit + Delete in same row as info, no separate row
+                    Row {
+                        IconButton(onClick = { editing = film; showSheet = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        }
+                        IconButton(onClick = { confirmDelete = film }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }
         }
-        item {
-            VaultButton("+ Add Film", onClick = { editing = null; showSheet = true }, modifier = Modifier.fillMaxWidth())
-        }
+        item { Spacer(Modifier.height(4.dp)) }
     }
 
     if (showSheet) {
@@ -207,33 +212,42 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { SectionTitle("Cameras", "${cameras.size} bodies") }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Cameras", color = Amber, fontSize = 18.sp)
+                Text("${cameras.size} bodies", color = TextTertiary, fontSize = 10.sp)
+                Spacer(Modifier.weight(1f))
+                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
+            }
+        }
         if (cameras.isEmpty()) item { EmptyState("No cameras added yet") }
         items(cameras, key = { it.id }) { cam ->
             VaultCard {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(cam.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp)
                         Text("${cam.format} · ${cam.condition}", color = TextSecondary, fontSize = 12.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (cam.mount.isNotBlank()) VaultTag(cam.mount, textColor = AmberBright)
+                            VaultTag(cam.lensSystem)
+                            cam.adapterMounts.take(2).forEach { VaultTag(it, textColor = BlueInfo) }
+                        }
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (cam.mount.isNotBlank()) VaultTag(cam.mount, textColor = AmberBright)
-                    VaultTag(cam.lensSystem)
-                    cam.adapterMounts.take(2).forEach { VaultTag(it, textColor = BlueInfo) }
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                    IconButton(onClick = { editing = cam; showSheet = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { confirmDelete = cam }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                    Row {
+                        IconButton(onClick = { editing = cam; showSheet = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        }
+                        IconButton(onClick = { confirmDelete = cam }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }
         }
-        item { VaultButton("+ Add Camera", onClick = { editing = null; showSheet = true }, modifier = Modifier.fillMaxWidth()) }
+item { Spacer(Modifier.height(4.dp)) }
     }
 
     if (showSheet) {
@@ -326,32 +340,41 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { SectionTitle("Lenses", "${lenses.size} optics") }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Lenses", color = Amber, fontSize = 18.sp)
+                Text("${lenses.size} optics", color = TextTertiary, fontSize = 10.sp)
+                Spacer(Modifier.weight(1f))
+                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
+            }
+        }
         if (lenses.isEmpty()) item { EmptyState("No lenses added yet") }
         items(lenses, key = { it.id }) { lens ->
             VaultCard {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(lens.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp)
                         Text("${lens.focalLength}mm · f/${lens.maxAperture}", color = TextSecondary, fontSize = 12.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (lens.mount.isNotBlank()) VaultTag(lens.mount, textColor = AmberBright)
+                            VaultTag(lens.condition)
+                        }
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (lens.mount.isNotBlank()) VaultTag(lens.mount, textColor = AmberBright)
-                    VaultTag(lens.condition)
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                    IconButton(onClick = { editing = lens; showSheet = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { confirmDelete = lens }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                    Row {
+                        IconButton(onClick = { editing = lens; showSheet = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        }
+                        IconButton(onClick = { confirmDelete = lens }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }
         }
-        item { VaultButton("+ Add Lens", onClick = { editing = null; showSheet = true }, modifier = Modifier.fillMaxWidth()) }
+item { Spacer(Modifier.height(4.dp)) }
     }
 
     if (showSheet) {
@@ -406,32 +429,41 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { SectionTitle("Accessories", "${accessories.size} items") }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Accessories", color = Amber, fontSize = 18.sp)
+                Text("${accessories.size} items", color = TextTertiary, fontSize = 10.sp)
+                Spacer(Modifier.weight(1f))
+                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
+            }
+        }
         if (accessories.isEmpty()) item { EmptyState("No accessories added yet") }
         items(accessories, key = { it.id }) { acc ->
             VaultCard {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(acc.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp)
                         Text(acc.type, color = TextSecondary, fontSize = 12.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (acc.brand.isNotBlank()) VaultTag(acc.brand)
+                            VaultTag(acc.condition)
+                        }
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (acc.brand.isNotBlank()) VaultTag(acc.brand)
-                    VaultTag(acc.condition)
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                    IconButton(onClick = { editing = acc; showSheet = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { confirmDelete = acc }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                    Row {
+                        IconButton(onClick = { editing = acc; showSheet = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        }
+                        IconButton(onClick = { confirmDelete = acc }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }
         }
-        item { VaultButton("+ Add Accessory", onClick = { editing = null; showSheet = true }, modifier = Modifier.fillMaxWidth()) }
+item { Spacer(Modifier.height(4.dp)) }
     }
 
     if (showSheet) {
