@@ -31,11 +31,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.analogvault.data.model.*
@@ -63,6 +63,7 @@ import kotlin.coroutines.resumeWithException
 fun ActiveScreen(
     vm: MainViewModel,
     initialSubTab: Int = 0,
+    initialRollId: String? = null,
     meterShutter: String = "",
     meterAperture: String = "",
     meterIso: String = ""
@@ -80,18 +81,30 @@ fun ActiveScreen(
     var pendingMeterIso      by remember { mutableStateOf(meterIso) }
     var subTab         by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 3)) }
 
-    val selectedRoll = selectedRollId?.let { id -> rolls.find { it.id == id } }
-
-    // Filter rolls per tab
     val shooting  = rolls.filter { !it.finished && !it.developed }
     val awaitDev  = rolls.filter { it.finished && !it.developed }
     val awaitScan = rolls.filter { it.developed && !it.scanned }
     val done      = rolls.filter { it.scanned }
 
+    // Resolve sentinel: open first shooting roll when coming from meter
+    if (selectedRollId == "__OPEN_FIRST_SHOOTING__" && shooting.isNotEmpty()) {
+        selectedRollId = shooting.first().id
+    }
+
+    val selectedRoll = selectedRollId?.let { id -> rolls.find { it.id == id } }
+
+    // Open specific roll from dashboard tap
+    LaunchedEffect(initialRollId) {
+        if (initialRollId != null && selectedRollId == null) {
+            selectedRollId = initialRollId
+        }
+    }
+
     // Auto-navigate to most recent active roll when coming from meter
-    LaunchedEffect(pendingMeterShutter, shooting) {
+    // (shooting list is derived below; we just set flag here and let the list settle)
+    LaunchedEffect(pendingMeterShutter) {
         if (pendingMeterShutter.isNotBlank() && selectedRollId == null) {
-            shooting.firstOrNull()?.let { selectedRollId = it.id }
+            selectedRollId = "__OPEN_FIRST_SHOOTING__"
         }
     }
 
@@ -108,6 +121,7 @@ fun ActiveScreen(
         return
     }
 
+    // Filter rolls per tab (defined above)
     val tabLabels = listOf(
         "In Camera (${shooting.size})",
         "Dev (${awaitDev.size})",
@@ -116,11 +130,10 @@ fun ActiveScreen(
     )
 
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(
+        TabRow(
             selectedTabIndex = subTab,
             containerColor = Bg2,
             contentColor = Amber,
-            edgePadding = 0.dp,
             indicator = { positions ->
                 TabRowDefaults.SecondaryIndicator(
                     Modifier.tabIndicatorOffset(positions[subTab]), color = Amber
@@ -410,6 +423,7 @@ fun RollDetailScreen(
                         VaultButton("+ Shot", small = true,
                             onClick = {
                                 editingShot = null
+                                /* meter prefills cleared via pendingMeter* params */
                                 showShotSheet = true
                             })
                     }

@@ -48,7 +48,7 @@ private const val TAB_STATS   = 6
 @Composable
 fun DashboardScreen(
     vm: MainViewModel,
-    onNavigate: (tabIndex: Int, activeSubTab: Int) -> Unit
+    onNavigate: (tabIndex: Int, activeSubTab: Int, rollId: String?) -> Unit
 ) {
     val rolls        by vm.rolls.collectAsState()
     val films        by vm.films.collectAsState()
@@ -86,12 +86,12 @@ fun DashboardScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MiniStat("In Camera",    shooting.size.toString(),  BlueInfo,
-                    Modifier.weight(1f)) { onNavigate(TAB_ACTIVE, 0) }
+                    Modifier.weight(1f)) { onNavigate(TAB_ACTIVE, 0, null) }
                 MiniStat("Awaiting Dev", awaitDev.size.toString(),
                     if (awaitDev.isNotEmpty()) OrangeWarn else TextTertiary,
-                    Modifier.weight(1f)) { onNavigate(TAB_ACTIVE, 1) }
+                    Modifier.weight(1f)) { onNavigate(TAB_ACTIVE, 1, null) }
                 MiniStat("Developed",    developed.size.toString(), GreenOk,
-                    Modifier.weight(1f)) { onNavigate(TAB_ACTIVE, 2) }
+                    Modifier.weight(1f)) { onNavigate(TAB_ACTIVE, 2, null) }
             }
         }
 
@@ -110,12 +110,12 @@ fun DashboardScreen(
                     shotCount  = roll.shots.size,
                     totalShots = total,
                     pct        = pct,
-                    onClick    = { onNavigate(TAB_ACTIVE, 0) }
+                    onClick    = { onNavigate(TAB_ACTIVE, 0, roll.id) }
                 )
             }
             if (shooting.size > 3) {
                 item {
-                    TextButton(onClick = { onNavigate(TAB_ACTIVE, 0) },
+                    TextButton(onClick = { onNavigate(TAB_ACTIVE, 0, null) },
                         contentPadding = PaddingValues(0.dp)) {
                         Text("+${shooting.size - 3} more rolls →", color = Amber, fontSize = 12.sp)
                     }
@@ -134,7 +134,7 @@ fun DashboardScreen(
                                 color = OrangeWarn, fontSize = 13.sp)
                             Text("Tap to develop + access timers", color = TextTertiary, fontSize = 11.sp)
                         }
-                        VaultButton("→", small = true, onClick = { onNavigate(TAB_ACTIVE, 1) })
+                        VaultButton("→", small = true, onClick = { onNavigate(TAB_ACTIVE, 1, null) })
                     }
                 }
             }
@@ -157,7 +157,7 @@ fun DashboardScreen(
                         }
                     }
                     Spacer(Modifier.height(6.dp))
-                    TextButton(onClick = { onNavigate(TAB_DARK, 0) },
+                    TextButton(onClick = { onNavigate(TAB_DARK, 0, null) },
                         contentPadding = PaddingValues(0.dp)) {
                         Text("Go to Darkroom →", color = Amber, fontSize = 12.sp)
                     }
@@ -169,7 +169,7 @@ fun DashboardScreen(
         if (weatherState is WeatherState.Success) {
             val data = (weatherState as WeatherState.Success).data
             item {
-                DashCard(onClick = { onNavigate(TAB_WEATHER, 0) }) {
+                DashCard(onClick = { onNavigate(TAB_WEATHER, 0, null) }) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically) {
                         Column {
@@ -200,7 +200,7 @@ fun DashboardScreen(
                 items.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { (label, _, idx) ->
-                            QuickNavBtn(label, Modifier.weight(1f)) { onNavigate(idx, 0) }
+                            QuickNavBtn(label, Modifier.weight(1f)) { onNavigate(idx, 0, null) }
                         }
                     }
                 }

@@ -68,6 +68,7 @@ fun VaultApp() {
     var meterShutter     by remember { mutableStateOf("") }
     var meterAperture    by remember { mutableStateOf("") }
     var meterIso         by remember { mutableStateOf("") }
+    var initialRollId    by remember { mutableStateOf<String?>(null) }
     val currentTab = backStack.last()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -80,7 +81,10 @@ fun VaultApp() {
         backStack = if (tab == Tab.DASH) listOf(Tab.DASH)
         else (backStack.filter { it != tab } + tab).takeLast(10)
     }
-    fun navigateToIndex(idx: Int, subTab: Int = 0) = Tab.entries.getOrNull(idx)?.let { navigateTo(it, subTab) }
+    fun navigateToIndex(idx: Int, subTab: Int = 0, rollId: String? = null) {
+        initialRollId = rollId
+        Tab.entries.getOrNull(idx)?.let { navigateTo(it, subTab) }
+    }
 
     // Back: pop stack; from DASH let system exit
     BackHandler(enabled = backStack.size > 1) {
@@ -214,11 +218,12 @@ fun VaultApp() {
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).background(Bg)) {
                 when (currentTab) {
-                    Tab.DASH    -> DashboardScreen(vm, onNavigate = { idx, sub -> navigateToIndex(idx, sub) })
+                    Tab.DASH    -> DashboardScreen(vm, onNavigate = { idx, sub, rollId -> navigateToIndex(idx, sub, rollId) })
                     Tab.STASH   -> StashScreen(vm)
                     Tab.ACTIVE  -> ActiveScreen(
                     vm = vm,
                     initialSubTab = activeSubTab,
+                    initialRollId = initialRollId.also { initialRollId = null },
                     meterShutter = meterShutter.also { meterShutter = "" },
                     meterAperture = meterAperture.also { meterAperture = "" },
                     meterIso = meterIso.also { meterIso = "" }
