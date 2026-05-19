@@ -404,15 +404,15 @@ public final class DaggerAnalogVaultApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_analogvault_ui_MainViewModel = "com.analogvault.ui.MainViewModel";
-
       static String com_analogvault_ui_BackupViewModel = "com.analogvault.ui.BackupViewModel";
 
-      @KeepFieldType
-      MainViewModel com_analogvault_ui_MainViewModel2;
+      static String com_analogvault_ui_MainViewModel = "com.analogvault.ui.MainViewModel";
 
       @KeepFieldType
       BackupViewModel com_analogvault_ui_BackupViewModel2;
+
+      @KeepFieldType
+      MainViewModel com_analogvault_ui_MainViewModel2;
     }
   }
 
