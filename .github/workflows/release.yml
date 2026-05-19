@@ -97,24 +97,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Analog Vault ${{ github.ref_name }}
-          body: |
-            ## Analog Vault ${{ github.ref_name }}
-
-            ### Install
-            1. Download `AnalogVault-${{ github.ref_name }}.apk` below
-            2. On your Android device: Settings → Apps → Install unknown apps → allow your browser/Files app
-            3. Open the downloaded APK and tap Install
-
-            ### What's included
-            - All film/camera/lens/accessory tracking
-            - Shot log with GPS, CameraX photo capture
-            - Darkroom chemical tracker
-            - Live light meter (CameraX)
-            - OpenWeatherMap weather
-            - Local backup / restore (JSON)
-
-            ### Changelog
-            _Add your changes here, or use a CHANGELOG.md and reference it._
+          body_path: RELEASE_NOTES.md
           files: ${{ env.APK_PATH }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}  # v1.0.0-beta → prerelease
