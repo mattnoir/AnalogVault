@@ -59,7 +59,6 @@
         android:label="Analog Vault"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:testOnly="true"
         android:theme="@style/Theme.AnalogVault" >
         <activity
             android:name="com.analogvault.MainActivity"
