@@ -81,10 +81,10 @@ fun ActiveScreen(
     var pendingMeterIso      by remember { mutableStateOf(meterIso) }
     var subTab         by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 3)) }
 
-    val shooting  = rolls.filter { !it.finished && !it.developed }
-    val awaitDev  = rolls.filter { it.finished && !it.developed }
-    val awaitScan = rolls.filter { it.developed && !it.scanned }
-    val done      = rolls.filter { it.scanned }
+    val shooting  by remember { derivedStateOf { rolls.filter { !it.finished && !it.developed } } }
+    val awaitDev  by remember { derivedStateOf { rolls.filter { it.finished && !it.developed } } }
+    val awaitScan by remember { derivedStateOf { rolls.filter { it.developed && !it.scanned } } }
+    val done      by remember { derivedStateOf { rolls.filter { it.scanned } } }
 
     // Resolve sentinel: open first shooting roll when coming from meter
     if (selectedRollId == "__OPEN_FIRST_SHOOTING__" && shooting.isNotEmpty()) {
@@ -321,6 +321,7 @@ fun RollDetailScreen(
     var showScanSheet  by remember { mutableStateOf(false) }
     var confirmMsg     by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var lightboxPath   by remember { mutableStateOf<String?>(null) }
+    var showMap        by remember { mutableStateOf(false) }
     // Pre-filled values coming from the light meter
 
     LazyColumn(
@@ -416,8 +417,8 @@ fun RollDetailScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val hasGps = roll.shots.any { it.location.contains(",") }
                     if (hasGps) {
-                        VaultButton(text = "🗺 Map", small = true, ghost = true,
-                            onClick = { /* map view handled inline below */ })
+                        VaultButton(text = if (showMap) "📋 List" else "🗺 Map", small = true, ghost = true,
+                            onClick = { showMap = !showMap })
                     }
                     if (!roll.finished) {
                         VaultButton("+ Shot", small = true,
@@ -427,6 +428,22 @@ fun RollDetailScreen(
                                 showShotSheet = true
                             })
                     }
+                }
+            }
+        }
+
+        // Map view (toggled)
+        if (showMap) {
+            item(key = "map") {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(300.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, Border, RoundedCornerShape(10.dp))
+                ) {
+                    com.analogvault.ui.components.OsmMapView(
+                        shots = roll.shots,
+                        rollName = film?.name ?: ""
+                    )
                 }
             }
         }
