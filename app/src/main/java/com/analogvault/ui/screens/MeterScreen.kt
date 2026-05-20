@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -105,6 +106,7 @@ fun MeterContent(
     var cameraOn     by remember { mutableStateOf(false) }
     var cameraCtrl   by remember { mutableStateOf<CameraControl?>(null) }
     var cameraInfoObj by remember { mutableStateOf<CameraInfo?>(null) }
+    var providerRef  by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
     // ── Live metadata reading ─────────────────────────────────────────────────
     var liveReading  by remember { mutableStateOf<MeterReading?>(null) }
@@ -196,6 +198,7 @@ fun MeterContent(
                                 )
                                 cameraCtrl    = cam.cameraControl
                                 cameraInfoObj = cam.cameraInfo
+                                providerRef   = provider
                             } catch (e: Exception) { e.printStackTrace() }
                         }, ContextCompat.getMainExecutor(ctx))
                         pv
@@ -278,7 +281,12 @@ fun MeterContent(
                         }
                     )
                     VaultButton("✕ Camera", ghost = true, small = true,
-                        onClick = { cameraOn = false; liveReading = null; evLocked = false })
+                        onClick = {
+                            providerRef?.unbindAll()
+                            providerRef = null
+                            cameraCtrl = null; cameraInfoObj = null
+                            cameraOn = false; liveReading = null; evLocked = false
+                        })
                 }
                 Spacer(Modifier.height(8.dp))
 
