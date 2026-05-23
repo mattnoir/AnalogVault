@@ -78,7 +78,7 @@ public final class RollDao_Impl implements RollDao {
       @Override
       @NonNull
       protected String createQuery() {
-        return "INSERT INTO `rolls` (`id`,`filmId`,`cameraId`,`cameraLensId`,`startDate`,`finished`,`developed`,`scanned`,`shots`,`devLog`,`scanLog`) VALUES (?,?,?,?,?,?,?,?,?,?,?)";
+        return "INSERT INTO `rolls` (`id`,`filmId`,`cameraId`,`cameraLensId`,`startDate`,`finished`,`developed`,`scanned`,`shots`,`devLog`,`scanLog`,`pushIso`,`totalShots`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
       }
 
       @Override
@@ -109,12 +109,14 @@ public final class RollDao_Impl implements RollDao {
         } else {
           statement.bindString(11, _tmp_5);
         }
+        statement.bindString(12, entity.getPushIso());
+        statement.bindLong(13, entity.getTotalShots());
       }
     }, new EntityDeletionOrUpdateAdapter<Roll>(__db) {
       @Override
       @NonNull
       protected String createQuery() {
-        return "UPDATE `rolls` SET `id` = ?,`filmId` = ?,`cameraId` = ?,`cameraLensId` = ?,`startDate` = ?,`finished` = ?,`developed` = ?,`scanned` = ?,`shots` = ?,`devLog` = ?,`scanLog` = ? WHERE `id` = ?";
+        return "UPDATE `rolls` SET `id` = ?,`filmId` = ?,`cameraId` = ?,`cameraLensId` = ?,`startDate` = ?,`finished` = ?,`developed` = ?,`scanned` = ?,`shots` = ?,`devLog` = ?,`scanLog` = ?,`pushIso` = ?,`totalShots` = ? WHERE `id` = ?";
       }
 
       @Override
@@ -145,7 +147,9 @@ public final class RollDao_Impl implements RollDao {
         } else {
           statement.bindString(11, _tmp_5);
         }
-        statement.bindString(12, entity.getId());
+        statement.bindString(12, entity.getPushIso());
+        statement.bindLong(13, entity.getTotalShots());
+        statement.bindString(14, entity.getId());
       }
     });
   }
@@ -232,6 +236,8 @@ public final class RollDao_Impl implements RollDao {
           final int _cursorIndexOfShots = CursorUtil.getColumnIndexOrThrow(_cursor, "shots");
           final int _cursorIndexOfDevLog = CursorUtil.getColumnIndexOrThrow(_cursor, "devLog");
           final int _cursorIndexOfScanLog = CursorUtil.getColumnIndexOrThrow(_cursor, "scanLog");
+          final int _cursorIndexOfPushIso = CursorUtil.getColumnIndexOrThrow(_cursor, "pushIso");
+          final int _cursorIndexOfTotalShots = CursorUtil.getColumnIndexOrThrow(_cursor, "totalShots");
           final List<Roll> _result = new ArrayList<Roll>(_cursor.getCount());
           while (_cursor.moveToNext()) {
             final Roll _item;
@@ -277,7 +283,11 @@ public final class RollDao_Impl implements RollDao {
               _tmp_5 = _cursor.getString(_cursorIndexOfScanLog);
             }
             _tmpScanLog = __scanLogConverter.to(_tmp_5);
-            _item = new Roll(_tmpId,_tmpFilmId,_tmpCameraId,_tmpCameraLensId,_tmpStartDate,_tmpFinished,_tmpDeveloped,_tmpScanned,_tmpShots,_tmpDevLog,_tmpScanLog);
+            final String _tmpPushIso;
+            _tmpPushIso = _cursor.getString(_cursorIndexOfPushIso);
+            final int _tmpTotalShots;
+            _tmpTotalShots = _cursor.getInt(_cursorIndexOfTotalShots);
+            _item = new Roll(_tmpId,_tmpFilmId,_tmpCameraId,_tmpCameraLensId,_tmpStartDate,_tmpFinished,_tmpDeveloped,_tmpScanned,_tmpShots,_tmpDevLog,_tmpScanLog,_tmpPushIso,_tmpTotalShots);
             _result.add(_item);
           }
           return _result;

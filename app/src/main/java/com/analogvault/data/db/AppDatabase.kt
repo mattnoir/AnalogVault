@@ -11,7 +11,7 @@ import com.analogvault.data.model.*
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(

@@ -10,6 +10,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import kotlinx.coroutines.launch
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,30 +33,35 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun DarkroomScreen(vm: MainViewModel) {
-    var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Chemistry", "Timers")
+    val pagerState = rememberPagerState { tabs.size }
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
         TabRow(
-            selectedTabIndex = tab,
+            selectedTabIndex = pagerState.currentPage,
             containerColor = Bg2,
             contentColor = Amber,
             indicator = { positions ->
                 TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(positions[tab]), color = Amber
+                    Modifier.tabIndicatorOffset(positions[pagerState.currentPage]), color = Amber
                 )
             }
         ) {
             tabs.forEachIndexed { i, t ->
-                Tab(selected = tab == i, onClick = { tab = i },
+                Tab(selected = pagerState.currentPage == i,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
                     text = { Text(t, fontSize = 13.sp) },
                     selectedContentColor = Amber,
                     unselectedContentColor = TextTertiary)
             }
         }
-        when (tab) {
-            0 -> ChemistryTab(vm)
-            1 -> TimersTab(vm)
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when (page) {
+                0 -> ChemistryTab(vm)
+                1 -> TimersTab(vm)
+                else -> ChemistryTab(vm)
+            }
         }
     }
 }

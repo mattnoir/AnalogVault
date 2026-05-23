@@ -1,6 +1,7 @@
 package com.analogvault.ui.screens
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +15,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import com.analogvault.ui.MainViewModel
+import kotlinx.coroutines.launch
 import com.analogvault.ui.Stats
 import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
@@ -25,27 +29,32 @@ fun StatsScreen(vm: MainViewModel) {
     val rolls by vm.rolls.collectAsState()
     val films by vm.films.collectAsState()
 
-    var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Numbers", "Map")
+    val pagerState = rememberPagerState { tabs.size }
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
         TabRow(
-            selectedTabIndex = tab,
+            selectedTabIndex = pagerState.currentPage,
             containerColor = Bg2, contentColor = Amber,
             indicator = { positions ->
-                TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[tab]), color = Amber)
+                TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(positions[pagerState.currentPage]), color = Amber)
             }
         ) {
             tabs.forEachIndexed { i, t ->
-                Tab(selected = tab == i, onClick = { tab = i },
+                Tab(selected = pagerState.currentPage == i,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
                     text = { Text(t, fontSize = 13.sp) },
                     selectedContentColor = Amber, unselectedContentColor = TextTertiary)
             }
         }
 
-        when (tab) {
-            0 -> StatsNumbers(stats)
-            1 -> StatsMap(vm)
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when (page) {
+                0 -> StatsNumbers(stats)
+                1 -> StatsMap(vm)
+                else -> StatsNumbers(stats)
+            }
         }
     }
 }
@@ -202,33 +211,68 @@ fun StatBox(label: String, value: String, color: androidx.compose.ui.graphics.Co
 
 @Composable
 fun MonthBarChart(stats: Stats) {
-    val maxVal = stats.byMonth.maxOfOrNull { it.value } ?: 1
-    val chartH = 100.dp
+    if (stats.byMonth.isEmpty()) return
+    val maxVal = (stats.byMonth.maxOfOrNull { it.value } ?: 1).coerceAtLeast(1)
+    val amberColor = Amber
+    val bgColor = Bg3
+    val textColor = TextTertiary
+
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg2)
-            .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp)
+            .padding(12.dp)
     ) {
         Column {
-            Row(Modifier.fillMaxWidth().height(chartH),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalAlignment = Alignment.Bottom) {
-                stats.byMonth.forEach { (_, count) ->
+            Text("Shots per month", color = TextTertiary, fontSize = 10.sp)
+            Spacer(Modifier.height(8.dp))
+            // Use Canvas for crisp bars — avoids Compose layout overhead per bar
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier.fillMaxWidth().height(120.dp)
+            ) {
+                val n = stats.byMonth.size
+                if (n == 0) return@Canvas
+                val barW = (size.width - (n - 1) * 4.dp.toPx()) / n
+                stats.byMonth.forEachIndexed { i, (_, count) ->
                     val frac = count.toFloat() / maxVal
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Bottom) {
-                        Text("$count", color = TextTertiary, fontSize = 6.sp)
-                        Spacer(Modifier.height(2.dp))
-                        Box(Modifier.fillMaxWidth().height(chartH * frac)
-                            .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                            .background(Amber))
+                    val barH = (size.height - 20.dp.toPx()) * frac
+                    val x = i * (barW + 4.dp.toPx())
+                    val y = size.height - 20.dp.toPx() - barH
+                    // Bar background (empty)
+                    drawRoundRect(
+                        color = bgColor,
+                        topLeft = androidx.compose.ui.geometry.Offset(x, 0f),
+                        size = androidx.compose.ui.geometry.Size(barW, size.height - 20.dp.toPx()),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                    )
+                    // Filled bar
+                    if (barH > 0) {
+                        drawRoundRect(
+                            color = amberColor,
+                            topLeft = androidx.compose.ui.geometry.Offset(x, y),
+                            size = androidx.compose.ui.geometry.Size(barW, barH),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                        )
                     }
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                stats.byMonth.forEach { (month, _) ->
-                    Text(month.takeLast(2), color = TextTertiary, fontSize = 6.sp,
-                        modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            // Labels row
+            Row(Modifier.fillMaxWidth()) {
+                stats.byMonth.forEach { (month, count) ->
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            // Show MMM from YYYY-MM
+                            month.substringAfter("-").let {
+                                listOf("","Jan","Feb","Mar","Apr","May","Jun",
+                                    "Jul","Aug","Sep","Oct","Nov","Dec")
+                                    .getOrNull(it.toIntOrNull() ?: 0) ?: it
+                            },
+                            color = textColor, fontSize = 8.sp
+                        )
+                        Text("$count", color = Amber, fontSize = 8.sp)
+                    }
                 }
             }
         }

@@ -23,6 +23,9 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import kotlinx.coroutines.launch
 
 // ─── Format options (replaces "shots") ───────────────────────────────────────
 val FILM_FORMATS_DISPLAY = listOf("135 (35mm)", "120", "220", "4x5", "8x10", "Super 8", "110", "126", "Instant")
@@ -35,32 +38,36 @@ fun StashScreen(vm: MainViewModel) {
     val lenses      by vm.lenses.collectAsState()
     val accessories by vm.accessories.collectAsState()
 
-    var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Film", "Cameras", "Lenses", "Accessories")
+    val pagerState = rememberPagerState { tabs.size }
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
         TabRow(
-            selectedTabIndex = tab,
+            selectedTabIndex = pagerState.currentPage,
             containerColor = Bg2,
             contentColor = Amber,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(tabPositions[tab]), color = Amber
+                    Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]), color = Amber
                 )
             }
         ) {
             tabs.forEachIndexed { i, t ->
-                Tab(selected = tab == i, onClick = { tab = i },
+                Tab(selected = pagerState.currentPage == i,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
                     text = { Text(t, fontSize = 12.sp) },
                     selectedContentColor = Amber,
                     unselectedContentColor = TextTertiary)
             }
         }
-        when (tab) {
-            0 -> FilmStashTab(films, vm)
-            1 -> CameraStashTab(cameras, vm)
-            2 -> LensStashTab(lenses, vm)
-            3 -> AccessoryStashTab(accessories, vm)
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when (page) {
+                0 -> FilmStashTab(films, vm)
+                1 -> CameraStashTab(cameras, vm)
+                2 -> LensStashTab(lenses, vm)
+                3 -> AccessoryStashTab(accessories, vm)
+            }
         }
     }
 }
