@@ -141,7 +141,11 @@ data class Roll(
     val scanned: Boolean = false,
     val shots: List<Shot> = emptyList(),
     val devLog: DevLog? = null,
-    val scanLog: ScanLog? = null
+    val scanLog: ScanLog? = null,
+    /** ISO override — if blank, use film box speed */
+    val pushIso: String = "",
+    /** Total exposures on this roll */
+    val totalShots: Int = 36
 )
 
 // ─── Chemical ─────────────────────────────────────────────────────────────────

@@ -45,19 +45,19 @@ public final class AppDatabase_Impl extends AppDatabase {
   @Override
   @NonNull
   protected SupportSQLiteOpenHelper createOpenHelper(@NonNull final DatabaseConfiguration config) {
-    final SupportSQLiteOpenHelper.Callback _openCallback = new RoomOpenHelper(config, new RoomOpenHelper.Delegate(1) {
+    final SupportSQLiteOpenHelper.Callback _openCallback = new RoomOpenHelper(config, new RoomOpenHelper.Delegate(2) {
       @Override
       public void createAllTables(@NonNull final SupportSQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS `films` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT NOT NULL, `type` TEXT NOT NULL, `iso` INTEGER NOT NULL, `shots` INTEGER NOT NULL, `expiryDate` TEXT NOT NULL, `storage` TEXT NOT NULL, `quantity` INTEGER NOT NULL, `notes` TEXT NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `cameras` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT NOT NULL, `format` TEXT NOT NULL, `lensSystem` TEXT NOT NULL, `condition` TEXT NOT NULL, `mount` TEXT NOT NULL, `adapterMounts` TEXT NOT NULL, `notes` TEXT NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `lenses` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT NOT NULL, `focalLength` TEXT NOT NULL, `maxAperture` TEXT NOT NULL, `mount` TEXT NOT NULL, `condition` TEXT NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `accessories` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `brand` TEXT NOT NULL, `condition` TEXT NOT NULL, `notes` TEXT NOT NULL, PRIMARY KEY(`id`))");
-        db.execSQL("CREATE TABLE IF NOT EXISTS `rolls` (`id` TEXT NOT NULL, `filmId` TEXT NOT NULL, `cameraId` TEXT NOT NULL, `cameraLensId` TEXT NOT NULL, `startDate` TEXT NOT NULL, `finished` INTEGER NOT NULL, `developed` INTEGER NOT NULL, `scanned` INTEGER NOT NULL, `shots` TEXT NOT NULL, `devLog` TEXT, `scanLog` TEXT, PRIMARY KEY(`id`))");
+        db.execSQL("CREATE TABLE IF NOT EXISTS `rolls` (`id` TEXT NOT NULL, `filmId` TEXT NOT NULL, `cameraId` TEXT NOT NULL, `cameraLensId` TEXT NOT NULL, `startDate` TEXT NOT NULL, `finished` INTEGER NOT NULL, `developed` INTEGER NOT NULL, `scanned` INTEGER NOT NULL, `shots` TEXT NOT NULL, `devLog` TEXT, `scanLog` TEXT, `pushIso` TEXT NOT NULL, `totalShots` INTEGER NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `chemicals` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `dilution` TEXT NOT NULL, `volume` TEXT NOT NULL, `volumeUnit` TEXT NOT NULL, `mixDate` TEXT NOT NULL, `maxRolls` TEXT NOT NULL, `baseDevTime` TEXT NOT NULL, `timeAdjPerRoll` TEXT NOT NULL, `manualRolls` INTEGER NOT NULL, `notes` TEXT NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `zoom_levels` (`id` TEXT NOT NULL, `label` TEXT NOT NULL, `mm` INTEGER NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `settings` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)");
-        db.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1c7bede349ec9ce295832511130ce84f')");
+        db.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2dd961faac6c6032ae97841276a3ef35')");
       }
 
       @Override
@@ -185,7 +185,7 @@ public final class AppDatabase_Impl extends AppDatabase {
                   + " Expected:\n" + _infoAccessories + "\n"
                   + " Found:\n" + _existingAccessories);
         }
-        final HashMap<String, TableInfo.Column> _columnsRolls = new HashMap<String, TableInfo.Column>(11);
+        final HashMap<String, TableInfo.Column> _columnsRolls = new HashMap<String, TableInfo.Column>(13);
         _columnsRolls.put("id", new TableInfo.Column("id", "TEXT", true, 1, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsRolls.put("filmId", new TableInfo.Column("filmId", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsRolls.put("cameraId", new TableInfo.Column("cameraId", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
@@ -197,6 +197,8 @@ public final class AppDatabase_Impl extends AppDatabase {
         _columnsRolls.put("shots", new TableInfo.Column("shots", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsRolls.put("devLog", new TableInfo.Column("devLog", "TEXT", false, 0, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsRolls.put("scanLog", new TableInfo.Column("scanLog", "TEXT", false, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsRolls.put("pushIso", new TableInfo.Column("pushIso", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsRolls.put("totalShots", new TableInfo.Column("totalShots", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
         final HashSet<TableInfo.ForeignKey> _foreignKeysRolls = new HashSet<TableInfo.ForeignKey>(0);
         final HashSet<TableInfo.Index> _indicesRolls = new HashSet<TableInfo.Index>(0);
         final TableInfo _infoRolls = new TableInfo("rolls", _columnsRolls, _foreignKeysRolls, _indicesRolls);
@@ -255,7 +257,7 @@ public final class AppDatabase_Impl extends AppDatabase {
         }
         return new RoomOpenHelper.ValidationResult(true, null);
       }
-    }, "1c7bede349ec9ce295832511130ce84f", "2500811fdc5013783ed3bde7002e2825");
+    }, "2dd961faac6c6032ae97841276a3ef35", "4e2c6fd8830b6fa65b3db700d320d615");
     final SupportSQLiteOpenHelper.Configuration _sqliteConfig = SupportSQLiteOpenHelper.Configuration.builder(config.context).name(config.name).callback(_openCallback).build();
     final SupportSQLiteOpenHelper _helper = config.sqliteOpenHelperFactory.create(_sqliteConfig);
     return _helper;

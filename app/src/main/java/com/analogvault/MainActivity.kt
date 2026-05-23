@@ -105,7 +105,9 @@ fun VaultApp() {
     }
 
     // Disable swipe-to-open on tabs where horizontal gestures are needed (map, camera)
-    val gestureEnabled = false  // burger button only — swipe conflicts with map/camera/scroll
+    // When drawer is open: gestures enabled (tap outside / swipe to close works)
+    // When drawer is closed: gestures disabled (no accidental swipe-open on map/camera)
+    val gestureEnabled = drawerState.isOpen
 
     ModalNavigationDrawer(
         drawerState = drawerState,

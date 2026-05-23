@@ -11,7 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -87,9 +87,9 @@ fun VaultCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .graphicsLayer { } // promote to hardware layer - avoids CPU re-render on scroll
             .clip(RoundedCornerShape(10.dp))
             .background(Bg2)
-            .border(1.dp, Border, RoundedCornerShape(10.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(12.dp),
         content = content

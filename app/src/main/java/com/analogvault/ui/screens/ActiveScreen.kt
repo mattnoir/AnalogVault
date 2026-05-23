@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
@@ -131,21 +133,30 @@ fun ActiveScreen(
         "Done (${done.size})"
     )
 
+    val pagerState = rememberPagerState(initialPage = subTab.coerceIn(0, 3)) { 4 }
+    val scope = rememberCoroutineScope()
+
+    // Sync pagerState back to subTab for external navigation
+    LaunchedEffect(pagerState.currentPage) { subTab = pagerState.currentPage }
+    LaunchedEffect(subTab) {
+        if (pagerState.currentPage != subTab) pagerState.animateScrollToPage(subTab)
+    }
+
     Column(Modifier.fillMaxSize()) {
         TabRow(
-            selectedTabIndex = subTab,
+            selectedTabIndex = pagerState.currentPage,
             containerColor = Bg2,
             contentColor = Amber,
             indicator = { positions ->
                 TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(positions[subTab]), color = Amber
+                    Modifier.tabIndicatorOffset(positions[pagerState.currentPage]), color = Amber
                 )
             }
         ) {
             tabLabels.forEachIndexed { i, label ->
                 Tab(
-                    selected = subTab == i,
-                    onClick = { subTab = i },
+                    selected = pagerState.currentPage == i,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
                     text = { Text(label, fontSize = 11.sp) },
                     selectedContentColor = Amber,
                     unselectedContentColor = TextTertiary
@@ -153,7 +164,8 @@ fun ActiveScreen(
             }
         }
 
-        val currentRolls = when (subTab) {
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        val currentRolls = when (page) {
             0 -> shooting; 1 -> awaitDev; 2 -> awaitScan; 3 -> done; else -> emptyList()
         }
 
@@ -178,7 +190,7 @@ fun ActiveScreen(
             items(currentRolls, key = { it.id }) { roll ->
                 val film  = films.find { it.id == roll.filmId }
                 val cam   = cameras.find { it.id == roll.cameraId }
-                val total = film?.shots ?: 36
+                val total = roll.totalShots.takeIf { it > 0 } ?: film?.shots ?: 36
                 val pct   = (roll.shots.size.toFloat() / total).coerceIn(0f, 1f)
 
                 RollListCard(
@@ -188,7 +200,7 @@ fun ActiveScreen(
                 )
             }
 
-            if (subTab == 0) {
+            if (page == 0) {
                 item {
                     VaultButton("+ Load Film into Camera",
                         modifier = Modifier.fillMaxWidth(),
@@ -196,6 +208,7 @@ fun ActiveScreen(
                 }
             }
         }
+        } // HorizontalPager page
     }
 
     if (showLoadSheet) {
@@ -259,11 +272,23 @@ fun LoadRollSheet(
     var cameraId  by remember { mutableStateOf("") }
     var lensId    by remember { mutableStateOf("") }
     var startDate by remember { mutableStateOf(SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())) }
+    var pushIso   by remember { mutableStateOf("") }   // blank = box speed
+    var totalShots by remember { mutableStateOf("36") }
 
-    val filmName   = films.find { it.id == filmId }?.name ?: ""
+    val selFilm    = films.find { it.id == filmId }
+    val filmName   = selFilm?.name ?: ""
     val cameraName = cameras.find { it.id == cameraId }?.name ?: ""
     val lensName   = lenses.find { it.id == lensId }?.name ?: ""
     val selCamera  = cameras.find { it.id == cameraId }
+
+    // Shot count options depend on film format (stored in shots field as string)
+    val shotOptions = remember(filmId) {
+        when (selFilm?.shots?.toString()) {
+            in listOf("8","10","12","16") -> listOf("8","10","12","16")   // 120
+            in listOf("16","20","24","32") -> listOf("16","20","24","32") // 220
+            else -> listOf("12","24","36","72")
+        }
+    }
 
     VaultSheet("Load Film into Camera", onDismiss) {
         VaultDropdown("Film Stock", filmName, films.map { it.name },
@@ -285,11 +310,33 @@ fun LoadRollSheet(
             Spacer(Modifier.height(10.dp))
         }
         VaultTextField(startDate, { startDate = it }, "Load Date (YYYY-MM-DD)")
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            VaultDropdown(
+                "Exposures", totalShots, shotOptions,
+                { totalShots = it }, modifier = Modifier.weight(1f)
+            )
+            VaultDropdown(
+                "Shoot at ISO",
+                if (pushIso.isBlank()) "Box (${selFilm?.iso ?: "?"})" else pushIso,
+                listOf("Box (${selFilm?.iso ?: "?"})") + Constants.ISOS.map { it.toString() },
+                { pushIso = if (it.startsWith("Box")) "" else it },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (pushIso.isNotBlank() && selFilm != null) {
+            val stops = kotlin.math.log2((selFilm.iso.toDouble()) / pushIso.toDouble())
+            val direction = if (stops > 0) "push +${"%.0f".format(stops)}" else "pull ${"%.0f".format(stops)}"
+            Spacer(Modifier.height(4.dp))
+            Text("$direction stop${if (kotlin.math.abs(stops) != 1.0) "s" else ""}",
+                color = if (stops > 0) OrangeWarn else BlueInfo, fontSize = 11.sp)
+        }
         Spacer(Modifier.height(16.dp))
         VaultButton("Load Roll", modifier = Modifier.fillMaxWidth(), onClick = {
             if (filmId.isNotBlank() && cameraId.isNotBlank()) {
                 onSave(Roll(id = uid(), filmId = filmId, cameraId = cameraId,
-                    cameraLensId = lensId, startDate = startDate))
+                    cameraLensId = lensId, startDate = startDate,
+                    pushIso = pushIso, totalShots = totalShots.toIntOrNull() ?: 36))
             }
         })
     }
@@ -349,6 +396,11 @@ fun RollDetailScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     VaultTag("Loaded ${formatDate(roll.startDate)}", textColor = BlueInfo)
                     film?.type?.split(" ")?.firstOrNull()?.let { VaultTag(it) }
+                    if (roll.pushIso.isNotBlank() && film != null) {
+                        val stops = kotlin.math.log2(film.iso.toDouble() / roll.pushIso.toDouble())
+                        val label = if (stops > 0) "Push +${"%.0f".format(stops)}" else "Pull ${"%.0f".format(kotlin.math.abs(stops))}"
+                        VaultTag("$label @ ISO ${roll.pushIso}", textColor = OrangeWarn)
+                    }
                     if (roll.finished)  VaultTag("Finished",  textColor = Amber)
                     if (roll.developed) VaultTag("Developed", textColor = GreenOk)
                     if (roll.scanned)   VaultTag("Scanned",   textColor = GreenOk)
@@ -558,8 +610,10 @@ fun ShotSheet(
     val rollCamera = remember(roll, cameras) { cameras.find { it.id == roll.cameraId } }
     val rollLens   = remember(roll, lenses)  { lenses.find  { it.id == roll.cameraLensId } }
 
-    // ISO defaults to film box speed
-    val defaultIso = prefillIso.ifBlank { rollFilm?.iso?.toString() ?: "" }
+    // ISO: meter prefill > roll push ISO > film box speed
+    val defaultIso = prefillIso.ifBlank {
+        roll.pushIso.ifBlank { rollFilm?.iso?.toString() ?: "" }
+    }
 
     // Compatible lenses for this camera (filtered by mount)
     val compatLenses = remember(rollCamera, lenses) {
