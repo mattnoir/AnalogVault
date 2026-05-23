@@ -112,7 +112,9 @@ fun ActiveScreen(
         val film = films.find { it.id == selectedRoll.filmId }
         RollDetailScreen(
             roll = selectedRoll, film = film,
-            cameras = cameras, lenses = lenses, vm = vm,
+            cameras = cameras, lenses = lenses,
+            films = films,
+            vm = vm,
             onBack = { selectedRollId = null },
             pendingMeterShutter  = pendingMeterShutter.also  { pendingMeterShutter = "" },
             pendingMeterAperture = pendingMeterAperture.also { pendingMeterAperture = "" },
@@ -299,6 +301,7 @@ fun LoadRollSheet(
 fun RollDetailScreen(
     roll: Roll, film: FilmStock?,
     cameras: List<VaultCamera>, lenses: List<Lens>,
+    films: List<FilmStock> = emptyList(),
     vm: MainViewModel, onBack: () -> Unit,
     pendingMeterShutter: String = "",
     pendingMeterAperture: String = "",
@@ -502,7 +505,7 @@ fun RollDetailScreen(
     if (showShotSheet) {
         ShotSheet(
             ed = editingShot, roll = roll, lenses = lenses,
-            vm = vm,
+            cameras = cameras, films = films, vm = vm,
             prefillShutter   = if (editingShot == null) pendingMeterShutter else "",
             prefillAperture  = if (editingShot == null) pendingMeterAperture else "",
             prefillIso       = if (editingShot == null) pendingMeterIso else "",
@@ -540,42 +543,80 @@ fun RollDetailScreen(
 
 @Composable
 fun ShotSheet(
-    ed: Shot?, roll: Roll, lenses: List<Lens>, vm: MainViewModel,
+    ed: Shot?, roll: Roll, lenses: List<Lens>,
+    cameras: List<VaultCamera> = emptyList(),
+    films: List<FilmStock> = emptyList(),
+    vm: MainViewModel,
     prefillShutter: String = "", prefillAperture: String = "", prefillIso: String = "",
     onDismiss: () -> Unit, onSave: (Shot) -> Unit
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
+    // Derive defaults from roll
+    val rollFilm   = remember(roll, films)   { films.find   { it.id == roll.filmId } }
+    val rollCamera = remember(roll, cameras) { cameras.find { it.id == roll.cameraId } }
+    val rollLens   = remember(roll, lenses)  { lenses.find  { it.id == roll.cameraLensId } }
+
+    // ISO defaults to film box speed
+    val defaultIso = prefillIso.ifBlank { rollFilm?.iso?.toString() ?: "" }
+
+    // Compatible lenses for this camera (filtered by mount)
+    val compatLenses = remember(rollCamera, lenses) {
+        if (rollCamera == null || rollCamera.lensSystem == "fixed") emptyList()
+        else lenses.filter { l ->
+            Constants.mountCompat(rollCamera.mount, l.mount, rollCamera.adapterMounts) != "incompatible"
+        }
+    }
+
+    // If camera has fixed lens or one lens attached, pre-select it
+    val defaultLensName = remember(roll, lenses) {
+        if (roll.cameraLensId.isNotBlank()) lenses.find { it.id == roll.cameraLensId }?.name ?: ""
+        else ""
+    }
+
     var shutter   by remember { mutableStateOf(ed?.shutter   ?: prefillShutter) }
     var aperture  by remember { mutableStateOf(ed?.aperture  ?: prefillAperture) }
-    var iso       by remember { mutableStateOf(ed?.iso       ?: prefillIso) }
-    var lensName  by remember { mutableStateOf(ed?.lens      ?: "") }
+    var iso       by remember { mutableStateOf(ed?.iso       ?: defaultIso) }
+    var lensName  by remember { mutableStateOf(ed?.lens      ?: defaultLensName) }
     var location  by remember { mutableStateOf(ed?.location  ?: "") }
     var notes     by remember { mutableStateOf(ed?.notes     ?: "") }
     var weather   by remember { mutableStateOf(ed?.weather   ?: "") }
-    // Date + time
-    var date      by remember { mutableStateOf(ed?.date ?: run {
-        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
-    }) }
+    var date      by remember { mutableStateOf(ed?.date ?: SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())) }
     var thumbPath by remember { mutableStateOf(ed?.photoThumbPath ?: "") }
     var gpsLoading by remember { mutableStateOf(false) }
     var showCamera by remember { mutableStateOf(false) }
 
-    // Auto-fill weather from vm.weatherState
+    // Max aperture from selected lens
+    val selectedLens = remember(lensName, lenses) { lenses.find { it.name == lensName } }
+    val apertureOptions = remember(selectedLens) {
+        val maxAp = selectedLens?.maxAperture?.toDoubleOrNull()
+        listOf("") + Constants.APERTURES
+            .filter { maxAp == null || it >= maxAp - 0.01 }
+            .map { ap -> if (ap == ap.toLong().toDouble()) "f/${ap.toInt()}" else "f/$ap" }
+    }
+
+    // Auto-fill weather
     val weatherState by vm.weatherState.collectAsState()
     LaunchedEffect(Unit) {
         if (weather.isBlank()) {
-            val ws = weatherState
-            if (ws is com.analogvault.ui.WeatherState.Success) {
-                val d = ws.data
+            (weatherState as? com.analogvault.ui.WeatherState.Success)?.data?.let { d ->
                 weather = buildString {
                     append("${"%.0f".format(d.main.temp)}°C")
                     d.weather.firstOrNull()?.description?.let { append(", $it") }
                     append(", ${d.clouds.all}% cloud")
-                    if (d.wind.speed > 0) append(", wind ${d.wind.speed}m/s")
+                    if (d.wind.speed > 0) append(", wind ${"%.1f".format(d.wind.speed)}m/s")
                 }
             }
+        }
+    }
+
+    // When lens changes, reset aperture if it's now out of range
+    LaunchedEffect(lensName) {
+        val maxAp = selectedLens?.maxAperture?.toDoubleOrNull()
+        val curAp = aperture.toDoubleOrNull()
+        if (maxAp != null && curAp != null && curAp < maxAp - 0.01) {
+            aperture = "%.1f".format(maxAp).trimEnd('0').trimEnd('.')
         }
     }
 
@@ -590,7 +631,11 @@ fun ShotSheet(
     ) { perms ->
         if (perms.values.any { it }) {
             gpsLoading = true
-            scope.launch { location = getGps(context) ?: location; gpsLoading = false }
+            scope.launch {
+                // Use high-accuracy GPS with longer timeout for better fix
+                location = getGpsHighAccuracy(context) ?: location
+                gpsLoading = false
+            }
         }
     }
 
@@ -599,34 +644,36 @@ fun ShotSheet(
             VaultDropdown("Shutter", shutter, listOf("") + Constants.SHUTTER_SPEEDS,
                 { shutter = it }, modifier = Modifier.weight(1f))
             VaultDropdown("Aperture", if (aperture.isBlank()) "" else "f/$aperture",
-                listOf("") + Constants.APERTURES.map { "f/$it" },
+                apertureOptions,
                 { aperture = it.removePrefix("f/") }, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             VaultDropdown("ISO", iso, listOf("") + Constants.ISOS.map { it.toString() },
                 { iso = it }, modifier = Modifier.weight(1f))
-            val lensOptions = listOf("") + lenses.map { it.name }
+            // Lens: show compatible lenses if camera has interchangeable mount, else all
+            val lensOptions = listOf("") + (compatLenses.ifEmpty { lenses }).map { it.name }
             VaultDropdown("Lens", lensName, lensOptions, { lensName = it }, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             VaultTextField(location, { location = it }, "Location (GPS)", modifier = Modifier.weight(1f))
-            IconButton(onClick = {
-                locationPermLauncher.launch(arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ))
-            }) {
-                if (gpsLoading) CircularProgressIndicator(Modifier.size(18.dp), color = Amber, strokeWidth = 2.dp)
-                else Icon(imageVector = Icons.Default.LocationOn, contentDescription = "GPS", tint = Amber)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = {
+                    locationPermLauncher.launch(arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ))
+                }) {
+                    if (gpsLoading) CircularProgressIndicator(Modifier.size(18.dp), color = Amber, strokeWidth = 2.dp)
+                    else Icon(imageVector = Icons.Default.LocationOn, contentDescription = "GPS", tint = Amber)
+                }
+                if (gpsLoading) Text("Getting fix…", color = TextTertiary, fontSize = 8.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
         VaultTextField(weather, { weather = it }, "Weather notes")
-        Spacer(Modifier.height(4.dp))
-        Text("Auto-filled from Weather tab if available", color = TextTertiary, fontSize = 10.sp)
         Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
         Spacer(Modifier.height(10.dp))
@@ -788,14 +835,27 @@ private fun saveUriToCache(context: Context, uri: Uri): String {
     return file.absolutePath
 }
 
-private suspend fun getGps(context: Context): String? =
+private suspend fun getGps(context: Context): String? = getGpsHighAccuracy(context)
+
+private suspend fun getGpsHighAccuracy(context: Context): String? =
     suspendCancellableCoroutine { cont ->
         val client = LocationServices.getFusedLocationProviderClient(context)
         val cts    = CancellationTokenSource()
         try {
-            client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, cts.token)
+            // Use HIGH_ACCURACY — waits for GPS satellite fix, much more precise
+            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
                 .addOnSuccessListener { loc ->
-                    cont.resume(if (loc != null) "%.5f, %.5f".format(loc.latitude, loc.longitude) else null)
+                    if (loc != null) {
+                        // Format to 6 decimal places (~1m precision)
+                        cont.resume("%.6f, %.6f".format(loc.latitude, loc.longitude))
+                    } else {
+                        // Fallback to last known location
+                        try {
+                            client.lastLocation.addOnSuccessListener { last ->
+                                cont.resume(if (last != null) "%.6f, %.6f".format(last.latitude, last.longitude) else null)
+                            }.addOnFailureListener { cont.resume(null) }
+                        } catch (e: SecurityException) { cont.resume(null) }
+                    }
                 }
                 .addOnFailureListener { cont.resume(null) }
         } catch (e: SecurityException) { cont.resume(null) }

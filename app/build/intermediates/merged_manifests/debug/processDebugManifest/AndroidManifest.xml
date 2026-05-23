@@ -15,8 +15,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <!-- osmdroid tile cache -->
+        android:maxSdkVersion="32" /> <!-- osmdroid tile cache -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
@@ -59,9 +58,12 @@
         android:label="Analog Vault"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AnalogVault" >
+        android:testOnly="true"
+        android:theme="@style/Theme.AnalogVault"
+        android:usesCleartextTraffic="true" >
         <activity
             android:name="com.analogvault.MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|smallestScreenSize"
             android:exported="true"
             android:windowSoftInputMode="adjustResize" >
             <intent-filter>
@@ -80,8 +82,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <!-- No Google Maps API key needed — using OpenStreetMap (osmdroid) -->
 
         <service
             android:name="androidx.camera.core.impl.MetadataHolderService"
