@@ -7,12 +7,28 @@ import kotlin.math.pow
 object Constants {
     val STORAGE_TYPES = listOf("Shelf","Fridge","Freezer","Cool Dark Place","Custom")
     val FILM_TYPES = listOf("Color Negative (C-41)","Black & White","Slide (E-6)","Infrared","Instant")
-    val ISOS = listOf(25,50,64,100,160,200,400,800,1600,3200,6400)
+    val ISOS = listOf(25,32,40,50,64,80,100,125,160,200,250,320,400,500,640,800,1000,1250,1600,2000,2500,3200,4000,5000,6400,12800,25600)
     val SHUTTER_SPEEDS = listOf(
-        "1/4000","1/2000","1/1000","1/500","1/250","1/125","1/60","1/30",
-        "1/15","1/8","1/4","1/2","1s","2s","4s","8s","15s","30s","B"
+        "1/8000","1/6400","1/5000",
+        "1/4000","1/3200","1/2500",
+        "1/2000","1/1600","1/1250",
+        "1/1000","1/800","1/640",
+        "1/500","1/400","1/320",
+        "1/250","1/200","1/160",
+        "1/125","1/100","1/80",
+        "1/60","1/50","1/40",
+        "1/30","1/25","1/20",
+        "1/15","1/13","1/10",
+        "1/8","1/6","1/5",
+        "1/4","1/3","0.4s",
+        "1/2","0.6s","0.8s",
+        "1s","1.3s","1.6s",
+        "2s","2.5s","3s",
+        "4s","5s","6s",
+        "8s","10s","13s",
+        "15s","20s","25s","30s","B"
     )
-    val APERTURES = listOf(1.0,1.2,1.4,1.8,2.0,2.8,3.5,4.0,5.6,8.0,11.0,16.0,22.0,32.0)
+    val APERTURES = listOf(0.95,1.0,1.1,1.2,1.4,1.6,1.8,2.0,2.2,2.5,2.8,3.2,3.5,4.0,4.5,5.0,5.6,6.3,7.1,8.0,9.0,10.0,11.0,13.0,14.0,16.0,18.0,20.0,22.0,25.0,29.0,32.0)
     val METERING_TYPES = listOf("Evaluative/Matrix","Center-Weighted","Spot","Highlight-Weighted")
     val DEVELOP_PROCESSES = listOf("C-41 (Color)","B&W (Standard)","B&W (Stand)","B&W (Semi-Stand)","E-6 (Slide)","Custom")
     val SCAN_METHODS = listOf("Flatbed Scanner","DSLR/Mirrorless","Phone Scan","Lab Scan","Drum Scan")
@@ -269,10 +285,14 @@ object Constants {
     // EV helpers
     fun evalShutter(s: String): Double {
         if (s.isBlank()) return 1.0/125
-        if (s.endsWith("s")) return s.dropLast(1).toDoubleOrNull() ?: 1.0
         if (s == "B") return 30.0
+        if (s.endsWith("s")) return s.dropLast(1).toDoubleOrNull() ?: 1.0
         val parts = s.split("/")
-        return if (parts.size == 2) parts[0].toDouble() / parts[1].toDouble() else s.toDoubleOrNull() ?: 1.0/125
+        return if (parts.size == 2) {
+            val n = parts[0].toDoubleOrNull() ?: 1.0
+            val d = parts[1].toDoubleOrNull() ?: 125.0
+            n / d
+        } else s.toDoubleOrNull() ?: 1.0/125
     }
     fun calcEV(iso: Int, shutter: String, aperture: Double): Double {
         val t = evalShutter(shutter)

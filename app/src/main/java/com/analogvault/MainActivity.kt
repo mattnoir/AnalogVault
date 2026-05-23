@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -29,7 +31,13 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
-class AnalogVaultApp : Application()
+class AnalogVaultApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        // Init osmdroid tile cache before any MapView is created
+        com.analogvault.ui.components.initOsmdroid(this)
+    }
+}
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -59,7 +67,7 @@ private val BOTTOM_TABS = listOf(Tab.DASH, Tab.ACTIVE, Tab.DARK, Tab.METER, Tab.
 fun VaultApp() {
     val vm: MainViewModel = hiltViewModel()
     val rolls by vm.rolls.collectAsState()
-    val activeCount = rolls.count { !it.developed }
+    val activeCount by remember { derivedStateOf { rolls.count { !it.developed } } }
 
     // Navigation state
     // Back stack: DASH is root, each nav push appends, back pops
@@ -96,8 +104,12 @@ fun VaultApp() {
         scope.launch { drawerState.close() }
     }
 
+    // Disable swipe-to-open on tabs where horizontal gestures are needed (map, camera)
+    val gestureEnabled = false  // burger button only — swipe conflicts with map/camera/scroll
+
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = gestureEnabled,
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = Bg2,
@@ -217,7 +229,12 @@ fun VaultApp() {
             }
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).background(Bg)) {
-                when (currentTab) {
+                AnimatedContent(
+                    targetState = currentTab,
+                    transitionSpec = { fadeIn(animationSpec = androidx.compose.animation.core.tween(100)) togetherWith fadeOut(animationSpec = androidx.compose.animation.core.tween(100)) },
+                    label = "tab_transition"
+                ) { tab ->
+                when (tab) {
                     Tab.DASH    -> DashboardScreen(vm, onNavigate = { idx, sub, rollId -> navigateToIndex(idx, sub, rollId) })
                     Tab.STASH   -> StashScreen(vm)
                     Tab.ACTIVE  -> ActiveScreen(
@@ -237,6 +254,7 @@ fun VaultApp() {
                     Tab.STATS   -> StatsScreen(vm)
                     Tab.BACKUP  -> BackupScreen()
                 }
+                } // AnimatedContent
             }
         }
     }

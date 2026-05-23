@@ -74,6 +74,11 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     var confirmDelete by remember { mutableStateOf<FilmStock?>(null) }
     var viewingFilm   by remember { mutableStateOf<FilmStock?>(null) }
     var loadingFilm   by remember { mutableStateOf<FilmStock?>(null) }
+    val rolls         by vm.rolls.collectAsState()
+    // Films currently in camera (not yet developed)
+    val activeFilmIds by remember { derivedStateOf {
+        rolls.filter { !it.developed }.map { it.filmId }.toSet()
+    }}
 
     // ── Sort + Filter ─────────────────────────────────────────────────────────
     var sortBy     by remember { mutableStateOf("Name") }
@@ -139,7 +144,9 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             // Compute expiry once per item, not every frame
             val expKey = remember(film.expiryDate) { film.expiryDate.let { if (it.length == 7) "$it-01" else it } }
             val (exLabel, exColor, _) = remember(expKey) { expiryStatus(expKey) }
+            val inCamera = film.id in activeFilmIds
             FilmCard(film, exLabel, exColor,
+                inCamera = inCamera,
                 onTap = { viewingFilm = film },
                 onEdit = { editing = film; showSheet = true },
                 onDelete = { confirmDelete = film }
@@ -150,13 +157,32 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
 
     if (showSheet) FilmSheet(editing, onDismiss = { showSheet = false; editing = null }) { vm.upsertFilm(it); showSheet = false; editing = null }
     confirmDelete?.let { ConfirmDialog("Delete \"${it.name}\"?", onConfirm = { vm.deleteFilm(it); confirmDelete = null }, onDismiss = { confirmDelete = null }) }
-    viewingFilm?.let { FilmInfoDialog(it, onDismiss = { viewingFilm = null }, onEdit = { viewingFilm = null; editing = it; showSheet = true }, onLoad = { viewingFilm = null; loadingFilm = it }) }
-    loadingFilm?.let { FilmLoadHint(it.name, onDismiss = { loadingFilm = null }) }
+    viewingFilm?.let { film ->
+        val inCamera = film.id in activeFilmIds
+        FilmInfoDialog(film, inCamera = inCamera,
+            onDismiss = { viewingFilm = null },
+            onEdit = { viewingFilm = null; editing = film; showSheet = true },
+            onLoad = if (!inCamera) {{ viewingFilm = null; loadingFilm = film }} else null
+        )
+    }
+    loadingFilm?.let { film ->
+        val cameras by vm.cameras.collectAsState()
+        val lenses  by vm.lenses.collectAsState()
+        LoadRollSheetFromStash(
+            film = film,
+            cameras = cameras,
+            lenses = lenses,
+            rolls = rolls,
+            onDismiss = { loadingFilm = null },
+            onSave = { roll -> vm.upsertRoll(roll); loadingFilm = null }
+        )
+    }
 }
 
 @Composable
 private fun FilmCard(
     film: FilmStock, exLabel: String, exColor: androidx.compose.ui.graphics.Color,
+    inCamera: Boolean = false,
     onTap: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit
 ) {
     VaultCard(onClick = onTap) {
@@ -169,7 +195,7 @@ private fun FilmCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     VaultTag(film.type.split(" ").first())
                     VaultTag("ISO ${film.iso}")
-                    VaultTag(film.shots.toString())  // shots = format string now
+                    if (inCamera) VaultTag("📷 In Camera", textColor = BlueInfo)
                     if (film.quantity > 1) VaultTag("×${film.quantity}", textColor = AmberBright)
                     if (exLabel.isNotBlank()) VaultTag(exLabel, textColor = exColor)
                 }
@@ -682,7 +708,7 @@ fun AccessorySheet(ed: Accessory?, onDismiss: () -> Unit, onSave: (Accessory) ->
 // ─── Film Info Dialog ─────────────────────────────────────────────────────────
 
 @Composable
-fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, onLoad: () -> Unit) {
+fun FilmInfoDialog(film: FilmStock, inCamera: Boolean = false, onDismiss: () -> Unit, onEdit: () -> Unit, onLoad: (() -> Unit)? = null) {
     val expKey = film.expiryDate.let { if (it.length == 7) "$it-01" else it }
     val (exLabel, exColor, _) = expiryStatus(expKey)
     AlertDialog(
@@ -703,7 +729,8 @@ fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, o
             }
         },
         confirmButton = { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VaultButton("Load Film", small = true, onClick = onLoad)
+            if (onLoad != null) VaultButton("Load Film", small = true, onClick = onLoad)
+            else VaultTag("📷 In Camera", textColor = BlueInfo)
             VaultButton("Edit", small = true, ghost = true, onClick = onEdit)
         }},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = TextSecondary) } }
@@ -717,10 +744,84 @@ fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, o
     }
 }
 
-@Composable fun FilmLoadHint(filmName: String, onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, containerColor = Bg3,
-        title = { Text("Load $filmName", color = AmberBright) },
-        text = { Text("Go to the Rolls tab and tap '+ Load Film into Camera'.", color = TextSecondary) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK", color = Amber) } }
-    )
+@Composable
+fun LoadRollSheetFromStash(
+    film: FilmStock,
+    cameras: List<Camera>,
+    lenses: List<Lens>,
+    rolls: List<com.analogvault.data.model.Roll> = emptyList(),
+    onDismiss: () -> Unit,
+    onSave: (com.analogvault.data.model.Roll) -> Unit
+) {
+    // Cameras that currently have a roll loaded (not yet developed)
+    val busyCameraIds = remember(rolls) {
+        rolls.filter { !it.developed }.map { it.cameraId }.toSet()
+    }
+
+    var cameraId  by remember { mutableStateOf("") }
+    var lensId    by remember { mutableStateOf("") }
+    var startDate by remember { mutableStateOf(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())) }
+
+    val cameraName = cameras.find { it.id == cameraId }?.name ?: ""
+    val lensName   = lenses.find  { it.id == lensId }?.name ?: ""
+    val selCamera  = cameras.find { it.id == cameraId }
+    val isBusy     = cameraId.isNotBlank() && cameraId in busyCameraIds
+
+    VaultSheet("Load ${film.name}", onDismiss) {
+        // Film info summary
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            VaultTag(film.type.split(" ").first())
+            VaultTag("ISO ${film.iso}")
+            if (film.storage.isNotBlank()) VaultTag(film.storage)
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // Show cameras with busy indicator
+        val cameraDisplayNames = cameras.map { cam ->
+            if (cam.id in busyCameraIds) "${cam.name} 📷" else cam.name
+        }
+        VaultDropdown("Camera", if (cameraName.isBlank()) "" else if (cameraId in busyCameraIds) "$cameraName 📷" else cameraName,
+            cameraDisplayNames,
+            { displayName ->
+                val cleanName = displayName.removeSuffix(" 📷")
+                cameraId = cameras.find { it.name == cleanName }?.id ?: ""; lensId = ""
+            })
+        // Warning if camera already has a roll
+        if (isBusy) {
+            Spacer(Modifier.height(4.dp))
+            Text("⚠ This camera already has a roll loaded. Load anyway for MF cameras with multiple backs.",
+                color = OrangeWarn, fontSize = 11.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+
+        if (selCamera?.lensSystem == "interchangeable") {
+            val compatLenses = lenses.filter { lens ->
+                Constants.mountCompat(selCamera.mount, lens.mount, selCamera.adapterMounts) != "incompatible"
+            }
+            val lensOptions = listOf("— No lens —") + compatLenses.map { l ->
+                val compat = Constants.mountCompat(selCamera.mount, l.mount, selCamera.adapterMounts)
+                "${l.name} [${if (compat == "native") "native" else "via adapter"}]"
+            }
+            VaultDropdown("Lens", if (lensId.isBlank()) "— No lens —" else lensName, lensOptions,
+                { sel -> lensId = if (sel.startsWith("—")) "" else compatLenses.find { l -> sel.startsWith(l.name) }?.id ?: "" })
+            Spacer(Modifier.height(10.dp))
+        }
+
+        VaultTextField(startDate, { startDate = it }, "Load Date (YYYY-MM-DD)")
+        Spacer(Modifier.height(16.dp))
+
+        VaultButton(
+            text = if (isBusy) "Load Anyway (MF / multiple backs)" else "Load into Camera",
+            modifier = Modifier.fillMaxWidth(),
+            ghost = isBusy,
+            onClick = {
+                if (cameraId.isNotBlank()) {
+                    onSave(com.analogvault.data.model.Roll(
+                        id = uid(), filmId = film.id, cameraId = cameraId,
+                        cameraLensId = lensId, startDate = startDate
+                    ))
+                }
+            }
+        )
+    }
 }

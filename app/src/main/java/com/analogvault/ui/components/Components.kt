@@ -84,21 +84,16 @@ fun VaultCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val base = Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(10.dp))
-        .background(Bg2)
-        .border(1.dp, Border, RoundedCornerShape(10.dp))
-        .padding(12.dp)
-    Card(
-        modifier = if (onClick != null) base.then(modifier) else base.then(modifier),
-        colors = CardDefaults.cardColors(containerColor = Bg2),
-        shape = RoundedCornerShape(10.dp),
-        onClick = onClick ?: {},
-        enabled = onClick != null
-    ) {
-        Column(modifier = Modifier.padding(12.dp), content = content)
-    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Bg2)
+            .border(1.dp, Border, RoundedCornerShape(10.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(12.dp),
+        content = content
+    )
 }
 
 // ─── OutlinedTextField styled ─────────────────────────────────────────────────

@@ -4,7 +4,7 @@
             "outputFile": "com.analogvault.app-mergeDebugResources-71:/values-v30/values-v30.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\Tomas\\.gradle\\caches\\8.9\\transforms\\df1313f13ec52bc7f175fca3dd0d9e47\\transformed\\material3-release\\res\\values-v30\\values-v30.xml",
+                    "source": "C:\\Users\\Tomas\\.gradle\\caches\\8.9\\transforms\\4bd241685f866a29817911d60a75e4f8\\transformed\\material3-release\\res\\values-v30\\values-v30.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",

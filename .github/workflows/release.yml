@@ -6,8 +6,6 @@ on:
   push:
     tags:
       - 'v*'
-
-
   # Optional: also allow manual runs from the Actions tab
   workflow_dispatch:
 
@@ -15,8 +13,6 @@ jobs:
   build:
     name: Build signed release APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # required to create/update GitHub Releases
 
     steps:
       # ── 1. Source ──────────────────────────────────────────────────────────
@@ -97,7 +93,24 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Analog Vault ${{ github.ref_name }}
-          body_path: RELEASE_NOTES.md
+          body: |
+            ## Analog Vault ${{ github.ref_name }}
+
+            ### Install
+            1. Download `AnalogVault-${{ github.ref_name }}.apk` below
+            2. On your Android device: Settings → Apps → Install unknown apps → allow your browser/Files app
+            3. Open the downloaded APK and tap Install
+
+            ### What's included
+            - All film/camera/lens/accessory tracking
+            - Shot log with GPS, CameraX photo capture
+            - Darkroom chemical tracker
+            - Live light meter (CameraX)
+            - OpenWeatherMap weather
+            - Local backup / restore (JSON)
+
+            ### Changelog
+            _Add your changes here, or use a CHANGELOG.md and reference it._
           files: ${{ env.APK_PATH }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}  # v1.0.0-beta → prerelease

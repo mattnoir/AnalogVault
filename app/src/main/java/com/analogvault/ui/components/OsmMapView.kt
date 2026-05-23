@@ -1,5 +1,6 @@
 package com.analogvault.ui.components
 
+import android.content.Context
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -18,6 +19,14 @@ data class MapShot(
     val point: GeoPoint,
     val rollName: String = ""
 )
+
+/** Must call this before any MapView is created — do it in Application.onCreate or Activity.onCreate */
+fun initOsmdroid(context: Context) {
+    Configuration.getInstance().apply {
+        load(context, context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
+        userAgentValue = context.packageName
+    }
+}
 
 @Composable
 fun OsmMapView(
@@ -50,62 +59,81 @@ private fun OsmMapViewInternal(
 ) {
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
-        Configuration.getInstance().load(
-            context,
-            context.getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE)
-        )
-        Configuration.getInstance().userAgentValue = context.packageName
-    }
+    // Init osmdroid synchronously before MapView is created
+    remember(context) { initOsmdroid(context); true }
 
-    // Keep MapView instance alive across recompositions
-    val mapView = remember {
+    val mapView = remember(context) {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
-            controller.setZoom(12.0)
+            isTilesScaledToDpi = true
+            controller.setZoom(13.0)
         }
     }
 
-    // Configure osmdroid on first run
-    DisposableEffect(Unit) {
-        onDispose { mapView.onDetach() }
+    DisposableEffect(mapView) {
+        onDispose {
+            mapView.onPause()
+            mapView.onDetach()
+        }
     }
 
     AndroidView(
         factory = { mapView },
         update = { mv ->
             mv.overlays.clear()
-            if (mapShots.isEmpty()) return@AndroidView
-
-            mapShots.forEach { ms ->
-                val marker = Marker(mv).apply {
-                    position = ms.point
-                    title = buildString {
-                        if (ms.rollName.isNotBlank()) append("${ms.rollName}\n")
-                        if (ms.shot.shutter.isNotBlank()) append("${ms.shot.shutter} ")
-                        if (ms.shot.aperture.isNotBlank()) append("f/${ms.shot.aperture} ")
-                        if (ms.shot.iso.isNotBlank()) append("ISO ${ms.shot.iso}")
-                    }.trim()
-                    snippet = buildString {
-                        if (ms.shot.lens.isNotBlank()) append(ms.shot.lens)
-                        if (ms.shot.date.isNotBlank()) append(" · ${ms.shot.date.take(10)}")
-                        if (ms.shot.notes.isNotBlank()) append("\n${ms.shot.notes.take(60)}")
-                    }.trim()
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                }
-                mv.overlays.add(marker)
+            if (mapShots.isEmpty()) {
+                mv.invalidate()
+                return@AndroidView
             }
 
-            if (mapShots.size == 1) {
-                mv.controller.setCenter(mapShots.first().point)
-                mv.controller.setZoom(15.0)
-            } else {
-                try {
-                    val box = BoundingBox.fromGeoPoints(mapShots.map { it.point })
-                    mv.post { mv.zoomToBoundingBox(box.increaseByScale(1.4f), true, 80) }
-                } catch (e: Exception) {
+            mapShots.forEach { ms ->
+                Marker(mv).apply {
+                    position = ms.point
+                    title = buildString {
+                        if (ms.rollName.isNotBlank()) append(ms.rollName)
+                        if (ms.shot.shutter.isNotBlank() || ms.shot.aperture.isNotBlank()) {
+                            if (isNotEmpty()) append(" · ")
+                            if (ms.shot.shutter.isNotBlank()) append(ms.shot.shutter)
+                            if (ms.shot.aperture.isNotBlank()) append(" f/${ms.shot.aperture}")
+                            if (ms.shot.iso.isNotBlank()) append(" ISO ${ms.shot.iso}")
+                        }
+                    }.ifBlank { "Shot" }
+                    snippet = buildString {
+                        if (ms.shot.lens.isNotBlank()) append(ms.shot.lens)
+                        if (ms.shot.date.isNotBlank()) {
+                            if (isNotEmpty()) append(" · ")
+                            append(ms.shot.date.take(10))
+                        }
+                        if (ms.shot.notes.isNotBlank()) {
+                            append("\n")
+                            append(ms.shot.notes.take(80))
+                        }
+                    }
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    mv.overlays.add(this)
+                }
+            }
+
+            when {
+                mapShots.size == 1 -> {
                     mv.controller.setCenter(mapShots.first().point)
+                    mv.controller.setZoom(16.0)
+                }
+                else -> {
+                    try {
+                        val lats = mapShots.map { it.point.latitude }
+                        val lons = mapShots.map { it.point.longitude }
+                        val box = BoundingBox(
+                            lats.max(), lons.max(), lats.min(), lons.min()
+                        )
+                        mv.post {
+                            mv.zoomToBoundingBox(box.increaseByScale(1.4f), true, 80)
+                        }
+                    } catch (e: Exception) {
+                        mv.controller.setCenter(mapShots.first().point)
+                        mv.controller.setZoom(13.0)
+                    }
                 }
             }
             mv.invalidate()
