@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -230,8 +231,9 @@ private fun DashCard(onClick: (() -> Unit)? = null, content: @Composable ColumnS
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Bg2)
+            .drawBehind {
+                drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+            }
             .border(1.dp, Border, RoundedCornerShape(10.dp))
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(12.dp),
@@ -248,8 +250,9 @@ private fun DashRollRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Bg2)
+            .drawBehind {
+                drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx()))
+            }
             .border(1.dp, Border, RoundedCornerShape(8.dp))
             .clickable { onClick() }
             .padding(10.dp)
@@ -273,8 +276,9 @@ private fun MiniStat(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(Bg3)
+            .drawBehind {
+                drawRoundRect(color = Bg3, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+            }
             .border(1.dp, Border, RoundedCornerShape(10.dp))
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(12.dp),
@@ -291,8 +295,9 @@ private fun MiniStat(
 private fun QuickNavBtn(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Bg3)
+            .drawBehind {
+                drawRoundRect(color = Bg3, cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx()))
+            }
             .border(1.dp, Border, RoundedCornerShape(8.dp))
             .clickable { onClick() }
             .padding(vertical = 14.dp),

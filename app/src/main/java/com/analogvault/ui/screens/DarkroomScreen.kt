@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -380,13 +381,15 @@ fun ActiveTimerScreen(timer: DevTimer, onDone: () -> Unit) {
             timer.steps.forEachIndexed { i, s ->
                 Box(
                     Modifier.weight(1f).height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(when {
-                            i < currentStep  -> s.color
-                            i == currentStep -> s.color.copy(alpha = 0.5f)
-                            else             -> Border
+                        .drawBehind {
+                            drawRoundRect(
+                                color = when {
+                                    i < currentStep -> s.color
+                                    i == currentStep -> s.color.copy(alpha = 0.5f)
+                                    else -> Border
+                                }
+                            )
                         })
-                )
             }
         }
 

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,8 +92,9 @@ fun StatsNumbers(stats: Stats) {
         if (stats.byFilm.isNotEmpty()) {
             item { SectionTitle("Top Film Stocks") }
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                    .background(Bg2).border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
+                Column(Modifier.fillMaxWidth().drawBehind {
+                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     stats.byFilm.forEach { (name, count) ->
                         RankRow(name, count, stats.byFilm.maxOfOrNull { it.value } ?: 1, Amber)
@@ -104,8 +106,9 @@ fun StatsNumbers(stats: Stats) {
         if (stats.byCam.isNotEmpty()) {
             item { SectionTitle("Top Cameras") }
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                    .background(Bg2).border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
+                Column(Modifier.fillMaxWidth().drawBehind {
+                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     stats.byCam.forEach { (name, count) ->
                         RankRow(name, count, stats.byCam.maxOfOrNull { it.value } ?: 1, BlueInfo)
@@ -117,8 +120,9 @@ fun StatsNumbers(stats: Stats) {
         if (stats.byProc.isNotEmpty()) {
             item { SectionTitle("Dev Processes") }
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                    .background(Bg2).border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
+                Column(Modifier.fillMaxWidth().drawBehind {
+                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     stats.byProc.forEach { (name, count) ->
                         RankRow(name, count, stats.byProc.maxOfOrNull { it.value } ?: 1, GreenOk)

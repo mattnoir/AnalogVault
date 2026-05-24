@@ -454,7 +454,8 @@ private fun EVCard(
             Column {
                 Text("SCENE EV", color = TextTertiary, fontSize = 9.sp)
                 Text("%.1f".format(effectiveEV), color = Amber, fontSize = 44.sp, fontFamily = FontFamily.Monospace)
-                Box(Modifier.clip(RoundedCornerShape(3.dp))
+                Box(Modifier
+                    .clip(RoundedCornerShape(3.dp))
                     .background(if (isLive) GreenOk.copy(0.15f) else Bg4)
                     .padding(horizontal = 5.dp, vertical = 2.dp)) {
                     Text(if (isLive) "LIVE · camera2" else "MANUAL",
@@ -510,8 +511,10 @@ private fun ExifPanel(
         if (ap > 0 && t > 0) (log2(ap * ap / t) - log2(exif.iso / 100.0)) else null
     } else null
 
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-        .background(BlueInfo.copy(0.08f)).border(1.dp, BlueInfo.copy(0.35f), RoundedCornerShape(10.dp))
+    Box(Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(10.dp))
+        .background(BlueInfo.copy(alpha = 0.08f))
+        .border(1.dp, BlueInfo.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
         .padding(12.dp)) {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
