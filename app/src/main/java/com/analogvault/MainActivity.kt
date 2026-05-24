@@ -44,6 +44,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Force HWUI OpenGL renderer — Exynos 2200 Mali has known Vulkan/Skia jank
+        // This explicitly opts out of the Vulkan rendering path Compose uses by default
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
+        }
+
         setContent { AnalogVaultTheme { VaultApp() } }
     }
 }
@@ -231,12 +238,9 @@ fun VaultApp() {
             }
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).background(Bg)) {
-                AnimatedContent(
-                    targetState = currentTab,
-                    transitionSpec = { fadeIn(animationSpec = androidx.compose.animation.core.tween(100)) togetherWith fadeOut(animationSpec = androidx.compose.animation.core.tween(100)) },
-                    label = "tab_transition"
-                ) { tab ->
-                when (tab) {
+                // No AnimatedContent — instant swap is faster than composited fade on Mali GPU
+                when (currentTab) {
+                    // Note: using 'currentTab' not 'tab' since we removed AnimatedContent
                     Tab.DASH    -> DashboardScreen(vm, onNavigate = { idx, sub, rollId -> navigateToIndex(idx, sub, rollId) })
                     Tab.STASH   -> StashScreen(vm)
                     Tab.ACTIVE  -> ActiveScreen(
@@ -256,7 +260,6 @@ fun VaultApp() {
                     Tab.STATS   -> StatsScreen(vm)
                     Tab.BACKUP  -> BackupScreen()
                 }
-                } // AnimatedContent
             }
         }
     }
