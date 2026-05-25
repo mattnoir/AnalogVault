@@ -22,7 +22,9 @@ object AppModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
         Room.databaseBuilder(ctx, AppDatabase::class.java, "analog_vault.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_1_2)
+            // Only fall back destructively on downgrade, never on upgrade
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 
     @Provides fun provideFilmDao(db: AppDatabase) = db.filmDao()

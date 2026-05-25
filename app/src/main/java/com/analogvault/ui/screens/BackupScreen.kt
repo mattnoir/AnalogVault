@@ -34,13 +34,14 @@ import java.util.*
 fun BackupScreen() {
     val vm: BackupViewModel = hiltViewModel()
     val context = LocalContext.current
-    val result  by vm.result.collectAsState()
-    val busy    by vm.busy.collectAsState()
+    val result        by vm.result.collectAsState()
+    val busy          by vm.busy.collectAsState()
+    var includePhotos by remember { mutableStateOf(true) }
 
     // SAF launchers
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
-    ) { uri -> uri?.let { vm.export(context, it) } }
+    ) { uri -> uri?.let { vm.export(context, it, includePhotos) } }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -72,7 +73,26 @@ fun BackupScreen() {
                         "Downloads, Google Drive, a USB drive, whatever you like.",
                 color = TextSecondary, fontSize = 12.sp
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Switch(
+                    checked = includePhotos,
+                    onCheckedChange = { includePhotos = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Amber,
+                        checkedTrackColor = AmberDark
+                    )
+                )
+                androidx.compose.material3.Text(
+                    if (includePhotos) "Include shot photos (larger file)" else "Exclude photos (smaller file)",
+                    color = TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            Spacer(Modifier.height(10.dp))
             VaultButton(
                 text = if (busy) "Exporting…" else "⬆  Export Backup",
                 modifier = Modifier.fillMaxWidth(),

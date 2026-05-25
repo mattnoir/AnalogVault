@@ -23,9 +23,9 @@ class BackupViewModel @Inject constructor(
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy
 
-    fun export(context: Context, uri: Uri) = viewModelScope.launch {
+    fun export(context: Context, uri: Uri, includePhotos: Boolean = true) = viewModelScope.launch {
         _busy.value = true
-        _result.value = backupManager.export(context, uri)
+        _result.value = backupManager.export(context, uri, includePhotos)
         _busy.value = false
     }
 
