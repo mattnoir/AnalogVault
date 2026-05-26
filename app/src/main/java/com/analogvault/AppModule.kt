@@ -22,7 +22,7 @@ object AppModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
         Room.databaseBuilder(ctx, AppDatabase::class.java, "analog_vault.db")
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             // Only fall back destructively on downgrade, never on upgrade
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
@@ -35,6 +35,7 @@ object AppModule {
     @Provides fun provideChemicalDao(db: AppDatabase) = db.chemicalDao()
     @Provides fun provideZoomLevelDao(db: AppDatabase) = db.zoomLevelDao()
     @Provides fun provideSettingDao(db: AppDatabase) = db.settingDao()
+    @Provides fun provideBulkRollDao(db: AppDatabase) = db.bulkRollDao()
 
     @Provides @Singleton
     fun provideOkHttp(): OkHttpClient = OkHttpClient.Builder()

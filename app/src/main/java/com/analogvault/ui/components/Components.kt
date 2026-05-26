@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.Color
@@ -92,6 +93,13 @@ fun VaultCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // graphicsLayer {} (no params) promotes the card to its own RenderNode.
+            // During a scroll fling HWUI repositions RenderNodes on the GPU rather
+            // than re-issuing every draw command for every visible card on every
+            // frame.  This is especially impactful on Mali where draw-call submission
+            // is more expensive than on Adreno.  Using empty {} avoids allocating an
+            // off-screen buffer (that only happens when alpha/clip/renderEffect are set).
+            .graphicsLayer {}
             .drawBehind {
                 // drawBehind avoids clip() save/restore — much faster on Mali GPU
                 drawRoundRect(

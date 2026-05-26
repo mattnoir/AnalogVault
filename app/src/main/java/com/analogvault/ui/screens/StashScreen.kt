@@ -61,7 +61,10 @@ fun StashScreen(vm: MainViewModel) {
                     unselectedContentColor = TextTertiary)
             }
         }
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
             when (page) {
                 0 -> FilmStashTab(films, vm)
                 1 -> CameraStashTab(cameras, vm)
@@ -82,6 +85,12 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     var viewingFilm   by remember { mutableStateOf<FilmStock?>(null) }
     var loadingFilm   by remember { mutableStateOf<FilmStock?>(null) }
     val rolls         by vm.rolls.collectAsState()
+    val bulkRolls     by vm.bulkRolls.collectAsState()
+    var showBulkSheet   by remember { mutableStateOf(false) }
+    var editingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
+    var loadingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
+    var confirmDeleteBulk by remember { mutableStateOf<BulkRoll?>(null) }
+
     // Films currently in camera (not yet developed)
     val activeFilmIds by remember { derivedStateOf {
         rolls.filter { !it.developed }.map { it.filmId }.toSet()
@@ -136,6 +145,44 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                 VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
             }
         }
+
+        // ── Bulk Film section ──────────────────────────────────────────────
+        item(key = "bulk_header") {
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Bulk Film", color = AmberBright, fontSize = 13.sp)
+                VaultButton("+ Bulk", small = true, ghost = true,
+                    onClick = { editingBulk = null; showBulkSheet = true })
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        if (bulkRolls.isEmpty()) {
+            item(key = "bulk_empty") {
+                Text("No bulk film tracked yet", color = TextTertiary, fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 4.dp))
+            }
+        }
+        items(bulkRolls, key = { "bulk_${it.id}" }, contentType = { "bulk" }) { bulk ->
+            BulkRollCard(
+                bulk = bulk,
+                onLoad   = { loadingBulk = bulk },
+                onEdit   = { editingBulk = bulk; showBulkSheet = true },
+                onDelete = { confirmDeleteBulk = bulk }
+            )
+        }
+
+        // ── Divider before regular stash ──────────────────────────────────
+        item(key = "stash_divider") {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Divider(Modifier.weight(1f), color = Border)
+                Text("Individual Rolls", color = TextTertiary, fontSize = 11.sp)
+                Divider(Modifier.weight(1f), color = Border)
+            }
+            Spacer(Modifier.height(4.dp))
+        }
         // Filter bar
         if (showFilter) {
             item(key = "filter") {
@@ -147,7 +194,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             }
         }
         if (displayFilms.isEmpty()) item(key = "empty") { EmptyState(if (films.isEmpty()) "No film stocks yet" else "No films match filter") }
-        items(displayFilms, key = { it.id }) { film ->
+        items(displayFilms, key = { it.id }, contentType = { "film" }) { film ->
             // Compute expiry once per item, not every frame
             val expKey = remember(film.expiryDate) { film.expiryDate.let { if (it.length == 7) "$it-01" else it } }
             val (exLabel, exColor, _) = remember(expKey) { expiryStatus(expKey) }
@@ -182,6 +229,37 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             rolls = rolls,
             onDismiss = { loadingFilm = null },
             onSave = { roll -> vm.upsertRoll(roll); loadingFilm = null }
+        )
+    }
+
+    // ── Bulk roll sheets / dialogs ─────────────────────────────────────────
+    if (showBulkSheet) {
+        BulkRollSheet(
+            editing = editingBulk,
+            onDismiss = { showBulkSheet = false; editingBulk = null },
+            onSave = { vm.upsertBulkRoll(it); showBulkSheet = false; editingBulk = null }
+        )
+    }
+    confirmDeleteBulk?.let { bulk ->
+        ConfirmDialog(
+            message = "Delete bulk roll \"${bulk.name}\"? This won't remove rolls already loaded from it.",
+            onConfirm = { vm.deleteBulkRoll(bulk); confirmDeleteBulk = null },
+            onDismiss = { confirmDeleteBulk = null }
+        )
+    }
+    loadingBulk?.let { bulk ->
+        val cameras by vm.cameras.collectAsState()
+        val lenses  by vm.lenses.collectAsState()
+        LoadFromBulkSheet(
+            bulk    = bulk,
+            cameras = cameras,
+            lenses  = lenses,
+            rolls   = rolls,
+            onDismiss = { loadingBulk = null },
+            onLoad = { frames, camId, lensId, date ->
+                vm.loadFromBulk(bulk, frames, camId, lensId, date)
+                loadingBulk = null
+            }
         )
     }
 }
@@ -220,6 +298,297 @@ private fun FilmCard(
                 }
             }
         }
+    }
+}
+
+// ─── Bulk Roll card ───────────────────────────────────────────────────────────
+
+@Composable
+fun BulkRollCard(
+    bulk: BulkRoll,
+    onLoad: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val remaining = (bulk.totalFrames - bulk.usedFrames).coerceAtLeast(0)
+    val pct       = if (bulk.totalFrames > 0) bulk.usedFrames.toFloat() / bulk.totalFrames else 0f
+    val barColor  = when {
+        pct >= 0.9f -> RedErr
+        pct >= 0.65f -> OrangeWarn
+        else        -> GreenOk
+    }
+
+    VaultCard {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text(bulk.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp,
+                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                if (bulk.brand.isNotBlank()) Text(bulk.brand, color = TextSecondary, fontSize = 11.sp)
+                Spacer(Modifier.height(5.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    VaultTag(bulk.type.split(" ").first())
+                    VaultTag("ISO ${bulk.iso}")
+                    VaultTag(
+                        text = "$remaining frames left",
+                        textColor = barColor
+                    )
+                }
+                if (bulk.totalFrames > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    VaultProgressBar(pct, color = barColor)
+                    Spacer(Modifier.height(2.dp))
+                    Text("${bulk.usedFrames} / ${bulk.totalFrames} frames used",
+                        color = TextTertiary, fontSize = 10.sp)
+                }
+                if (bulk.notes.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(bulk.notes, color = TextTertiary, fontSize = 10.sp,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row {
+                    IconButton(onClick = onEdit, Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary)
+                    }
+                    IconButton(onClick = onDelete, Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f))
+                    }
+                }
+                if (remaining > 0) {
+                    VaultButton("⬇ Load Roll", small = true, onClick = onLoad)
+                } else {
+                    VaultTag("Exhausted", textColor = RedErr)
+                }
+            }
+        }
+    }
+}
+
+// ─── Bulk Roll add/edit sheet ─────────────────────────────────────────────────
+
+@Composable
+fun BulkRollSheet(
+    editing: BulkRoll?,
+    onDismiss: () -> Unit,
+    onSave: (BulkRoll) -> Unit
+) {
+    var name     by remember { mutableStateOf(editing?.name ?: "") }
+    var brand    by remember { mutableStateOf(editing?.brand ?: "") }
+    var type     by remember { mutableStateOf(editing?.type ?: Constants.FILM_TYPES[0]) }
+    var iso      by remember { mutableStateOf(editing?.iso?.toString() ?: "400") }
+    var frames   by remember { mutableStateOf(editing?.totalFrames?.toString() ?: "") }
+    var footage  by remember { mutableStateOf("") }   // helper field only — not stored
+    var notes    by remember { mutableStateOf(editing?.notes ?: "") }
+    var purchaseDate by remember { mutableStateOf(editing?.purchaseDate
+        ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())) }
+
+    // Footage → frames helper (35mm: 1ft ≈ 32 frames usable at 36mm spacing)
+    val footageFrames = remember(footage) {
+        footage.toIntOrNull()?.let { ft -> ft * 32 }
+    }
+
+    VaultSheet(if (editing != null) "Edit Bulk Roll" else "Add Bulk Film", onDismiss) {
+        AutoCompleteField(name, { name = it }, "Film Stock", Constants.FILM_DB,
+            placeholder = "e.g. Ilford HP5+")
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            VaultTextField(brand, { brand = it }, "Brand", modifier = Modifier.weight(1f))
+            VaultDropdown("ISO", iso, Constants.ISOS.map { it.toString() }, { iso = it },
+                modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        VaultDropdown("Film Type", type, Constants.FILM_TYPES, { type = it })
+        Spacer(Modifier.height(10.dp))
+
+        // Frame count — enter directly or calculate from footage
+        Text("Total Frames in Canister", color = TextTertiary, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom) {
+            VaultTextField(frames, { frames = it }, "Frames",
+                modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                placeholder = "e.g. 3200")
+            Text("or", color = TextTertiary, fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 14.dp))
+            Column(Modifier.weight(1f)) {
+                VaultTextField(footage, { footage = it }, "Footage (ft)",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                    placeholder = "e.g. 100")
+                if (footageFrames != null) {
+                    Text("≈ $footageFrames frames", color = Amber, fontSize = 10.sp)
+                }
+            }
+            if (footageFrames != null) {
+                VaultButton("Use", small = true, ghost = true,
+                    onClick = { frames = footageFrames.toString(); footage = "" })
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        VaultTextField(purchaseDate, { purchaseDate = it }, "Purchase Date (YYYY-MM-DD)")
+        Spacer(Modifier.height(10.dp))
+        VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2,
+            placeholder = "Storage, batch number…")
+        Spacer(Modifier.height(16.dp))
+        VaultButton("Save Bulk Roll", modifier = Modifier.fillMaxWidth(), onClick = {
+            val totalFrames = frames.toIntOrNull() ?: 0
+            onSave(BulkRoll(
+                id           = editing?.id ?: uid(),
+                name         = name,
+                brand        = brand,
+                type         = type,
+                iso          = iso.toIntOrNull() ?: 400,
+                totalFrames  = totalFrames,
+                usedFrames   = editing?.usedFrames ?: 0,  // preserve existing usage on edit
+                notes        = notes,
+                purchaseDate = purchaseDate
+            ))
+        })
+    }
+}
+
+// ─── Load Roll from Bulk sheet ────────────────────────────────────────────────
+
+@Composable
+fun LoadFromBulkSheet(
+    bulk: BulkRoll,
+    cameras: List<Camera>,
+    lenses: List<Lens>,
+    rolls: List<Roll>,
+    onDismiss: () -> Unit,
+    onLoad: (frames: Int, cameraId: String, lensId: String, startDate: String) -> Unit
+) {
+    val busyCameraIds = remember(rolls) {
+        rolls.filter { !it.developed }.map { it.cameraId }.toSet()
+    }
+
+    val remaining = (bulk.totalFrames - bulk.usedFrames).coerceAtLeast(0)
+
+    var frames    by remember { mutableStateOf("36") }
+    var cameraId  by remember { mutableStateOf("") }
+    var lensId    by remember { mutableStateOf("") }
+    var startDate by remember { mutableStateOf(
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())) }
+
+    val framesInt  = frames.toIntOrNull() ?: 0
+    val afterLoad  = (remaining - framesInt).coerceAtLeast(0)
+    val overBudget = framesInt > remaining
+    val selCamera  = cameras.find { it.id == cameraId }
+    val isBusy     = cameraId.isNotBlank() && cameraId in busyCameraIds
+
+    VaultSheet("Load from ${bulk.name}", onDismiss) {
+        // Bulk roll summary
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            VaultTag(bulk.type.split(" ").first())
+            VaultTag("ISO ${bulk.iso}")
+            VaultTag("$remaining frames remaining", textColor = when {
+                remaining <= 36 -> OrangeWarn
+                else -> GreenOk
+            })
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Quick-pick frame counts
+        Text("Frames on this roll", color = TextTertiary, fontSize = 11.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("12", "24", "36").forEach { preset ->
+                val selected = frames == preset
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (selected) AmberDark else Bg3)
+                        .border(1.dp, if (selected) Amber else Border, RoundedCornerShape(6.dp))
+                        .clickable { frames = preset }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(preset, color = if (selected) AmberBright else TextSecondary, fontSize = 13.sp)
+                }
+            }
+            VaultTextField(
+                value = if (frames !in listOf("12","24","36")) frames else "",
+                onValueChange = { frames = it },
+                label = "Custom",
+                modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                placeholder = "e.g. 18"
+            )
+        }
+
+        // After-load preview
+        if (framesInt > 0) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("After loading:", color = TextTertiary, fontSize = 11.sp)
+                VaultTag(
+                    text = "$afterLoad frames left",
+                    textColor = when {
+                        overBudget  -> RedErr
+                        afterLoad <= 36 -> OrangeWarn
+                        else        -> GreenOk
+                    }
+                )
+            }
+            if (overBudget) {
+                Text("⚠ Exceeds remaining footage by ${framesInt - remaining} frames",
+                    color = RedErr, fontSize = 11.sp)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Camera picker
+        val cameraDisplayNames = cameras.map { cam ->
+            if (cam.id in busyCameraIds) "${cam.name} 📷" else cam.name
+        }
+        val cameraName = cameras.find { it.id == cameraId }?.name ?: ""
+        VaultDropdown(
+            "Camera",
+            if (cameraName.isBlank()) "" else if (isBusy) "$cameraName 📷" else cameraName,
+            cameraDisplayNames,
+            { displayName ->
+                val clean = displayName.removeSuffix(" 📷")
+                cameraId = cameras.find { it.name == clean }?.id ?: ""; lensId = ""
+            }
+        )
+        if (isBusy) {
+            Spacer(Modifier.height(4.dp))
+            Text("⚠ Camera already has a roll loaded. Load anyway for MF cameras with multiple backs.",
+                color = OrangeWarn, fontSize = 11.sp)
+        }
+
+        // Lens picker (interchangeable cameras only)
+        if (selCamera?.lensSystem == "interchangeable") {
+            Spacer(Modifier.height(10.dp))
+            val compatLenses = lenses.filter { lens ->
+                Constants.mountCompat(selCamera.mount, lens.mount, selCamera.adapterMounts) != "incompatible"
+            }
+            val lensOptions = listOf("— No lens —") + compatLenses.map { l ->
+                val compat = Constants.mountCompat(selCamera.mount, l.mount, selCamera.adapterMounts)
+                "${l.name} [${if (compat == "native") "native" else "via adapter"}]"
+            }
+            val lensName = lenses.find { it.id == lensId }?.name ?: ""
+            VaultDropdown("Lens", if (lensId.isBlank()) "— No lens —" else lensName, lensOptions,
+                { sel -> lensId = if (sel.startsWith("—")) "" else compatLenses.find { l -> sel.startsWith(l.name) }?.id ?: "" })
+        }
+
+        Spacer(Modifier.height(10.dp))
+        VaultTextField(startDate, { startDate = it }, "Load Date (YYYY-MM-DD)")
+        Spacer(Modifier.height(16.dp))
+
+        VaultButton(
+            text      = if (isBusy) "Load Anyway (MF / multiple backs)" else "Load Roll",
+            modifier  = Modifier.fillMaxWidth(),
+            ghost     = isBusy,
+            onClick   = {
+                if (cameraId.isNotBlank() && framesInt > 0) {
+                    onLoad(framesInt, cameraId, lensId, startDate)
+                }
+            }
+        )
     }
 }
 
@@ -291,7 +660,7 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel) {
                 filterFormat, formatOptions, { filterFormat = it })
         }
         if (displayCameras.isEmpty()) item(key = "empty") { EmptyState(if (cameras.isEmpty()) "No cameras yet" else "No cameras match filter") }
-        items(displayCameras, key = { it.id }) { cam ->
+        items(displayCameras, key = { it.id }, contentType = { "camera" }) { cam ->
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -365,7 +734,7 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
                 filterMount, mountOptions, { filterMount = it })
         }
         if (displayLenses.isEmpty()) item(key = "empty") { EmptyState(if (lenses.isEmpty()) "No lenses yet" else "No lenses match filter") }
-        items(displayLenses, key = { it.id }) { lens ->
+        items(displayLenses, key = { it.id }, contentType = { "lens" }) { lens ->
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -432,7 +801,7 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
                 filterType, typeOptions, { filterType = it })
         }
         if (displayAcc.isEmpty()) item(key = "empty") { EmptyState(if (accessories.isEmpty()) "No accessories yet" else "No accessories match filter") }
-        items(displayAcc, key = { it.id }) { acc ->
+        items(displayAcc, key = { it.id }, contentType = { "accessory" }) { acc ->
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

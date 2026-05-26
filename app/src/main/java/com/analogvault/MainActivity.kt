@@ -45,10 +45,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Force HWUI OpenGL renderer — Exynos 2200 Mali has known Vulkan/Skia jank
-        // This explicitly opts out of the Vulkan rendering path Compose uses by default
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
+        // Tell the LTPO display to stay at 120 Hz while this window is visible.
+        //
+        // Without this, the panel's adaptive-rate algorithm interprets uneven frame
+        // delivery (normal during heavy flings on Mali) as an idle signal and drops
+        // to 60/10 Hz.  That makes the *next* frame even harder to hit, creating a
+        // feedback loop that shows up as ~40 fps during fast scroll on the S22 Ultra
+        // even though the GPU is capable.  Fixed-rate displays (A13, etc.) never
+        // enter this loop, which is why they appear smooth despite being less powerful.
+        //
+        // Note: the previous FLAG_HARDWARE_ACCELERATED + gradle.properties
+        // "android.graphics.renderer=opengl" approach had no effect — HA is already
+        // on by default for every API-26+ app, and that gradle key is not recognised
+        // by the build system or HWUI.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window.attributes = window.attributes.apply { preferredRefreshRate = 120f }
         }
 
         setContent { AnalogVaultTheme { VaultApp() } }

@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel;
 import com.analogvault.data.backup.BackupManager;
 import com.analogvault.data.db.AccessoryDao;
 import com.analogvault.data.db.AppDatabase;
+import com.analogvault.data.db.BulkRollDao;
 import com.analogvault.data.db.CameraDao;
 import com.analogvault.data.db.ChemicalDao;
 import com.analogvault.data.db.FilmDao;
@@ -404,15 +405,15 @@ public final class DaggerAnalogVaultApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_analogvault_ui_MainViewModel = "com.analogvault.ui.MainViewModel";
-
       static String com_analogvault_ui_BackupViewModel = "com.analogvault.ui.BackupViewModel";
 
-      @KeepFieldType
-      MainViewModel com_analogvault_ui_MainViewModel2;
+      static String com_analogvault_ui_MainViewModel = "com.analogvault.ui.MainViewModel";
 
       @KeepFieldType
       BackupViewModel com_analogvault_ui_BackupViewModel2;
+
+      @KeepFieldType
+      MainViewModel com_analogvault_ui_MainViewModel2;
     }
   }
 
@@ -456,15 +457,15 @@ public final class DaggerAnalogVaultApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_analogvault_ui_BackupViewModel = "com.analogvault.ui.BackupViewModel";
-
       static String com_analogvault_ui_MainViewModel = "com.analogvault.ui.MainViewModel";
 
-      @KeepFieldType
-      BackupViewModel com_analogvault_ui_BackupViewModel2;
+      static String com_analogvault_ui_BackupViewModel = "com.analogvault.ui.BackupViewModel";
 
       @KeepFieldType
       MainViewModel com_analogvault_ui_MainViewModel2;
+
+      @KeepFieldType
+      BackupViewModel com_analogvault_ui_BackupViewModel2;
     }
 
     private static final class SwitchingProvider<T> implements Provider<T> {
@@ -624,6 +625,10 @@ public final class DaggerAnalogVaultApp_HiltComponents_SingletonC {
       return AppModule_ProvideSettingDaoFactory.provideSettingDao(provideDatabaseProvider.get());
     }
 
+    private BulkRollDao bulkRollDao() {
+      return AppModule_ProvideBulkRollDaoFactory.provideBulkRollDao(provideDatabaseProvider.get());
+    }
+
     @SuppressWarnings("unchecked")
     private void initialize(final ApplicationContextModule applicationContextModuleParam) {
       this.provideDatabaseProvider = DoubleCheck.provider(new SwitchingProvider<AppDatabase>(singletonCImpl, 2));
@@ -671,7 +676,7 @@ public final class DaggerAnalogVaultApp_HiltComponents_SingletonC {
           return (T) new BackupManager(singletonCImpl.vaultRepositoryProvider.get());
 
           case 1: // com.analogvault.data.repo.VaultRepository 
-          return (T) new VaultRepository(singletonCImpl.filmDao(), singletonCImpl.cameraDao(), singletonCImpl.lensDao(), singletonCImpl.accessoryDao(), singletonCImpl.rollDao(), singletonCImpl.chemicalDao(), singletonCImpl.zoomLevelDao(), singletonCImpl.settingDao());
+          return (T) new VaultRepository(singletonCImpl.filmDao(), singletonCImpl.cameraDao(), singletonCImpl.lensDao(), singletonCImpl.accessoryDao(), singletonCImpl.rollDao(), singletonCImpl.chemicalDao(), singletonCImpl.zoomLevelDao(), singletonCImpl.settingDao(), singletonCImpl.bulkRollDao());
 
           case 2: // com.analogvault.data.db.AppDatabase 
           return (T) AppModule_ProvideDatabaseFactory.provideDatabase(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));

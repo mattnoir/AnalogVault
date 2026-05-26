@@ -166,6 +166,21 @@ data class Chemical(
     val notes: String = ""
 )
 
+// ─── Bulk Roll (canister inventory) ──────────────────────────────────────────
+
+@Entity(tableName = "bulk_rolls")
+data class BulkRoll(
+    @PrimaryKey val id: String,
+    val name: String = "",           // film name, e.g. "Ilford HP5+"
+    val brand: String = "",
+    val type: String = "B&W",
+    val iso: Int = 400,
+    val totalFrames: Int = 0,        // total frames available in this canister
+    val usedFrames: Int = 0,         // frames already loaded into rolls
+    val notes: String = "",
+    val purchaseDate: String = ""
+)
+
 // ─── Zoom Level (for light meter) ─────────────────────────────────────────────
 
 @Entity(tableName = "zoom_levels")

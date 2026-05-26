@@ -55,6 +55,14 @@ interface ChemicalDao {
 }
 
 @Dao
+interface BulkRollDao {
+    @Query("SELECT * FROM bulk_rolls ORDER BY name ASC")
+    fun getAll(): Flow<List<BulkRoll>>
+    @Upsert suspend fun upsert(b: BulkRoll)
+    @Delete suspend fun delete(b: BulkRoll)
+}
+
+@Dao
 interface ZoomLevelDao {
     @Query("SELECT * FROM zoom_levels ORDER BY mm ASC")
     fun getAll(): Flow<List<ZoomLevel>>

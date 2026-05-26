@@ -1,6 +1,7 @@
 package com.analogvault.data.repo;
 
 import com.analogvault.data.db.AccessoryDao;
+import com.analogvault.data.db.BulkRollDao;
 import com.analogvault.data.db.CameraDao;
 import com.analogvault.data.db.ChemicalDao;
 import com.analogvault.data.db.FilmDao;
@@ -46,11 +47,13 @@ public final class VaultRepository_Factory implements Factory<VaultRepository> {
 
   private final Provider<SettingDao> settingDaoProvider;
 
+  private final Provider<BulkRollDao> bulkRollDaoProvider;
+
   public VaultRepository_Factory(Provider<FilmDao> filmDaoProvider,
       Provider<CameraDao> cameraDaoProvider, Provider<LensDao> lensDaoProvider,
       Provider<AccessoryDao> accessoryDaoProvider, Provider<RollDao> rollDaoProvider,
       Provider<ChemicalDao> chemicalDaoProvider, Provider<ZoomLevelDao> zoomLevelDaoProvider,
-      Provider<SettingDao> settingDaoProvider) {
+      Provider<SettingDao> settingDaoProvider, Provider<BulkRollDao> bulkRollDaoProvider) {
     this.filmDaoProvider = filmDaoProvider;
     this.cameraDaoProvider = cameraDaoProvider;
     this.lensDaoProvider = lensDaoProvider;
@@ -59,24 +62,25 @@ public final class VaultRepository_Factory implements Factory<VaultRepository> {
     this.chemicalDaoProvider = chemicalDaoProvider;
     this.zoomLevelDaoProvider = zoomLevelDaoProvider;
     this.settingDaoProvider = settingDaoProvider;
+    this.bulkRollDaoProvider = bulkRollDaoProvider;
   }
 
   @Override
   public VaultRepository get() {
-    return newInstance(filmDaoProvider.get(), cameraDaoProvider.get(), lensDaoProvider.get(), accessoryDaoProvider.get(), rollDaoProvider.get(), chemicalDaoProvider.get(), zoomLevelDaoProvider.get(), settingDaoProvider.get());
+    return newInstance(filmDaoProvider.get(), cameraDaoProvider.get(), lensDaoProvider.get(), accessoryDaoProvider.get(), rollDaoProvider.get(), chemicalDaoProvider.get(), zoomLevelDaoProvider.get(), settingDaoProvider.get(), bulkRollDaoProvider.get());
   }
 
   public static VaultRepository_Factory create(Provider<FilmDao> filmDaoProvider,
       Provider<CameraDao> cameraDaoProvider, Provider<LensDao> lensDaoProvider,
       Provider<AccessoryDao> accessoryDaoProvider, Provider<RollDao> rollDaoProvider,
       Provider<ChemicalDao> chemicalDaoProvider, Provider<ZoomLevelDao> zoomLevelDaoProvider,
-      Provider<SettingDao> settingDaoProvider) {
-    return new VaultRepository_Factory(filmDaoProvider, cameraDaoProvider, lensDaoProvider, accessoryDaoProvider, rollDaoProvider, chemicalDaoProvider, zoomLevelDaoProvider, settingDaoProvider);
+      Provider<SettingDao> settingDaoProvider, Provider<BulkRollDao> bulkRollDaoProvider) {
+    return new VaultRepository_Factory(filmDaoProvider, cameraDaoProvider, lensDaoProvider, accessoryDaoProvider, rollDaoProvider, chemicalDaoProvider, zoomLevelDaoProvider, settingDaoProvider, bulkRollDaoProvider);
   }
 
   public static VaultRepository newInstance(FilmDao filmDao, CameraDao cameraDao, LensDao lensDao,
       AccessoryDao accessoryDao, RollDao rollDao, ChemicalDao chemicalDao,
-      ZoomLevelDao zoomLevelDao, SettingDao settingDao) {
-    return new VaultRepository(filmDao, cameraDao, lensDao, accessoryDao, rollDao, chemicalDao, zoomLevelDao, settingDao);
+      ZoomLevelDao zoomLevelDao, SettingDao settingDao, BulkRollDao bulkRollDao) {
+    return new VaultRepository(filmDao, cameraDao, lensDao, accessoryDao, rollDao, chemicalDao, zoomLevelDao, settingDao, bulkRollDao);
   }
 }

@@ -42,10 +42,12 @@ public final class AppDatabase_Impl extends AppDatabase {
 
   private volatile SettingDao _settingDao;
 
+  private volatile BulkRollDao _bulkRollDao;
+
   @Override
   @NonNull
   protected SupportSQLiteOpenHelper createOpenHelper(@NonNull final DatabaseConfiguration config) {
-    final SupportSQLiteOpenHelper.Callback _openCallback = new RoomOpenHelper(config, new RoomOpenHelper.Delegate(2) {
+    final SupportSQLiteOpenHelper.Callback _openCallback = new RoomOpenHelper(config, new RoomOpenHelper.Delegate(3) {
       @Override
       public void createAllTables(@NonNull final SupportSQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS `films` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT NOT NULL, `type` TEXT NOT NULL, `iso` INTEGER NOT NULL, `shots` INTEGER NOT NULL, `expiryDate` TEXT NOT NULL, `storage` TEXT NOT NULL, `quantity` INTEGER NOT NULL, `notes` TEXT NOT NULL, PRIMARY KEY(`id`))");
@@ -56,8 +58,9 @@ public final class AppDatabase_Impl extends AppDatabase {
         db.execSQL("CREATE TABLE IF NOT EXISTS `chemicals` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `dilution` TEXT NOT NULL, `volume` TEXT NOT NULL, `volumeUnit` TEXT NOT NULL, `mixDate` TEXT NOT NULL, `maxRolls` TEXT NOT NULL, `baseDevTime` TEXT NOT NULL, `timeAdjPerRoll` TEXT NOT NULL, `manualRolls` INTEGER NOT NULL, `notes` TEXT NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `zoom_levels` (`id` TEXT NOT NULL, `label` TEXT NOT NULL, `mm` INTEGER NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `settings` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))");
+        db.execSQL("CREATE TABLE IF NOT EXISTS `bulk_rolls` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `brand` TEXT NOT NULL, `type` TEXT NOT NULL, `iso` INTEGER NOT NULL, `totalFrames` INTEGER NOT NULL, `usedFrames` INTEGER NOT NULL, `notes` TEXT NOT NULL, `purchaseDate` TEXT NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)");
-        db.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2dd961faac6c6032ae97841276a3ef35')");
+        db.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3e5e8a6059f319af7904cab311b7c91f')");
       }
 
       @Override
@@ -70,6 +73,7 @@ public final class AppDatabase_Impl extends AppDatabase {
         db.execSQL("DROP TABLE IF EXISTS `chemicals`");
         db.execSQL("DROP TABLE IF EXISTS `zoom_levels`");
         db.execSQL("DROP TABLE IF EXISTS `settings`");
+        db.execSQL("DROP TABLE IF EXISTS `bulk_rolls`");
         final List<? extends RoomDatabase.Callback> _callbacks = mCallbacks;
         if (_callbacks != null) {
           for (RoomDatabase.Callback _callback : _callbacks) {
@@ -255,9 +259,28 @@ public final class AppDatabase_Impl extends AppDatabase {
                   + " Expected:\n" + _infoSettings + "\n"
                   + " Found:\n" + _existingSettings);
         }
+        final HashMap<String, TableInfo.Column> _columnsBulkRolls = new HashMap<String, TableInfo.Column>(9);
+        _columnsBulkRolls.put("id", new TableInfo.Column("id", "TEXT", true, 1, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("name", new TableInfo.Column("name", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("brand", new TableInfo.Column("brand", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("type", new TableInfo.Column("type", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("iso", new TableInfo.Column("iso", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("totalFrames", new TableInfo.Column("totalFrames", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("usedFrames", new TableInfo.Column("usedFrames", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("notes", new TableInfo.Column("notes", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsBulkRolls.put("purchaseDate", new TableInfo.Column("purchaseDate", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        final HashSet<TableInfo.ForeignKey> _foreignKeysBulkRolls = new HashSet<TableInfo.ForeignKey>(0);
+        final HashSet<TableInfo.Index> _indicesBulkRolls = new HashSet<TableInfo.Index>(0);
+        final TableInfo _infoBulkRolls = new TableInfo("bulk_rolls", _columnsBulkRolls, _foreignKeysBulkRolls, _indicesBulkRolls);
+        final TableInfo _existingBulkRolls = TableInfo.read(db, "bulk_rolls");
+        if (!_infoBulkRolls.equals(_existingBulkRolls)) {
+          return new RoomOpenHelper.ValidationResult(false, "bulk_rolls(com.analogvault.data.model.BulkRoll).\n"
+                  + " Expected:\n" + _infoBulkRolls + "\n"
+                  + " Found:\n" + _existingBulkRolls);
+        }
         return new RoomOpenHelper.ValidationResult(true, null);
       }
-    }, "2dd961faac6c6032ae97841276a3ef35", "4e2c6fd8830b6fa65b3db700d320d615");
+    }, "3e5e8a6059f319af7904cab311b7c91f", "42357c2419a953b7f7f488a340cbf41f");
     final SupportSQLiteOpenHelper.Configuration _sqliteConfig = SupportSQLiteOpenHelper.Configuration.builder(config.context).name(config.name).callback(_openCallback).build();
     final SupportSQLiteOpenHelper _helper = config.sqliteOpenHelperFactory.create(_sqliteConfig);
     return _helper;
@@ -268,7 +291,7 @@ public final class AppDatabase_Impl extends AppDatabase {
   protected InvalidationTracker createInvalidationTracker() {
     final HashMap<String, String> _shadowTablesMap = new HashMap<String, String>(0);
     final HashMap<String, Set<String>> _viewTables = new HashMap<String, Set<String>>(0);
-    return new InvalidationTracker(this, _shadowTablesMap, _viewTables, "films","cameras","lenses","accessories","rolls","chemicals","zoom_levels","settings");
+    return new InvalidationTracker(this, _shadowTablesMap, _viewTables, "films","cameras","lenses","accessories","rolls","chemicals","zoom_levels","settings","bulk_rolls");
   }
 
   @Override
@@ -285,6 +308,7 @@ public final class AppDatabase_Impl extends AppDatabase {
       _db.execSQL("DELETE FROM `chemicals`");
       _db.execSQL("DELETE FROM `zoom_levels`");
       _db.execSQL("DELETE FROM `settings`");
+      _db.execSQL("DELETE FROM `bulk_rolls`");
       super.setTransactionSuccessful();
     } finally {
       super.endTransaction();
@@ -307,6 +331,7 @@ public final class AppDatabase_Impl extends AppDatabase {
     _typeConvertersMap.put(ChemicalDao.class, ChemicalDao_Impl.getRequiredConverters());
     _typeConvertersMap.put(ZoomLevelDao.class, ZoomLevelDao_Impl.getRequiredConverters());
     _typeConvertersMap.put(SettingDao.class, SettingDao_Impl.getRequiredConverters());
+    _typeConvertersMap.put(BulkRollDao.class, BulkRollDao_Impl.getRequiredConverters());
     return _typeConvertersMap;
   }
 
@@ -433,6 +458,20 @@ public final class AppDatabase_Impl extends AppDatabase {
           _settingDao = new SettingDao_Impl(this);
         }
         return _settingDao;
+      }
+    }
+  }
+
+  @Override
+  public BulkRollDao bulkRollDao() {
+    if (_bulkRollDao != null) {
+      return _bulkRollDao;
+    } else {
+      synchronized(this) {
+        if(_bulkRollDao == null) {
+          _bulkRollDao = new BulkRollDao_Impl(this);
+        }
+        return _bulkRollDao;
       }
     }
   }

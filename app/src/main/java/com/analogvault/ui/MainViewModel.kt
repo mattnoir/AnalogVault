@@ -25,6 +25,7 @@ class MainViewModel @Inject constructor(
     val rolls       = repo.rolls.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val chemicals   = repo.chemicals.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val zoomLevels  = repo.zoomLevels.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val bulkRolls   = repo.bulkRolls.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // Settings
     private val _owmKey = MutableStateFlow("")
@@ -113,6 +114,32 @@ class MainViewModel @Inject constructor(
     // ─── Zoom levels ─────────────────────────────────────────────────────────
     fun upsertZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.upsertZoomLevel(z) }
     fun deleteZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.deleteZoomLevel(z) }
+
+    // ─── Bulk Rolls ───────────────────────────────────────────────────────────
+    fun upsertBulkRoll(b: BulkRoll) = viewModelScope.launch { repo.upsertBulkRoll(b) }
+    fun deleteBulkRoll(b: BulkRoll) = viewModelScope.launch { repo.deleteBulkRoll(b) }
+
+    /**
+     * Cut and load a roll from a bulk canister.
+     * Creates (or reuses) a FilmStock for the film type, creates the Roll,
+     * and decrements the canister's usedFrames — all in one transaction.
+     */
+    fun loadFromBulk(
+        bulk: BulkRoll,
+        frames: Int,
+        cameraId: String,
+        lensId: String,
+        startDate: String
+    ) = viewModelScope.launch {
+        repo.loadFromBulk(
+            bulk      = bulk,
+            frames    = frames,
+            cameraId  = cameraId,
+            lensId    = lensId,
+            startDate = startDate,
+            allFilms  = films.value
+        )
+    }
 
     // ─── Weather ─────────────────────────────────────────────────────────────
     private val _weatherState = MutableStateFlow<WeatherState>(WeatherState.Idle)
