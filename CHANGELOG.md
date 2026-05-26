@@ -1,4 +1,24 @@
-[0.2] - 2026-05-23
+[v0.2.5 - v0.2.1] - 2026-05-26
+
+- fixed critical bug where adding a camera crashed the whole app without option of recovery
+- Film ISO override for shooting other than box speed
+- added bulk film tracker
+- Making sub-tabs (like film/camera/lens etc) swipable
+- Drawer not swipable currently due to map nav issues (will properly patch it later). Exit drawer by tapping outside or swiping away should work
+- App DB migration to v3 also due to issues with camera and adding bulk rolls
+- backups can now include photos from shot rolls
+- some performance tweaks
+
+Known bugs:
+- number of frames per roll in stash format still not visible
+- UI and UX are a mess unfixable with LLM
+- tapping outside drawer doesn't close it on some devices
+- maybe still 0.6x zoom not zooming
+- You tell me (really, please, I only test on one phone)
+
+  
+
+[v0.2] - 2026-05-23
 
 - Map now showing tiles
 - 1/3 stops options for ISO/shutter/aperture
@@ -17,7 +37,7 @@ Known bugs:
 
 
 
-[0.1] - 2026-05-19
+[v0.1] - 2026-05-19
 
 - Complete overhaul of Light meter for actual metering
 - Stash add button is on the top
@@ -28,7 +48,7 @@ Known bugs:
 - metering modes don't seem to do anything
 
 
-[0.0.1 - 0.0.5]
+[v0.0.1 - 0.0.5]
 
 - added home screen
 - added timers
