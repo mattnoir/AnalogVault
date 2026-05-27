@@ -9,13 +9,13 @@
 - App DB migration to v3 also due to issues with camera and adding bulk rolls
 - backups can now include photos from shot rolls
 - reworked weather to show best roll from stash for shooting in current weather (time of day aware)
-- swipe to dismiss now requires more travel to be intentional
 - some performance tweaks
 
 Known bugs:
 - number of frames per roll in stash format still not visible
 - UI and UX are a mess unfixable with LLM
 - tapping outside drawer doesn't close it on some devices
+- swipe to dismiss not working as intentional, but at least there is X button
 - maybe still 0.6x zoom not zooming
 - You tell me (really, please, I only test on one phone)
 
