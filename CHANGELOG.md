@@ -1,3 +1,10 @@
+[v0.2.5a] - 2026-05-27
+
+- now finally fixed the critical bug crashing app due to DB changes
+- some code cleanup
+
+
+
 [v0.2.5 - v0.2.1] - 2026-05-27
 
 - fixed critical bug where adding a camera crashed the whole app without option of recovery
