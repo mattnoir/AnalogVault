@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.analogvault.data.model.*
 import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
-import com.analogvault.util.Constants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch

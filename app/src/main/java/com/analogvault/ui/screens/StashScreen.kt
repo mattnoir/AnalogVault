@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import com.analogvault.data.model.Roll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.analogvault.data.model.*
@@ -177,9 +178,9 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Divider(Modifier.weight(1f), color = Border)
+                HorizontalDivider(Modifier.weight(1f), color = Border)
                 Text("Individual Rolls", color = TextTertiary, fontSize = 11.sp)
-                Divider(Modifier.weight(1f), color = Border)
+                HorizontalDivider(Modifier.weight(1f), color = Border)
             }
             Spacer(Modifier.height(4.dp))
         }
@@ -213,7 +214,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     confirmDelete?.let { ConfirmDialog("Delete \"${it.name}\"?", onConfirm = { vm.deleteFilm(it); confirmDelete = null }, onDismiss = { confirmDelete = null }) }
     viewingFilm?.let { film ->
         val inCamera = film.id in activeFilmIds
-        FilmInfoDialog(film, inCamera = inCamera,
+        FilmInfoDialog(film,
             onDismiss = { viewingFilm = null },
             onEdit = { viewingFilm = null; editing = film; showSheet = true },
             onLoad = if (!inCamera) {{ viewingFilm = null; loadingFilm = film }} else null
@@ -318,7 +319,7 @@ fun BulkRollCard(
             verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(bulk.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp,
-                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (bulk.brand.isNotBlank()) Text(bulk.brand, color = TextSecondary, fontSize = 11.sp)
                 Spacer(Modifier.height(5.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -343,7 +344,7 @@ fun BulkRollCard(
                 if (bulk.notes.isNotBlank()) {
                     Spacer(Modifier.height(3.dp))
                     Text(bulk.notes, color = TextTertiary, fontSize = 10.sp,
-                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -974,7 +975,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
             } else {
                 // 120 — show MF format presets with frame count labels
                 val mfOptions = Constants.MF_FRAME_COUNTS.entries.toList()
-                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     mfOptions.forEach { (fmt, n) ->
                         val sel = frameCount == n.toString()
                         Box(
@@ -1074,7 +1075,7 @@ fun MonthYearPickerDialog(year: Int, month: Int, onConfirm: (Int, Int) -> Unit, 
                 val rows = months.chunked(3)
                 rows.forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEachIndexed { idx, m ->
+                        row.forEach { m ->
                             val mIdx = months.indexOf(m) + 1
                             Box(
                                 modifier = Modifier.weight(1f)
@@ -1140,7 +1141,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
             Spacer(Modifier.height(10.dp))
             Text("Shooting format", color = TextTertiary, fontSize = 11.sp)
             Spacer(Modifier.height(6.dp))
-            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Constants.MF_FORMATS.forEach { fmt ->
                     val frames = Constants.MF_FRAME_COUNTS[fmt] ?: 0
                     val sel = mfFormat == fmt
@@ -1182,7 +1183,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                 }
                 if (showAdapters) {
                     val options = Constants.MOUNT_GROUPS[mount]?.adapters ?: Constants.COMMON_MOUNTS.filter { it != mount }
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         options.forEach { m ->
                             val on = adapters.contains(m)
                             FilterChip(selected = on, onClick = { adapters = if (on) adapters - m else adapters + m },
@@ -1267,7 +1268,7 @@ fun AccessorySheet(ed: Accessory?, onDismiss: () -> Unit, onSave: (Accessory) ->
 // ─── Film Info Dialog ─────────────────────────────────────────────────────────
 
 @Composable
-fun FilmInfoDialog(film: FilmStock, inCamera: Boolean = false, onDismiss: () -> Unit, onEdit: () -> Unit, onLoad: (() -> Unit)? = null) {
+fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, onLoad: (() -> Unit)? = null) {
     val expKey = film.expiryDate.let { if (it.length == 7) "$it-01" else it }
     val (exLabel, exColor, _) = expiryStatus(expKey)
     AlertDialog(
@@ -1308,9 +1309,9 @@ fun LoadRollSheetFromStash(
     film: FilmStock,
     cameras: List<Camera>,
     lenses: List<Lens>,
-    rolls: List<com.analogvault.data.model.Roll> = emptyList(),
+    rolls: List<Roll> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (com.analogvault.data.model.Roll) -> Unit
+    onSave: (Roll) -> Unit
 ) {
     // Cameras that currently have a roll loaded (not yet developed)
     val busyCameraIds = remember(rolls) {
@@ -1375,7 +1376,7 @@ fun LoadRollSheetFromStash(
             ghost = isBusy,
             onClick = {
                 if (cameraId.isNotBlank()) {
-                    onSave(com.analogvault.data.model.Roll(
+                    onSave(Roll(
                         id = uid(), filmId = film.id, cameraId = cameraId,
                         cameraLensId = lensId, startDate = startDate
                     ))

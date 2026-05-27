@@ -13,8 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -56,9 +54,9 @@ fun expiryStatus(iso: String): Triple<String, Color, Boolean> {
 @Composable
 fun VaultTag(
     text: String,
+    modifier: Modifier = Modifier,
     color: Color = Border,
-    textColor: Color = TextSecondary,
-    modifier: Modifier = Modifier
+    textColor: Color = TextSecondary
 ) {
     Box(
         modifier = modifier
@@ -170,7 +168,7 @@ fun VaultDropdown(
                 focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary,
                 focusedLabelColor = Amber
             ),
-            modifier = Modifier.menuAnchor().fillMaxWidth()
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
             containerColor = Bg3) {

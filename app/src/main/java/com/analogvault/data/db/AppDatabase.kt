@@ -9,20 +9,20 @@ import com.analogvault.data.model.*
 
 /** Add pushIso/totalShots to rolls, adapterMounts to cameras (v1 → v2) */
 val MIGRATION_1_2 = object : Migration(1, 2) {
-    override fun migrate(database: SupportSQLiteDatabase) {
-        database.execSQL("ALTER TABLE rolls ADD COLUMN pushIso TEXT NOT NULL DEFAULT ''")
-        database.execSQL("ALTER TABLE rolls ADD COLUMN totalShots INTEGER NOT NULL DEFAULT 36")
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE rolls ADD COLUMN pushIso TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE rolls ADD COLUMN totalShots INTEGER NOT NULL DEFAULT 36")
         // adapterMounts was added to the Camera entity at the same time but was never migrated,
         // causing INSERT crashes on existing installs.  Empty JSON array "[]" is the correct
         // default — matches what StringListConverter.fromList(emptyList()) produces.
-        database.execSQL("ALTER TABLE cameras ADD COLUMN adapterMounts TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE cameras ADD COLUMN adapterMounts TEXT NOT NULL DEFAULT '[]'")
     }
 }
 
 /** Add bulk_rolls table (v2 → v3) */
 val MIGRATION_2_3 = object : Migration(2, 3) {
-    override fun migrate(database: SupportSQLiteDatabase) {
-        database.execSQL("""
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
             CREATE TABLE IF NOT EXISTS `bulk_rolls` (
                 `id` TEXT NOT NULL,
                 `name` TEXT NOT NULL DEFAULT '',
@@ -43,22 +43,49 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
 /**
  * Retroactive fixes for installs that went v1→v2→v3 WITHOUT the adapterMounts column fix,
  * and to add expiryDate to bulk_rolls if it was created without it.
+ * Uses pragma-based existence checks instead of try/catch to be safe on all SQLite versions.
  */
 val MIGRATION_3_4 = object : Migration(3, 4) {
-    override fun migrate(database: SupportSQLiteDatabase) {
-        try { database.execSQL("ALTER TABLE cameras ADD COLUMN adapterMounts TEXT NOT NULL DEFAULT '[]'") }
-        catch (_: Exception) { /* already present */ }
-        try { database.execSQL("ALTER TABLE bulk_rolls ADD COLUMN expiryDate TEXT NOT NULL DEFAULT ''") }
-        catch (_: Exception) { /* already present */ }
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Check if adapterMounts already exists before adding it
+        val camerasCursor = db.query("PRAGMA table_info(cameras)")
+        val hasAdapterMounts = generateSequence { if (camerasCursor.moveToNext()) camerasCursor else null }
+            .any { it.getString(it.getColumnIndexOrThrow("name")) == "adapterMounts" }
+        camerasCursor.close()
+        if (!hasAdapterMounts) {
+            db.execSQL("ALTER TABLE cameras ADD COLUMN adapterMounts TEXT NOT NULL DEFAULT '[]'")
+        }
+
+        // Check if expiryDate already exists in bulk_rolls
+        val bulkCursor = db.query("PRAGMA table_info(bulk_rolls)")
+        val hasExpiry = generateSequence { if (bulkCursor.moveToNext()) bulkCursor else null }
+            .any { it.getString(it.getColumnIndexOrThrow("name")) == "expiryDate" }
+        bulkCursor.close()
+        if (!hasExpiry) {
+            db.execSQL("ALTER TABLE bulk_rolls ADD COLUMN expiryDate TEXT NOT NULL DEFAULT ''")
+        }
     }
 }
 
 /** Add mfFormat to cameras; filmFormat and frameCount to films (v4 → v5) */
 val MIGRATION_4_5 = object : Migration(4, 5) {
-    override fun migrate(database: SupportSQLiteDatabase) {
-        database.execSQL("ALTER TABLE cameras ADD COLUMN mfFormat TEXT NOT NULL DEFAULT ''")
-        database.execSQL("ALTER TABLE films ADD COLUMN filmFormat TEXT NOT NULL DEFAULT '135 (35mm)'")
-        database.execSQL("ALTER TABLE films ADD COLUMN frameCount INTEGER NOT NULL DEFAULT 36")
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val camCursor = db.query("PRAGMA table_info(cameras)")
+        val hasMfFormat = generateSequence { if (camCursor.moveToNext()) camCursor else null }
+            .any { it.getString(it.getColumnIndexOrThrow("name")) == "mfFormat" }
+        camCursor.close()
+        if (!hasMfFormat) {
+            db.execSQL("ALTER TABLE cameras ADD COLUMN mfFormat TEXT NOT NULL DEFAULT ''")
+        }
+
+        val filmCursor = db.query("PRAGMA table_info(films)")
+        val cols = generateSequence { if (filmCursor.moveToNext()) filmCursor else null }
+            .map { it.getString(it.getColumnIndexOrThrow("name")) }.toSet()
+        filmCursor.close()
+        if ("filmFormat" !in cols)
+            db.execSQL("ALTER TABLE films ADD COLUMN filmFormat TEXT NOT NULL DEFAULT '135 (35mm)'")
+        if ("frameCount" !in cols)
+            db.execSQL("ALTER TABLE films ADD COLUMN frameCount INTEGER NOT NULL DEFAULT 36")
     }
 }
 

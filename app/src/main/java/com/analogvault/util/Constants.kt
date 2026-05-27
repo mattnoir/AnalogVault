@@ -437,8 +437,9 @@ object Constants {
             val n = parts[0].toDoubleOrNull() ?: 1.0
             val d = parts[1].toDoubleOrNull() ?: 125.0
             n / d
-        } else s.toDoubleOrNull() ?: 1.0/125
+        } else s.toDoubleOrNull() ?: (1.0/125)
     }
+    @Suppress("unused")  // utility function — available for future light meter use
     fun calcEV(iso: Int, shutter: String, aperture: Double): Double {
         val t = evalShutter(shutter)
         return log2(aperture * aperture / t) - log2(iso / 100.0)
