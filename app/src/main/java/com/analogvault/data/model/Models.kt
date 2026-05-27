@@ -45,7 +45,9 @@ data class FilmStock(
     val brand: String = "",
     val type: String = "Color Negative (C-41)",
     val iso: Int = 400,
-    val shots: Int = 36,
+    val shots: Int = 36,          // legacy — kept so existing data survives; use frameCount
+    val filmFormat: String = "135 (35mm)",   // value from FILM_FORMATS_DISPLAY
+    val frameCount: Int = 36,     // actual frame count for this roll
     val expiryDate: String = "",
     val storage: String = "Shelf",
     val quantity: Int = 1,
@@ -61,6 +63,7 @@ data class Camera(
     val name: String = "",
     val brand: String = "",
     val format: String = "35mm",
+    val mfFormat: String = "",          // MF shooting format: "6x4.5"|"6x6"|"6x7"|"6x9"|"6x17"
     val lensSystem: String = "fixed",   // "fixed" | "interchangeable"
     val condition: String = "Good",
     val mount: String = "",
@@ -178,7 +181,8 @@ data class BulkRoll(
     val totalFrames: Int = 0,        // total frames available in this canister
     val usedFrames: Int = 0,         // frames already loaded into rolls
     val notes: String = "",
-    val purchaseDate: String = ""
+    val purchaseDate: String = "",
+    val expiryDate: String = ""
 )
 
 // ─── Zoom Level (for light meter) ─────────────────────────────────────────────

@@ -240,12 +240,21 @@ fun VaultSheet(
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // confirmValueChange = { it != Hidden } means the sheet only closes when the user
+    // drags it fully off-screen (past the threshold) or taps the scrim, not on a tiny
+    // accidental swipe. Combined with skipPartiallyExpanded = true this gives a
+    // noticeably more intentional dismiss gesture — short flicks no longer close it.
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange    = { it != SheetValue.Hidden }
+    )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Bg2,
-        tonalElevation = 0.dp
+        sheetState       = sheetState,
+        containerColor   = Bg2,
+        tonalElevation   = 0.dp,
+        // Remove the default drag handle — we show our own title row with X button
+        dragHandle       = null
     ) {
         Column(modifier = Modifier
             .fillMaxWidth()
@@ -253,7 +262,18 @@ fun VaultSheet(
             .padding(bottom = 32.dp)
             .verticalScroll(rememberScrollState())
         ) {
-            Text(title, color = AmberBright, fontSize = 18.sp, modifier = Modifier.padding(bottom = 16.dp))
+            // Title row with explicit close button
+            Row(
+                Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                Text(title, color = AmberBright, fontSize = 18.sp)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close",
+                        tint = TextSecondary, modifier = Modifier.size(20.dp))
+                }
+            }
             content()
         }
     }

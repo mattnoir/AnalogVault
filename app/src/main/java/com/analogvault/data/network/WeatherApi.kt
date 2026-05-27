@@ -20,7 +20,9 @@ data class WeatherResponse(
     val wind: WindData,
     val clouds: CloudData,
     val visibility: Int?,
-    val sys: SysData?
+    val sys: SysData?,
+    val dt: Long = 0,          // current time as Unix epoch (UTC)
+    val timezone: Int = 0      // timezone offset in seconds from UTC
 )
 
 data class MainData(
@@ -39,4 +41,8 @@ data class WeatherDesc(
 
 data class WindData(val speed: Double, val deg: Int?)
 data class CloudData(val all: Int)
-data class SysData(val country: String?)
+data class SysData(
+    val country: String?,
+    val sunrise: Long = 0,     // Unix epoch UTC
+    val sunset: Long = 0       // Unix epoch UTC
+)

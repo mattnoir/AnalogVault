@@ -35,7 +35,12 @@ object Constants {
     val ACCESSORY_TYPES = listOf("Filter","Flash","Tripod","Cable Release","Light Meter","Film Changing Bag","Darkroom Equipment","Bag/Case","Strap","Lens Hood","Other")
     val CHEM_TYPES = listOf("Developer","Fixer","Blix","Bleach","Stop Bath","Stabiliser","Wetting Agent","Custom")
     val CHEM_UNITS = listOf("ml","L","g","oz","mixed (L)")
-    val CAMERA_FORMATS = listOf("35mm","120 (MF)","4x5","110","Instant")
+    val MF_FORMATS = listOf("6x4.5","6x6","6x7","6x9","6x17")
+    // frames per roll by MF format
+    val MF_FRAME_COUNTS = mapOf("6x4.5" to 16, "6x6" to 12, "6x7" to 10, "6x9" to 8, "6x17" to 4)
+    // frame count options for 135 (quick-pick)
+    val FRAMES_135 = listOf(12, 24, 36)
+        val CAMERA_FORMATS = listOf("35mm","120 (MF)","4x5","110","Instant")
     val CONDITIONS = listOf("Mint","Excellent","Good","Fair","Needs CLA")
     val LENS_CONDITIONS = listOf("Mint","Excellent","Good","Fair")
 
@@ -246,6 +251,146 @@ object Constants {
     )
     val FIX_DB = listOf(
         "Ilford Rapid Fixer","Kodak Rapid Fixer","Sprint Record Fixer","TF-4 Archival Fixer","Sodium Thiosulfate"
+    )
+
+
+    // Camera metadata: model name -> Pair(brand, format)
+    // Used by CameraSheet to auto-fill Brand and Format when a model is selected.
+    // format values must match CAMERA_FORMATS: "35mm" | "120 (MF)" | "4x5" | "Instant"
+    val CAMERA_METADATA: Map<String, Pair<String, String>> = mapOf(
+        // Nikon 35mm
+        "Nikon F" to Pair("Nikon","35mm"), "Nikon F2" to Pair("Nikon","35mm"),
+        "Nikon F3" to Pair("Nikon","35mm"), "Nikon F4" to Pair("Nikon","35mm"),
+        "Nikon F5" to Pair("Nikon","35mm"), "Nikon F6" to Pair("Nikon","35mm"),
+        "Nikon FM" to Pair("Nikon","35mm"), "Nikon FM2" to Pair("Nikon","35mm"),
+        "Nikon FM2n" to Pair("Nikon","35mm"), "Nikon FM3A" to Pair("Nikon","35mm"),
+        "Nikon FE" to Pair("Nikon","35mm"), "Nikon FE2" to Pair("Nikon","35mm"),
+        "Nikon FA" to Pair("Nikon","35mm"), "Nikon F80" to Pair("Nikon","35mm"),
+        "Nikon F100" to Pair("Nikon","35mm"), "Nikon EM" to Pair("Nikon","35mm"),
+        "Nikon FG" to Pair("Nikon","35mm"), "Nikon N90s" to Pair("Nikon","35mm"),
+        "Nikon L35AF" to Pair("Nikon","35mm"), "Nikon 35Ti" to Pair("Nikon","35mm"),
+        "Nikon 28Ti" to Pair("Nikon","35mm"),
+        // Canon 35mm
+        "Canon AE-1" to Pair("Canon","35mm"), "Canon AE-1 Program" to Pair("Canon","35mm"),
+        "Canon A-1" to Pair("Canon","35mm"), "Canon F-1" to Pair("Canon","35mm"),
+        "Canon New F-1" to Pair("Canon","35mm"), "Canon EOS-1V" to Pair("Canon","35mm"),
+        "Canon EOS-3" to Pair("Canon","35mm"), "Canon EOS-1" to Pair("Canon","35mm"),
+        "Canon T70" to Pair("Canon","35mm"), "Canon T90" to Pair("Canon","35mm"),
+        "Canon AL-1" to Pair("Canon","35mm"), "Canon QL17 GIII" to Pair("Canon","35mm"),
+        "Canon Sure Shot AF35M" to Pair("Canon","35mm"), "Canon ELPH" to Pair("Canon","35mm"),
+        "Canonet QL17 GIII" to Pair("Canon","35mm"),
+        // Olympus 35mm
+        "Olympus OM-1" to Pair("Olympus","35mm"), "Olympus OM-1n" to Pair("Olympus","35mm"),
+        "Olympus OM-2" to Pair("Olympus","35mm"), "Olympus OM-2n" to Pair("Olympus","35mm"),
+        "Olympus OM-3" to Pair("Olympus","35mm"), "Olympus OM-3Ti" to Pair("Olympus","35mm"),
+        "Olympus OM-4" to Pair("Olympus","35mm"), "Olympus OM-4Ti" to Pair("Olympus","35mm"),
+        "Olympus OM-10" to Pair("Olympus","35mm"), "Olympus OM-20" to Pair("Olympus","35mm"),
+        "Olympus XA" to Pair("Olympus","35mm"), "Olympus XA2" to Pair("Olympus","35mm"),
+        "Olympus mju-II" to Pair("Olympus","35mm"), "Olympus Stylus Epic" to Pair("Olympus","35mm"),
+        "Olympus Trip 35" to Pair("Olympus","35mm"), "Olympus LT-1" to Pair("Olympus","35mm"),
+        "Olympus Pen F" to Pair("Olympus","35mm"), "Olympus Pen FT" to Pair("Olympus","35mm"),
+        "Olympus Pen EE" to Pair("Olympus","35mm"), "Mju-II" to Pair("Olympus","35mm"),
+        // Pentax
+        "Pentax K1000" to Pair("Pentax","35mm"), "Pentax ME" to Pair("Pentax","35mm"),
+        "Pentax ME Super" to Pair("Pentax","35mm"), "Pentax MX" to Pair("Pentax","35mm"),
+        "Pentax LX" to Pair("Pentax","35mm"), "Pentax Spotmatic" to Pair("Pentax","35mm"),
+        "Pentax Spotmatic F" to Pair("Pentax","35mm"), "Pentax Espio 120Mi" to Pair("Pentax","35mm"),
+        "Pentax IQZoom 90WR" to Pair("Pentax","35mm"),
+        "Pentax 67" to Pair("Pentax","120 (MF)"), "Pentax 67II" to Pair("Pentax","120 (MF)"),
+        "Pentax 645" to Pair("Pentax","120 (MF)"), "Pentax 645N" to Pair("Pentax","120 (MF)"),
+        // Minolta
+        "Minolta X-700" to Pair("Minolta","35mm"), "Minolta X-570" to Pair("Minolta","35mm"),
+        "Minolta XG-M" to Pair("Minolta","35mm"), "Minolta SRT 101" to Pair("Minolta","35mm"),
+        "Minolta SRT 102" to Pair("Minolta","35mm"), "Minolta SRT 202" to Pair("Minolta","35mm"),
+        "Minolta X-300" to Pair("Minolta","35mm"), "Minolta Dynax 9" to Pair("Minolta","35mm"),
+        "Minolta Hi-Matic 7sII" to Pair("Minolta","35mm"), "Minolta TC-1" to Pair("Minolta","35mm"),
+        "Minolta CLE" to Pair("Minolta","35mm"), "Minolta CL" to Pair("Minolta","35mm"),
+        // Leica
+        "Leica M6" to Pair("Leica","35mm"), "Leica M6 TTL" to Pair("Leica","35mm"),
+        "Leica M7" to Pair("Leica","35mm"), "Leica MP" to Pair("Leica","35mm"),
+        "Leica M-A" to Pair("Leica","35mm"), "Leica M3" to Pair("Leica","35mm"),
+        "Leica M2" to Pair("Leica","35mm"), "Leica M4" to Pair("Leica","35mm"),
+        "Leica M4-P" to Pair("Leica","35mm"), "Leica M5" to Pair("Leica","35mm"),
+        "Leica M6J" to Pair("Leica","35mm"), "Leica IIIf" to Pair("Leica","35mm"),
+        "Leica IIIg" to Pair("Leica","35mm"), "Leica IIIa" to Pair("Leica","35mm"),
+        "Leica CL" to Pair("Leica","35mm"), "Leica Minilux" to Pair("Leica","35mm"),
+        "Leica CM" to Pair("Leica","35mm"),
+        // Voigtländer
+        "Voigtländer Bessa R" to Pair("Voigtländer","35mm"),
+        "Voigtländer Bessa R2" to Pair("Voigtländer","35mm"),
+        "Voigtländer Bessa R2A" to Pair("Voigtländer","35mm"),
+        "Voigtländer Bessa R3A" to Pair("Voigtländer","35mm"),
+        "Voigtländer Bessa L" to Pair("Voigtländer","35mm"),
+        "Voigtländer Bessa T" to Pair("Voigtländer","35mm"),
+        "Voigtländer Vitessa L" to Pair("Voigtländer","35mm"),
+        "Voigtländer Prominent" to Pair("Voigtländer","35mm"),
+        // Contax
+        "Contax T" to Pair("Contax","35mm"), "Contax T2" to Pair("Contax","35mm"),
+        "Contax T3" to Pair("Contax","35mm"), "Contax G1" to Pair("Contax","35mm"),
+        "Contax G2" to Pair("Contax","35mm"), "Contax RTS III" to Pair("Contax","35mm"),
+        "Contax S2" to Pair("Contax","35mm"), "Contax Aria" to Pair("Contax","35mm"),
+        "Contax 645" to Pair("Contax","120 (MF)"),
+        // Zeiss / Rollei 35mm
+        "Zeiss Ikon ZM" to Pair("Zeiss","35mm"), "Rollei 35" to Pair("Rollei","35mm"),
+        "Rollei 35 S" to Pair("Rollei","35mm"), "Rollei 35 SE" to Pair("Rollei","35mm"),
+        "Rollei 35 T" to Pair("Rollei","35mm"), "Rollei 35 Classic" to Pair("Rollei","35mm"),
+        "Rollei 35 RF" to Pair("Rollei","35mm"), "Rollei 35 AF" to Pair("Rollei","35mm"),
+        // Hasselblad MF
+        "Hasselblad 500 C" to Pair("Hasselblad","120 (MF)"),
+        "Hasselblad 500 C/M" to Pair("Hasselblad","120 (MF)"),
+        "Hasselblad 503CW" to Pair("Hasselblad","120 (MF)"),
+        "Hasselblad 501CM" to Pair("Hasselblad","120 (MF)"),
+        "Hasselblad 2000FCW" to Pair("Hasselblad","120 (MF)"),
+        "Hasselblad XPan" to Pair("Hasselblad","35mm"),
+        "Hasselblad XPan II" to Pair("Hasselblad","35mm"),
+        "Hasselblad Superwide C" to Pair("Hasselblad","120 (MF)"),
+        // Mamiya MF
+        "Mamiya RB67 Pro-S" to Pair("Mamiya","120 (MF)"), "Mamiya RB67" to Pair("Mamiya","120 (MF)"),
+        "Mamiya RZ67" to Pair("Mamiya","120 (MF)"), "Mamiya RZ67 Pro II" to Pair("Mamiya","120 (MF)"),
+        "Mamiya 7" to Pair("Mamiya","120 (MF)"), "Mamiya 7 II" to Pair("Mamiya","120 (MF)"),
+        "Mamiya 6" to Pair("Mamiya","120 (MF)"), "Mamiya 645 Pro" to Pair("Mamiya","120 (MF)"),
+        "Mamiya C330" to Pair("Mamiya","120 (MF)"),
+        // Rolleiflex MF
+        "Rolleiflex 2.8F" to Pair("Rollei","120 (MF)"), "Rolleiflex 2.8E" to Pair("Rollei","120 (MF)"),
+        "Rolleiflex 3.5F" to Pair("Rollei","120 (MF)"), "Rolleiflex T" to Pair("Rollei","120 (MF)"),
+        "Rolleicord V" to Pair("Rollei","120 (MF)"), "Rolleicord Va" to Pair("Rollei","120 (MF)"),
+        "Rolleiflex SL66" to Pair("Rollei","120 (MF)"), "Rolleiflex 6008" to Pair("Rollei","120 (MF)"),
+        // Yashica / Bronica MF
+        "Yashica Mat-124G" to Pair("Yashica","120 (MF)"), "Yashica Mat" to Pair("Yashica","120 (MF)"),
+        "Yashica 124" to Pair("Yashica","120 (MF)"), "Yashica 635" to Pair("Yashica","120 (MF)"),
+        "Bronica ETRSi" to Pair("Bronica","120 (MF)"), "Bronica ETRS" to Pair("Bronica","120 (MF)"),
+        "Bronica SQAi" to Pair("Bronica","120 (MF)"), "Bronica GS-1" to Pair("Bronica","120 (MF)"),
+        "Bronica SQ-A" to Pair("Bronica","120 (MF)"),
+        // Fujifilm MF
+        "Fujifilm GF670" to Pair("Fujifilm","120 (MF)"), "Fujifilm GF670W" to Pair("Fujifilm","120 (MF)"),
+        "Fujifilm GW690 III" to Pair("Fujifilm","120 (MF)"), "Fujifilm GSW690 III" to Pair("Fujifilm","120 (MF)"),
+        "Fujifilm GA645" to Pair("Fujifilm","120 (MF)"),
+        // Large format
+        "Linhof Technika 4x5" to Pair("Linhof","4x5"), "Linhof Master Technika" to Pair("Linhof","4x5"),
+        "Chamonix 4x5" to Pair("Chamonix","4x5"), "Shen-Hao 4x5" to Pair("Shen-Hao","4x5"),
+        "Toyo 45A" to Pair("Toyo","4x5"), "Arca-Swiss F-Line" to Pair("Arca-Swiss","4x5"),
+        "Wista 45" to Pair("Wista","4x5"), "Horseman 45FA" to Pair("Horseman","4x5"),
+        "Graflex Speed Graphic" to Pair("Graflex","4x5"), "Graflex Crown Graphic" to Pair("Graflex","4x5"),
+        "Toyo 810G" to Pair("Toyo","4x5"),
+        // Rangefinders / compacts
+        "Ricoh GR1v" to Pair("Ricoh","35mm"), "Ricoh GR1s" to Pair("Ricoh","35mm"),
+        "Fujifilm Klasse W" to Pair("Fujifilm","35mm"), "Fujifilm Natura S" to Pair("Fujifilm","35mm"),
+        "Konica Auto S2" to Pair("Konica","35mm"), "Konica Big Mini" to Pair("Konica","35mm"),
+        "Yashica Electro 35 GSN" to Pair("Yashica","35mm"), "Yashica FX-3 Super" to Pair("Yashica","35mm"),
+        "Yashica Electro 35 GSN" to Pair("Yashica","35mm"),
+        // Lomo / toy
+        "Lomo LC-A" to Pair("Lomography","35mm"), "Lomo LC-A+" to Pair("Lomography","35mm"),
+        "Lomo LC-Wide" to Pair("Lomography","35mm"),
+        "Lomography Sprocket Rocket" to Pair("Lomography","35mm"),
+        "Holga 120N" to Pair("Holga","120 (MF)"), "Holga 120SF" to Pair("Holga","120 (MF)"),
+        "Diana F+" to Pair("Lomography","120 (MF)"), "Diana Mini" to Pair("Lomography","35mm"),
+        // Fujifilm Instant
+        "Fujifilm Instax Mini" to Pair("Fujifilm","Instant"),
+        "Fujifilm Instax Square" to Pair("Fujifilm","Instant"),
+        "Fujifilm Instax Wide" to Pair("Fujifilm","Instant"),
+        // Polaroid
+        "Polaroid 600" to Pair("Polaroid","Instant"), "Polaroid i-Type" to Pair("Polaroid","Instant"),
+        "Polaroid SX-70" to Pair("Polaroid","Instant")
     )
 
     // Mount groups

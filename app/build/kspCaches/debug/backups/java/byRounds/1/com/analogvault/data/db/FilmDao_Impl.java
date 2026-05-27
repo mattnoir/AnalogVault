@@ -55,7 +55,7 @@ public final class FilmDao_Impl implements FilmDao {
       @Override
       @NonNull
       protected String createQuery() {
-        return "INSERT INTO `films` (`id`,`name`,`brand`,`type`,`iso`,`shots`,`expiryDate`,`storage`,`quantity`,`notes`) VALUES (?,?,?,?,?,?,?,?,?,?)";
+        return "INSERT INTO `films` (`id`,`name`,`brand`,`type`,`iso`,`shots`,`filmFormat`,`frameCount`,`expiryDate`,`storage`,`quantity`,`notes`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
       }
 
       @Override
@@ -67,16 +67,18 @@ public final class FilmDao_Impl implements FilmDao {
         statement.bindString(4, entity.getType());
         statement.bindLong(5, entity.getIso());
         statement.bindLong(6, entity.getShots());
-        statement.bindString(7, entity.getExpiryDate());
-        statement.bindString(8, entity.getStorage());
-        statement.bindLong(9, entity.getQuantity());
-        statement.bindString(10, entity.getNotes());
+        statement.bindString(7, entity.getFilmFormat());
+        statement.bindLong(8, entity.getFrameCount());
+        statement.bindString(9, entity.getExpiryDate());
+        statement.bindString(10, entity.getStorage());
+        statement.bindLong(11, entity.getQuantity());
+        statement.bindString(12, entity.getNotes());
       }
     }, new EntityDeletionOrUpdateAdapter<FilmStock>(__db) {
       @Override
       @NonNull
       protected String createQuery() {
-        return "UPDATE `films` SET `id` = ?,`name` = ?,`brand` = ?,`type` = ?,`iso` = ?,`shots` = ?,`expiryDate` = ?,`storage` = ?,`quantity` = ?,`notes` = ? WHERE `id` = ?";
+        return "UPDATE `films` SET `id` = ?,`name` = ?,`brand` = ?,`type` = ?,`iso` = ?,`shots` = ?,`filmFormat` = ?,`frameCount` = ?,`expiryDate` = ?,`storage` = ?,`quantity` = ?,`notes` = ? WHERE `id` = ?";
       }
 
       @Override
@@ -88,11 +90,13 @@ public final class FilmDao_Impl implements FilmDao {
         statement.bindString(4, entity.getType());
         statement.bindLong(5, entity.getIso());
         statement.bindLong(6, entity.getShots());
-        statement.bindString(7, entity.getExpiryDate());
-        statement.bindString(8, entity.getStorage());
-        statement.bindLong(9, entity.getQuantity());
-        statement.bindString(10, entity.getNotes());
-        statement.bindString(11, entity.getId());
+        statement.bindString(7, entity.getFilmFormat());
+        statement.bindLong(8, entity.getFrameCount());
+        statement.bindString(9, entity.getExpiryDate());
+        statement.bindString(10, entity.getStorage());
+        statement.bindLong(11, entity.getQuantity());
+        statement.bindString(12, entity.getNotes());
+        statement.bindString(13, entity.getId());
       }
     });
   }
@@ -149,6 +153,8 @@ public final class FilmDao_Impl implements FilmDao {
           final int _cursorIndexOfType = CursorUtil.getColumnIndexOrThrow(_cursor, "type");
           final int _cursorIndexOfIso = CursorUtil.getColumnIndexOrThrow(_cursor, "iso");
           final int _cursorIndexOfShots = CursorUtil.getColumnIndexOrThrow(_cursor, "shots");
+          final int _cursorIndexOfFilmFormat = CursorUtil.getColumnIndexOrThrow(_cursor, "filmFormat");
+          final int _cursorIndexOfFrameCount = CursorUtil.getColumnIndexOrThrow(_cursor, "frameCount");
           final int _cursorIndexOfExpiryDate = CursorUtil.getColumnIndexOrThrow(_cursor, "expiryDate");
           final int _cursorIndexOfStorage = CursorUtil.getColumnIndexOrThrow(_cursor, "storage");
           final int _cursorIndexOfQuantity = CursorUtil.getColumnIndexOrThrow(_cursor, "quantity");
@@ -168,6 +174,10 @@ public final class FilmDao_Impl implements FilmDao {
             _tmpIso = _cursor.getInt(_cursorIndexOfIso);
             final int _tmpShots;
             _tmpShots = _cursor.getInt(_cursorIndexOfShots);
+            final String _tmpFilmFormat;
+            _tmpFilmFormat = _cursor.getString(_cursorIndexOfFilmFormat);
+            final int _tmpFrameCount;
+            _tmpFrameCount = _cursor.getInt(_cursorIndexOfFrameCount);
             final String _tmpExpiryDate;
             _tmpExpiryDate = _cursor.getString(_cursorIndexOfExpiryDate);
             final String _tmpStorage;
@@ -176,7 +186,7 @@ public final class FilmDao_Impl implements FilmDao {
             _tmpQuantity = _cursor.getInt(_cursorIndexOfQuantity);
             final String _tmpNotes;
             _tmpNotes = _cursor.getString(_cursorIndexOfNotes);
-            _item = new FilmStock(_tmpId,_tmpName,_tmpBrand,_tmpType,_tmpIso,_tmpShots,_tmpExpiryDate,_tmpStorage,_tmpQuantity,_tmpNotes);
+            _item = new FilmStock(_tmpId,_tmpName,_tmpBrand,_tmpType,_tmpIso,_tmpShots,_tmpFilmFormat,_tmpFrameCount,_tmpExpiryDate,_tmpStorage,_tmpQuantity,_tmpNotes);
             _result.add(_item);
           }
           return _result;

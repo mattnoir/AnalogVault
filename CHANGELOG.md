@@ -1,12 +1,15 @@
-[v0.2.5 - v0.2.1] - 2026-05-26
+[v0.2.5 - v0.2.1] - 2026-05-27
 
 - fixed critical bug where adding a camera crashed the whole app without option of recovery
 - Film ISO override for shooting other than box speed
 - added bulk film tracker
+- film formats now include number of shots
 - Making sub-tabs (like film/camera/lens etc) swipable
 - Drawer not swipable currently due to map nav issues (will properly patch it later). Exit drawer by tapping outside or swiping away should work
 - App DB migration to v3 also due to issues with camera and adding bulk rolls
 - backups can now include photos from shot rolls
+- reworked weather to show best roll from stash for shooting in current weather (time of day aware)
+- swipe to dismiss now requires more travel to be intentional
 - some performance tweaks
 
 Known bugs:

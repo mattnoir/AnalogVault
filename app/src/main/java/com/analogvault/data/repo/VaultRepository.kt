@@ -68,50 +68,34 @@ class VaultRepository @Inject constructor(
     suspend fun deleteBulkRoll(b: BulkRoll) = bulkRollDao.delete(b)
 
     /**
-     * Load a cut roll from a bulk canister.
-     * Finds-or-creates a FilmStock for the bulk film type so that filmId on the
-     * Roll is always valid — all existing stats and roll-history display code
-     * continues to work unchanged.
+     * Cut rolls from a bulk canister and add them to the film stash.
+     * Creates [quantity] individual FilmStock entries (quantity=1 each) and
+     * deducts frames×quantity from the canister. No Roll or camera involvement —
+     * that happens later when the user loads one of the new stash entries.
      */
-    suspend fun loadFromBulk(
+    suspend fun cutFromBulk(
         bulk: BulkRoll,
         frames: Int,
-        cameraId: String,
-        lensId: String,
-        startDate: String,
-        allFilms: List<FilmStock>
-    ): Roll {
-        // Reuse an existing FilmStock if name + ISO match, otherwise create one.
-        val stockId = allFilms
-            .find { it.name.equals(bulk.name, ignoreCase = true) && it.iso == bulk.iso }
-            ?.id
-            ?: run {
-                val newStock = FilmStock(
-                    id = java.util.UUID.randomUUID().toString(),
-                    name  = bulk.name,
-                    brand = bulk.brand,
-                    type  = bulk.type,
-                    iso   = bulk.iso,
-                    shots = 36,  // legacy field — frame count lives on Roll.totalShots
-                    quantity = 0 // 0 signals bulk-sourced; not shown as a countable stash item
-                )
-                filmDao.upsert(newStock)
-                newStock.id
-            }
-
-        val roll = Roll(
-            id           = java.util.UUID.randomUUID().toString(),
-            filmId       = stockId,
-            cameraId     = cameraId,
-            cameraLensId = lensId,
-            startDate    = startDate,
-            totalShots   = frames
-        )
-        rollDao.upsert(roll)
-
-        // Deduct frames from the canister
-        bulkRollDao.upsert(bulk.copy(usedFrames = bulk.usedFrames + frames))
-
-        return roll
+        quantity: Int,
+        expiryDate: String
+    ) {
+        repeat(quantity) {
+            val stock = FilmStock(
+                id         = java.util.UUID.randomUUID().toString(),
+                name       = bulk.name,
+                brand      = bulk.brand,
+                type       = bulk.type,
+                iso        = bulk.iso,
+                shots      = frames,
+                filmFormat = "135 (35mm)",
+                frameCount = frames,
+                expiryDate = expiryDate,
+                storage    = "Bulk",
+                quantity   = 1,
+                notes      = "Cut from bulk — ${bulk.name}"
+            )
+            filmDao.upsert(stock)
+        }
+        bulkRollDao.upsert(bulk.copy(usedFrames = bulk.usedFrames + (frames * quantity)))
     }
 }

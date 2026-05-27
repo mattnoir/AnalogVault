@@ -119,27 +119,8 @@ class MainViewModel @Inject constructor(
     fun upsertBulkRoll(b: BulkRoll) = viewModelScope.launch { repo.upsertBulkRoll(b) }
     fun deleteBulkRoll(b: BulkRoll) = viewModelScope.launch { repo.deleteBulkRoll(b) }
 
-    /**
-     * Cut and load a roll from a bulk canister.
-     * Creates (or reuses) a FilmStock for the film type, creates the Roll,
-     * and decrements the canister's usedFrames — all in one transaction.
-     */
-    fun loadFromBulk(
-        bulk: BulkRoll,
-        frames: Int,
-        cameraId: String,
-        lensId: String,
-        startDate: String
-    ) = viewModelScope.launch {
-        repo.loadFromBulk(
-            bulk      = bulk,
-            frames    = frames,
-            cameraId  = cameraId,
-            lensId    = lensId,
-            startDate = startDate,
-            allFilms  = films.value
-        )
-    }
+    fun cutFromBulk(bulk: BulkRoll, frames: Int, quantity: Int, expiryDate: String) =
+        viewModelScope.launch { repo.cutFromBulk(bulk, frames, quantity, expiryDate) }
 
     // ─── Weather ─────────────────────────────────────────────────────────────
     private val _weatherState = MutableStateFlow<WeatherState>(WeatherState.Idle)
