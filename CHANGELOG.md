@@ -1,3 +1,8 @@
+[v0.2.5b] - 2026-05-27
+
+- okay now it should be fixed. Previous version worked in Android Studio, but not in release after minification
+
+
 [v0.2.5a] - 2026-05-27
 
 - now finally fixed the critical bug crashing app due to DB changes
