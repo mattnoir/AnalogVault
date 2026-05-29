@@ -111,7 +111,8 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             .filter { f ->
                 (filterType == "All" || f.type == filterType) &&
                 (!filterExp || run {
-                    val exp = f.expiryDate.let { if (it.length == 7) "$it-01" else it }
+                    val raw = f.expiryDate
+                    val exp = if (raw.length == 7) "$raw-01" else raw
                     if (exp.isBlank()) return@run false
                     try {
                         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
@@ -197,7 +198,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         if (displayFilms.isEmpty()) item(key = "empty") { EmptyState(if (films.isEmpty()) "No film stocks yet" else "No films match filter") }
         items(displayFilms, key = { it.id }, contentType = { "film" }) { film ->
             // Compute expiry once per item, not every frame
-            val expKey = remember(film.expiryDate) { film.expiryDate.let { if (it.length == 7) "$it-01" else it } }
+            val expKey = film.expiryDate
             val (exLabel, exColor, _) = remember(expKey) { expiryStatus(expKey) }
             val inCamera = film.id in activeFilmIds
             FilmCard(film, exLabel, exColor,
@@ -229,7 +230,13 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             lenses = lenses,
             rolls = rolls,
             onDismiss = { loadingFilm = null },
-            onSave = { roll -> vm.upsertRoll(roll); loadingFilm = null }
+            onSave = { roll ->
+                vm.upsertRoll(roll)
+                // Remove film from stash: decrement qty or delete if last one
+                if (film.quantity > 1) vm.upsertFilm(film.copy(quantity = film.quantity - 1))
+                else vm.deleteFilm(film)
+                loadingFilm = null
+            }
         )
     }
 
@@ -276,6 +283,16 @@ private fun FilmCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     VaultTag(film.type.split(" ").first())
                     VaultTag("ISO ${film.iso}")
+                    if (film.storage.isNotBlank()) {
+                        val storageIcon = when (film.storage) {
+                            "Fridge"         -> "🧊"
+                            "Freezer"        -> "❄️"
+                            "Cool Dark Place" -> "🌑"
+                            "Bulk"           -> "🎞"
+                            else             -> "📦" // Shelf / Custom
+                        }
+                        VaultTag("$storageIcon ${film.storage}", textColor = TextSecondary)
+                    }
                     if (inCamera) VaultTag("📷 In Camera", textColor = BlueInfo)
                     if (film.quantity > 1) VaultTag("×${film.quantity}", textColor = AmberBright)
                     if (exLabel.isNotBlank()) VaultTag(exLabel, textColor = exColor)
@@ -1049,9 +1066,13 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
 
 @Composable
 fun MonthYearPickerDialog(year: Int, month: Int, onConfirm: (Int, Int) -> Unit, onDismiss: () -> Unit) {
-    var selYear  by remember { mutableIntStateOf(year) }
-    var selMonth by remember { mutableIntStateOf(month) }
+    var selYear    by remember { mutableIntStateOf(year) }
+    var selMonth   by remember { mutableIntStateOf(month) }
+    // decadeStart is always the floored decade, e.g. 1978 → 1970
+    var decadeStart by remember { mutableIntStateOf((year / 10) * 10) }
     val months = listOf("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+    // 12 years per page: decadeStart .. decadeStart+11  (3 cols × 4 rows)
+    val yearRange = (decadeStart until decadeStart + 12).toList()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1059,34 +1080,67 @@ fun MonthYearPickerDialog(year: Int, month: Int, onConfirm: (Int, Int) -> Unit, 
         title = { Text("Expiry Date", color = AmberBright) },
         text = {
             Column {
-                // Year picker
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { selYear-- }) {
+                // ── Year decade grid ──────────────────────────────────────────
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { decadeStart -= 12 }) {
                         Icon(Icons.Default.ChevronLeft, null, tint = Amber)
                     }
-                    Text(selYear.toString(), color = TextPrimary, fontSize = 18.sp)
-                    IconButton(onClick = { selYear++ }) {
+                    Text(
+                        "$decadeStart – ${decadeStart + 11}",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                    IconButton(onClick = { decadeStart += 12 }) {
                         Icon(Icons.Default.ChevronRight, null, tint = Amber)
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                // Month grid
-                val rows = months.chunked(3)
-                rows.forEach { row ->
+                Spacer(Modifier.height(4.dp))
+                yearRange.chunked(3).forEach { rowYears ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rowYears.forEach { y ->
+                            val selected = y == selYear
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (selected) AmberDark else Bg4)
+                                    .border(1.dp, if (selected) Amber else Border, RoundedCornerShape(6.dp))
+                                    .clickable { selYear = y }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    y.toString(),
+                                    color = if (selected) AmberBright else TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Spacer(Modifier.height(6.dp))
+                // ── Month grid ────────────────────────────────────────────────
+                months.chunked(3).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { m ->
                             val mIdx = months.indexOf(m) + 1
+                            val selected = mIdx == selMonth
                             Box(
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(if (selMonth == mIdx) AmberDark else Bg4)
-                                    .border(1.dp, if (selMonth == mIdx) Amber else Border, RoundedCornerShape(6.dp))
+                                    .background(if (selected) AmberDark else Bg4)
+                                    .border(1.dp, if (selected) Amber else Border, RoundedCornerShape(6.dp))
                                     .clickable { selMonth = mIdx }
                                     .padding(vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(m, color = if (selMonth == mIdx) AmberBright else TextSecondary, fontSize = 12.sp)
+                                Text(m, color = if (selected) AmberBright else TextSecondary, fontSize = 12.sp)
                             }
                         }
                     }
@@ -1269,7 +1323,7 @@ fun AccessorySheet(ed: Accessory?, onDismiss: () -> Unit, onSave: (Accessory) ->
 
 @Composable
 fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, onLoad: (() -> Unit)? = null) {
-    val expKey = film.expiryDate.let { if (it.length == 7) "$it-01" else it }
+    val expKey = film.expiryDate
     val (exLabel, exColor, _) = expiryStatus(expKey)
     AlertDialog(
         onDismissRequest = onDismiss, containerColor = Bg3,
@@ -1313,9 +1367,9 @@ fun LoadRollSheetFromStash(
     onDismiss: () -> Unit,
     onSave: (Roll) -> Unit
 ) {
-    // Cameras that currently have a roll loaded (not yet developed)
+    // Cameras that currently have an active (unfinished, undeveloped) roll in them
     val busyCameraIds = remember(rolls) {
-        rolls.filter { !it.developed }.map { it.cameraId }.toSet()
+        rolls.filter { !it.finished && !it.developed }.map { it.cameraId }.toSet()
     }
 
     var cameraId  by remember { mutableStateOf("") }

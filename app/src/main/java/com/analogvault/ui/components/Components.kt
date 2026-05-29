@@ -35,18 +35,26 @@ fun formatDate(iso: String): String {
     } catch (e: Exception) { iso }
 }
 
-fun expiryStatus(iso: String): Triple<String, Color, Boolean> {
-    if (iso.isBlank()) return Triple("", Color.Transparent, false)
+fun expiryStatus(rawDate: String): Triple<String, Color, Boolean> {
+    if (rawDate.isBlank()) return Triple("", Color.Transparent, false)
+    // Support both "yyyy-MM" (month-only) and "yyyy-MM-dd" formats
+    val isMonthOnly = rawDate.length == 7
+    val dateStr = if (isMonthOnly) "$rawDate-01" else rawDate
     return try {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val date = sdf.parse(iso) ?: return Triple(iso, TextSecondary, false)
+        val date = sdf.parse(dateStr) ?: return Triple(rawDate, TextSecondary, false)
         val days = ((date.time - Date().time) / 86400000).toInt()
+        val displayLabel = if (isMonthOnly) {
+            SimpleDateFormat("MMM yyyy", Locale.US).format(date)
+        } else {
+            formatDate(dateStr)
+        }
         when {
             days < 0  -> Triple("Expired", RedErr, true)
             days < 90 -> Triple("Exp. in ${days}d", OrangeWarn, false)
-            else      -> Triple(formatDate(iso), GreenOk, false)
+            else      -> Triple(displayLabel, GreenOk, false)
         }
-    } catch (e: Exception) { Triple(iso, TextSecondary, false) }
+    } catch (e: Exception) { Triple(rawDate, TextSecondary, false) }
 }
 
 // ─── Amber chip / tag ─────────────────────────────────────────────────────────

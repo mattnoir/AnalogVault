@@ -361,6 +361,15 @@ object Constants {
         "Bronica ETRSi" to Pair("Bronica","120 (MF)"), "Bronica ETRS" to Pair("Bronica","120 (MF)"),
         "Bronica SQAi" to Pair("Bronica","120 (MF)"), "Bronica GS-1" to Pair("Bronica","120 (MF)"),
         "Bronica SQ-A" to Pair("Bronica","120 (MF)"),
+        // Pentacon / Kiev / Exakta MF (Pentacon Six mount)
+        "Pentacon Six" to Pair("Pentacon","120 (MF)"),
+        "Exakta 66" to Pair("Exakta","120 (MF)"),
+        "Kiev 60" to Pair("Kiev","120 (MF)"),
+        "Kiev 88" to Pair("Kiev","120 (MF)"),
+        // Kowa MF (Kowa Six mount)
+        "Kowa Six" to Pair("Kowa","120 (MF)"),
+        "Kowa Super 66" to Pair("Kowa","120 (MF)"),
+        "Seagull 4B" to Pair("Seagull","120 (MF)"),
         // Fujifilm MF
         "Fujifilm GF670" to Pair("Fujifilm","120 (MF)"), "Fujifilm GF670W" to Pair("Fujifilm","120 (MF)"),
         "Fujifilm GW690 III" to Pair("Fujifilm","120 (MF)"), "Fujifilm GSW690 III" to Pair("Fujifilm","120 (MF)"),
@@ -411,6 +420,12 @@ object Constants {
         "Mamiya 645"      to MountGroup(listOf("Mamiya 645"),                                      listOf("T2")),
         "Mamiya RB/RZ"    to MountGroup(listOf("Mamiya RB67","Mamiya RZ67"),                      listOf("T2")),
         "Bronica ETR"     to MountGroup(listOf("Bronica ETR"),                                     listOf("T2")),
+        "Bronica SQ"      to MountGroup(listOf("Bronica SQ"),                                      listOf("T2")),
+        "Bronica GS"      to MountGroup(listOf("Bronica GS"),                                      listOf("T2")),
+        "Pentacon Six"    to MountGroup(listOf("Pentacon Six","P6","Kiev 60","Exakta 66"),         listOf("T2")),
+        "Kiev 88"         to MountGroup(listOf("Kiev 88","Salyut"),                                listOf("T2")),
+        "Kowa Six"        to MountGroup(listOf("Kowa Six","Kowa Super 66"),                        listOf("T2")),
+        "Rolleiflex SL66" to MountGroup(listOf("Rolleiflex SL66","Rolleiflex 6008"),               listOf("T2")),
         "T2"              to MountGroup(listOf("T2"),                                               emptyList()),
     )
     val COMMON_MOUNTS = MOUNT_GROUPS.keys.toList()
