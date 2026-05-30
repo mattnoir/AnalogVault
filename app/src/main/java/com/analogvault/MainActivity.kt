@@ -260,7 +260,8 @@ fun VaultApp() {
                     initialRollId = initialRollId.also { initialRollId = null },
                     meterShutter = meterShutter.also { meterShutter = "" },
                     meterAperture = meterAperture.also { meterAperture = "" },
-                    meterIso = meterIso.also { meterIso = "" }
+                    meterIso = meterIso.also { meterIso = "" },
+                    onNavigateToDarkroom = { navigateTo(Tab.DARK) }
                 )
                     Tab.DARK    -> DarkroomScreen(vm)
                     Tab.METER   -> MeterScreen(vm, onUseInShot = { sh, ap, iso ->

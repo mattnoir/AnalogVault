@@ -1,3 +1,14 @@
+[v0.2.6] - 2026-05-30
+
+- more native mounts to reflect camera brands
+- film rolls actually disappear from stash upon loading to camera (of in case of multiple rolls in stash it reduces number by one)
+- camera is freed when roll is finished
+- expiration date picker now shows better year picker for easier selection of expired film
+- stash shows storing method
+- backup/restore fixes
+
+
+
 [v0.2.5b] - 2026-05-27
 
 - okay now it should be fixed. Previous version worked in Android Studio, but not in release after minification

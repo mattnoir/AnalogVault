@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.analogvault.ui.screens
 
 import androidx.compose.foundation.*
@@ -38,6 +39,12 @@ fun StashScreen(vm: MainViewModel) {
     val cameras     by vm.cameras.collectAsState()
     val lenses      by vm.lenses.collectAsState()
     val accessories by vm.accessories.collectAsState()
+    val rolls       by vm.rolls.collectAsState()
+
+    // Cameras with an active (unfinished, undeveloped) roll loaded
+    val busyCameraIds by remember(rolls) {
+        derivedStateOf { rolls.filter { !it.finished && !it.developed }.map { it.cameraId }.toSet() }
+    }
 
     val tabs = listOf("Film", "Cameras", "Lenses", "Accessories")
     val pagerState = rememberPagerState { tabs.size }
@@ -68,7 +75,7 @@ fun StashScreen(vm: MainViewModel) {
         ) { page ->
             when (page) {
                 0 -> FilmStashTab(films, vm)
-                1 -> CameraStashTab(cameras, vm)
+                1 -> CameraStashTab(cameras, vm, busyCameraIds)
                 2 -> LensStashTab(lenses, vm)
                 3 -> AccessoryStashTab(accessories, vm)
             }
@@ -92,9 +99,9 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     var loadingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
     var confirmDeleteBulk by remember { mutableStateOf<BulkRoll?>(null) }
 
-    // Films currently in camera (not yet developed)
+    // Films currently being shot (not yet finished) — blocks re-loading the same film
     val activeFilmIds by remember { derivedStateOf {
-        rolls.filter { !it.developed }.map { it.filmId }.toSet()
+        rolls.filter { !it.finished && !it.developed }.map { it.filmId }.toSet()
     }}
 
     // ── Sort + Filter ─────────────────────────────────────────────────────────
@@ -109,6 +116,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     val displayFilms = remember(films, sortBy, filterType, filterExp) {
         films
             .filter { f ->
+                f.quantity > 0 &&
                 (filterType == "All" || f.type == filterType) &&
                 (!filterExp || run {
                     val raw = f.expiryDate
@@ -218,7 +226,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         FilmInfoDialog(film,
             onDismiss = { viewingFilm = null },
             onEdit = { viewingFilm = null; editing = film; showSheet = true },
-            onLoad = if (!inCamera) {{ viewingFilm = null; loadingFilm = film }} else null
+            onLoad = { viewingFilm = null; loadingFilm = film }
         )
     }
     loadingFilm?.let { film ->
@@ -234,7 +242,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                 vm.upsertRoll(roll)
                 // Remove film from stash: decrement qty or delete if last one
                 if (film.quantity > 1) vm.upsertFilm(film.copy(quantity = film.quantity - 1))
-                else vm.deleteFilm(film)
+                else vm.upsertFilm(film.copy(quantity = 0))
                 loadingFilm = null
             }
         )
@@ -267,6 +275,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilmCard(
     film: FilmStock, exLabel: String, exColor: androidx.compose.ui.graphics.Color,
@@ -280,7 +289,7 @@ private fun FilmCard(
                 Text(film.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (film.brand.isNotBlank()) Text(film.brand, color = TextSecondary, fontSize = 11.sp)
                 Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TagRow() {
                     VaultTag(film.type.split(" ").first())
                     VaultTag("ISO ${film.iso}")
                     if (film.storage.isNotBlank()) {
@@ -339,7 +348,7 @@ fun BulkRollCard(
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (bulk.brand.isNotBlank()) Text(bulk.brand, color = TextSecondary, fontSize = 11.sp)
                 Spacer(Modifier.height(5.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TagRow() {
                     VaultTag(bulk.type.split(" ").first())
                     VaultTag("ISO ${bulk.iso}")
                     VaultTag(
@@ -563,7 +572,7 @@ fun LoadFromBulkSheet(
 
     VaultSheet("Cut rolls from ${bulk.name}", onDismiss) {
         // Bulk roll summary
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TagRow() {
             VaultTag(bulk.type.split(" ").first())
             VaultTag("ISO ${bulk.iso}")
             VaultTag("$remaining frames left", textColor = when {
@@ -698,7 +707,7 @@ fun FilterBar(
 // ─── Camera Stash ─────────────────────────────────────────────────────────────
 
 @Composable
-fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel) {
+fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<String> = emptySet()) {
     var showSheet     by remember { mutableStateOf(false) }
     var editing       by remember { mutableStateOf<Camera?>(null) }
     var confirmDelete by remember { mutableStateOf<Camera?>(null) }
@@ -742,15 +751,16 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel) {
                         Text(cam.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (cam.brand.isNotBlank()) Text(cam.brand, color = TextSecondary, fontSize = 11.sp)
                         Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TagRow() {
                             VaultTag(cam.format, textColor = AmberBright)
                             VaultTag(cam.condition)
                             if (cam.mount.isNotBlank()) VaultTag(cam.mount)
                             VaultTag(cam.lensSystem)
+                            if (cam.id in busyCameraIds) VaultTag("📷 Film loaded", textColor = BlueInfo)
                         }
                         cam.adapterMounts.take(3).let { if (it.isNotEmpty()) {
                             Spacer(Modifier.height(2.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TagRow() {
                                 it.forEach { m -> VaultTag(m, textColor = BlueInfo) }
                             }
                         }}
@@ -816,7 +826,7 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
                         Text(lens.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (lens.brand.isNotBlank()) Text(lens.brand, color = TextSecondary, fontSize = 11.sp)
                         Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TagRow() {
                             VaultTag("${lens.focalLength}mm", textColor = AmberBright)
                             VaultTag("f/${lens.maxAperture}")
                             if (lens.mount.isNotBlank()) VaultTag(lens.mount)
@@ -882,7 +892,7 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
                     Column(Modifier.weight(1f)) {
                         Text(acc.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TagRow() {
                             VaultTag(acc.type, textColor = AmberBright)
                             if (acc.brand.isNotBlank()) VaultTag(acc.brand)
                             VaultTag(acc.condition)
@@ -992,7 +1002,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
             } else {
                 // 120 — show MF format presets with frame count labels
                 val mfOptions = Constants.MF_FRAME_COUNTS.entries.toList()
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TagRow() {
                     mfOptions.forEach { (fmt, n) ->
                         val sel = frameCount == n.toString()
                         Box(
@@ -1195,7 +1205,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
             Spacer(Modifier.height(10.dp))
             Text("Shooting format", color = TextTertiary, fontSize = 11.sp)
             Spacer(Modifier.height(6.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TagRow() {
                 Constants.MF_FORMATS.forEach { fmt ->
                     val frames = Constants.MF_FRAME_COUNTS[fmt] ?: 0
                     val sel = mfFormat == fmt
@@ -1237,7 +1247,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                 }
                 if (showAdapters) {
                     val options = Constants.MOUNT_GROUPS[mount]?.adapters ?: Constants.COMMON_MOUNTS.filter { it != mount }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TagRow() {
                         options.forEach { m ->
                             val on = adapters.contains(m)
                             FilterChip(selected = on, onClick = { adapters = if (on) adapters - m else adapters + m },
@@ -1335,7 +1345,7 @@ fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, o
                 InfoRow("ISO", film.iso.toString())
                 InfoRow("Storage", film.storage)
                 if (film.quantity > 1) InfoRow("Quantity", "${film.quantity} rolls")
-                if (exLabel.isNotBlank()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (exLabel.isNotBlank()) TagRow() {
                     Text("Expiry", color = TextTertiary, fontSize = 12.sp)
                     VaultTag(exLabel, textColor = exColor)
                 }
@@ -1383,7 +1393,7 @@ fun LoadRollSheetFromStash(
 
     VaultSheet("Load ${film.name}", onDismiss) {
         // Film info summary
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TagRow() {
             VaultTag(film.type.split(" ").first())
             VaultTag("ISO ${film.iso}")
             if (film.storage.isNotBlank()) VaultTag(film.storage)

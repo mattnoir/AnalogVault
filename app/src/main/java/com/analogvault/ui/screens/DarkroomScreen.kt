@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.analogvault.ui.screens
 
 import androidx.compose.animation.*
@@ -113,7 +114,7 @@ fun ChemistryTab(vm: MainViewModel) {
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TagRow() {
                     VaultTag("$used roll${if (used != 1) "s" else ""} used")
                     if (maxR != null) VaultTag("cap: $maxR")
                     if (chem.volume.isNotBlank()) VaultTag("${chem.volume}${chem.volumeUnit}")
@@ -313,7 +314,7 @@ private fun PresetCard(preset: DevTimer, onStart: () -> Unit) {
                     color = TextSecondary, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
                 // Step pills
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TagRow() {
                     preset.steps.forEach { step ->
                         VaultTag(step.name.take(8), textColor = step.color)
                     }

@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.analogvault.ui.screens
 
 import android.Manifest
@@ -68,7 +69,8 @@ fun ActiveScreen(
     initialRollId: String? = null,
     meterShutter: String = "",
     meterAperture: String = "",
-    meterIso: String = ""
+    meterIso: String = "",
+    onNavigateToDarkroom: () -> Unit = {}
 ) {
     val rolls   by vm.rolls.collectAsState()
     val films   by vm.films.collectAsState()
@@ -207,14 +209,29 @@ fun ActiveScreen(
                         onClick = { showLoadSheet = true })
                 }
             }
+            if (page == 1 && awaitDev.isNotEmpty()) {
+                item {
+                    VaultButton("🧪 Open Darkroom / Develop Timers",
+                        modifier = Modifier.fillMaxWidth(),
+                        ghost = true,
+                        onClick = onNavigateToDarkroom)
+                }
+            }
         }
         } // HorizontalPager page
     }
 
     if (showLoadSheet) {
-        LoadRollSheet(films = films, cameras = cameras, lenses = lenses,
+        LoadRollSheet(films = films, cameras = cameras, lenses = lenses, rolls = rolls,
             onDismiss = { showLoadSheet = false }) { roll ->
-            vm.upsertRoll(roll); showLoadSheet = false
+            vm.upsertRoll(roll)
+            // Decrement stash quantity or delete if last roll
+            val film = films.find { it.id == roll.filmId }
+            if (film != null) {
+                if (film.quantity > 1) vm.upsertFilm(film.copy(quantity = film.quantity - 1))
+                else vm.upsertFilm(film.copy(quantity = 0))
+            }
+            showLoadSheet = false
         }
     }
 }
@@ -253,7 +270,7 @@ private fun RollListCard(
         // Archive badge for done rolls
         if (roll.scanned && roll.devLog != null) {
             Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TagRow() {
                 VaultTag(roll.devLog.process.ifBlank { "Developed" }, textColor = GreenOk)
                 if (roll.scanLog != null) VaultTag(roll.scanLog.method.ifBlank { "Scanned" }, textColor = BlueInfo)
             }
@@ -266,6 +283,7 @@ private fun RollListCard(
 @Composable
 fun LoadRollSheet(
     films: List<FilmStock>, cameras: List<VaultCamera>, lenses: List<Lens>,
+    rolls: List<Roll> = emptyList(),
     onDismiss: () -> Unit, onSave: (Roll) -> Unit
 ) {
     var filmId    by remember { mutableStateOf("") }
@@ -275,11 +293,16 @@ fun LoadRollSheet(
     var pushIso   by remember { mutableStateOf("") }   // blank = box speed
     var totalShots by remember { mutableStateOf("36") }
 
+    val busyCameraIds = remember(rolls) {
+        rolls.filter { !it.finished && !it.developed }.map { it.cameraId }.toSet()
+    }
+
     val selFilm    = films.find { it.id == filmId }
     val filmName   = selFilm?.name ?: ""
-    val cameraName = cameras.find { it.id == cameraId }?.name ?: ""
-    val lensName   = lenses.find { it.id == lensId }?.name ?: ""
     val selCamera  = cameras.find { it.id == cameraId }
+    val cameraName = selCamera?.name ?: ""
+    val lensName   = lenses.find { it.id == lensId }?.name ?: ""
+    val isBusy     = cameraId.isNotBlank() && cameraId in busyCameraIds
 
     // Shot count options depend on film format (stored in shots field as string)
     val shotOptions = remember(filmId) {
@@ -294,8 +317,14 @@ fun LoadRollSheet(
         VaultDropdown("Film Stock", filmName, films.map { it.name },
             { name -> filmId = films.find { it.name == name }?.id ?: "" })
         Spacer(Modifier.height(10.dp))
-        VaultDropdown("Camera", cameraName, cameras.map { it.name },
-            { name -> cameraId = cameras.find { it.name == name }?.id ?: ""; lensId = "" })
+        VaultDropdown("Camera",
+            if (cameraName.isBlank()) "" else if (isBusy) "$cameraName 📷" else cameraName,
+            cameras.map { if (it.id in busyCameraIds) "${it.name} 📷" else it.name },
+            { name ->
+                val cleanName = name.removeSuffix(" 📷")
+                cameraId = cameras.find { it.name == cleanName }?.id ?: ""
+                lensId = ""
+            })
         Spacer(Modifier.height(10.dp))
         if (selCamera?.lensSystem == "interchangeable") {
             val compatLenses = lenses.filter { lens ->
@@ -332,13 +361,22 @@ fun LoadRollSheet(
                 color = if (stops > 0) OrangeWarn else BlueInfo, fontSize = 11.sp)
         }
         Spacer(Modifier.height(16.dp))
-        VaultButton("Load Roll", modifier = Modifier.fillMaxWidth(), onClick = {
-            if (filmId.isNotBlank() && cameraId.isNotBlank()) {
-                onSave(Roll(id = uid(), filmId = filmId, cameraId = cameraId,
-                    cameraLensId = lensId, startDate = startDate,
-                    pushIso = pushIso, totalShots = totalShots.toIntOrNull() ?: 36))
-            }
-        })
+        if (isBusy) {
+            Text(
+                "⚠ This camera already has a roll loaded. Finish or remove it first.",
+                color = OrangeWarn, fontSize = 11.sp
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        VaultButton("Load Roll", modifier = Modifier.fillMaxWidth(),
+            enabled = !isBusy,
+            onClick = {
+                if (filmId.isNotBlank() && cameraId.isNotBlank()) {
+                    onSave(Roll(id = uid(), filmId = filmId, cameraId = cameraId,
+                        cameraLensId = lensId, startDate = startDate,
+                        pushIso = pushIso, totalShots = totalShots.toIntOrNull() ?: 36))
+                }
+            })
     }
 }
 
@@ -393,7 +431,7 @@ fun RollDetailScreen(
                 Text("${cam?.name ?: "?"}${if (lens != null) " · ${lens.name}" else ""}",
                     color = TextSecondary, fontSize = 12.sp)
                 Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TagRow() {
                     VaultTag("Loaded ${formatDate(roll.startDate)}", textColor = BlueInfo)
                     film?.type?.split(" ")?.firstOrNull()?.let { VaultTag(it) }
                     if (roll.pushIso.isNotBlank() && film != null) {
@@ -449,7 +487,7 @@ fun RollDetailScreen(
                 VaultCard {
                     Text("🧪 ${log.process}", color = TextPrimary, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TagRow() {
                         VaultTag(log.developer); VaultTag("${log.temp}°C"); VaultTag("${log.devTime}min")
                     }
                 }
@@ -515,7 +553,7 @@ fun RollDetailScreen(
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TagRow() {
                             if (shot.shutter.isNotBlank())  VaultTag(shot.shutter, textColor = AmberBright)
                             if (shot.aperture.isNotBlank()) VaultTag("f/${shot.aperture}")
                             if (shot.iso.isNotBlank())      VaultTag("ISO ${shot.iso}")

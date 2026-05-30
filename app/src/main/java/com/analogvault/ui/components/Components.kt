@@ -2,6 +2,7 @@ package com.analogvault.ui.components
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -75,6 +76,24 @@ fun VaultTag(
     ) {
         Text(text, color = textColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
     }
+}
+
+// ─── Tag row (wrapping) ───────────────────────────────────────────────────────
+// Use TagRow instead of a plain Row when displaying VaultTags — it wraps onto
+// the next line automatically, preventing the overflow-into-tall-rectangle glitch.
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TagRow(
+    modifier: Modifier = Modifier,
+    content: @Composable FlowRowScope.() -> Unit
+) {
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        content = content
+    )
 }
 
 // ─── Section title ────────────────────────────────────────────────────────────
@@ -319,23 +338,30 @@ fun VaultButton(
     modifier: Modifier = Modifier,
     ghost: Boolean = false,
     danger: Boolean = false,
-    small: Boolean = false
+    small: Boolean = false,
+    enabled: Boolean = true
 ) {
     val bg = when {
+        !enabled -> Bg3
         danger -> RedErr.copy(alpha = 0.15f)
         ghost  -> Bg3
         else   -> AmberDark
     }
     val fg = when {
+        !enabled -> TextTertiary
         danger -> RedErr
         ghost  -> TextSecondary
         else   -> TextPrimary
     }
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.height(if (small) 34.dp else 44.dp),
         shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = bg, contentColor = fg),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = bg, contentColor = fg,
+            disabledContainerColor = Bg3, disabledContentColor = TextTertiary
+        ),
         contentPadding = PaddingValues(horizontal = if (small) 10.dp else 14.dp, vertical = 0.dp)
     ) {
         Text(text, fontSize = if (small) 11.sp else 13.sp)
