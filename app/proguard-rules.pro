@@ -1,5 +1,6 @@
 -keepattributes SourceFile,LineNumberTable,Signature,EnclosingMethod,InnerClasses
 -keep class com.analogvault.data.model.** { *; }
+-keep class com.analogvault.data.backup.** { *; }
 -keep class com.analogvault.data.network.** { *; }
 -keepclassmembers class * { @androidx.room.* <methods>; }
 -dontwarn okhttp3.**

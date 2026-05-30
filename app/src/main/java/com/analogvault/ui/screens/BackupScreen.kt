@@ -40,7 +40,7 @@ fun BackupScreen() {
 
     // SAF launchers
     val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
+        ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> uri?.let { vm.export(context, it, includePhotos) } }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -69,8 +69,8 @@ fun BackupScreen() {
         // Export section
         SectionCard(title = "Export / Backup") {
             Text(
-                "Creates a .analogvault.json file. Choose any folder — " +
-                        "Downloads, Google Drive, a USB drive, whatever you like.",
+                "Creates a .avault file (ZIP containing your data + photos). " +
+                "Store it anywhere — Downloads, Google Drive, a USB drive.",
                 color = TextSecondary, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
@@ -98,7 +98,7 @@ fun BackupScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
-                    exportLauncher.launch("analogvault_$timestamp.json")
+                    exportLauncher.launch("analogvault_$timestamp.avault")
                 }
             )
         }
@@ -108,9 +108,9 @@ fun BackupScreen() {
         // Import section
         SectionCard(title = "Import / Restore") {
             Text(
-                "Opens a previously exported .json file. " +
-                        "Existing records with the same ID are overwritten; " +
-                        "everything else is merged in — nothing is deleted.",
+                "Opens a .avault backup file, or an older .json export. " +
+                "Existing records with the same ID are overwritten; " +
+                "everything else is merged in — nothing is deleted.",
                 color = TextSecondary, fontSize = 12.sp
             )
             Spacer(Modifier.height(14.dp))
@@ -118,7 +118,7 @@ fun BackupScreen() {
                 text = if (busy) "Importing…" else "⬇  Import Backup",
                 modifier = Modifier.fillMaxWidth(),
                 ghost = true,
-                onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }
+                onClick = { importLauncher.launch(arrayOf("application/zip", "application/json", "*/*")) }
             )
         }
 
