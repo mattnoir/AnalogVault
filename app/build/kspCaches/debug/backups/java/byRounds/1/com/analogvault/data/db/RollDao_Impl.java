@@ -78,7 +78,7 @@ public final class RollDao_Impl implements RollDao {
       @Override
       @NonNull
       protected String createQuery() {
-        return "INSERT INTO `rolls` (`id`,`filmId`,`cameraId`,`cameraLensId`,`startDate`,`finished`,`developed`,`scanned`,`shots`,`devLog`,`scanLog`,`pushIso`,`totalShots`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        return "INSERT INTO `rolls` (`id`,`filmId`,`cameraId`,`cameraLensId`,`startDate`,`finished`,`developed`,`scanned`,`shots`,`devLog`,`scanLog`,`pushIso`,`totalShots`,`devCost`,`scanCost`,`isSelfDev`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
       }
 
       @Override
@@ -111,12 +111,16 @@ public final class RollDao_Impl implements RollDao {
         }
         statement.bindString(12, entity.getPushIso());
         statement.bindLong(13, entity.getTotalShots());
+        statement.bindDouble(14, entity.getDevCost());
+        statement.bindDouble(15, entity.getScanCost());
+        final int _tmp_6 = entity.isSelfDev() ? 1 : 0;
+        statement.bindLong(16, _tmp_6);
       }
     }, new EntityDeletionOrUpdateAdapter<Roll>(__db) {
       @Override
       @NonNull
       protected String createQuery() {
-        return "UPDATE `rolls` SET `id` = ?,`filmId` = ?,`cameraId` = ?,`cameraLensId` = ?,`startDate` = ?,`finished` = ?,`developed` = ?,`scanned` = ?,`shots` = ?,`devLog` = ?,`scanLog` = ?,`pushIso` = ?,`totalShots` = ? WHERE `id` = ?";
+        return "UPDATE `rolls` SET `id` = ?,`filmId` = ?,`cameraId` = ?,`cameraLensId` = ?,`startDate` = ?,`finished` = ?,`developed` = ?,`scanned` = ?,`shots` = ?,`devLog` = ?,`scanLog` = ?,`pushIso` = ?,`totalShots` = ?,`devCost` = ?,`scanCost` = ?,`isSelfDev` = ? WHERE `id` = ?";
       }
 
       @Override
@@ -149,7 +153,11 @@ public final class RollDao_Impl implements RollDao {
         }
         statement.bindString(12, entity.getPushIso());
         statement.bindLong(13, entity.getTotalShots());
-        statement.bindString(14, entity.getId());
+        statement.bindDouble(14, entity.getDevCost());
+        statement.bindDouble(15, entity.getScanCost());
+        final int _tmp_6 = entity.isSelfDev() ? 1 : 0;
+        statement.bindLong(16, _tmp_6);
+        statement.bindString(17, entity.getId());
       }
     });
   }
@@ -238,6 +246,9 @@ public final class RollDao_Impl implements RollDao {
           final int _cursorIndexOfScanLog = CursorUtil.getColumnIndexOrThrow(_cursor, "scanLog");
           final int _cursorIndexOfPushIso = CursorUtil.getColumnIndexOrThrow(_cursor, "pushIso");
           final int _cursorIndexOfTotalShots = CursorUtil.getColumnIndexOrThrow(_cursor, "totalShots");
+          final int _cursorIndexOfDevCost = CursorUtil.getColumnIndexOrThrow(_cursor, "devCost");
+          final int _cursorIndexOfScanCost = CursorUtil.getColumnIndexOrThrow(_cursor, "scanCost");
+          final int _cursorIndexOfIsSelfDev = CursorUtil.getColumnIndexOrThrow(_cursor, "isSelfDev");
           final List<Roll> _result = new ArrayList<Roll>(_cursor.getCount());
           while (_cursor.moveToNext()) {
             final Roll _item;
@@ -287,7 +298,15 @@ public final class RollDao_Impl implements RollDao {
             _tmpPushIso = _cursor.getString(_cursorIndexOfPushIso);
             final int _tmpTotalShots;
             _tmpTotalShots = _cursor.getInt(_cursorIndexOfTotalShots);
-            _item = new Roll(_tmpId,_tmpFilmId,_tmpCameraId,_tmpCameraLensId,_tmpStartDate,_tmpFinished,_tmpDeveloped,_tmpScanned,_tmpShots,_tmpDevLog,_tmpScanLog,_tmpPushIso,_tmpTotalShots);
+            final double _tmpDevCost;
+            _tmpDevCost = _cursor.getDouble(_cursorIndexOfDevCost);
+            final double _tmpScanCost;
+            _tmpScanCost = _cursor.getDouble(_cursorIndexOfScanCost);
+            final boolean _tmpIsSelfDev;
+            final int _tmp_6;
+            _tmp_6 = _cursor.getInt(_cursorIndexOfIsSelfDev);
+            _tmpIsSelfDev = _tmp_6 != 0;
+            _item = new Roll(_tmpId,_tmpFilmId,_tmpCameraId,_tmpCameraLensId,_tmpStartDate,_tmpFinished,_tmpDeveloped,_tmpScanned,_tmpShots,_tmpDevLog,_tmpScanLog,_tmpPushIso,_tmpTotalShots,_tmpDevCost,_tmpScanCost,_tmpIsSelfDev);
             _result.add(_item);
           }
           return _result;

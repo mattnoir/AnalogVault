@@ -1,5 +1,29 @@
-[v0.2.6] - 2026-05-30
+[v0.3] - 2026-06-17
+-
+- added cost per roll/bulk - including dev and scan costs
+- bulk rolls now collapsible
+- added purchase date for film rolls
+- added settings page
+- added custom ISO range (available in settings)
+- date and time in shot log now includes a picker, location is loaded automatically, weather can be fetched manually
+- added navigation animations
+- rearranged navigation tabs, removed burger menu, "more" now shows only options that are not in the main nav
 
+known bugs:
+- navigation stacking for back button is kinda over the top
+- "use in shot" from light meter does not translate into the shot log
+- costs not behaving like I would like to
+- shot log picker needs a little rework
+- animations need a slight rework too
+- 
+- you tell me
+
+plans for the future:
+- possible rework of the design and navigation
+- code clean-up
+
+[v0.2.6] - 2026-05-30
+-
 - more native mounts to reflect camera brands
 - film rolls actually disappear from stash upon loading to camera (of in case of multiple rolls in stash it reduces number by one)
 - camera is freed when roll is finished
@@ -10,19 +34,19 @@
 
 
 [v0.2.5b] - 2026-05-27
-
+-
 - okay now it should be fixed. Previous version worked in Android Studio, but not in release after minification
 
 
 [v0.2.5a] - 2026-05-27
-
+-
 - now finally fixed the critical bug crashing app due to DB changes
 - some code cleanup
 
 
 
 [v0.2.5 - v0.2.1] - 2026-05-27
-
+-
 - fixed critical bug where adding a camera crashed the whole app without option of recovery
 - Film ISO override for shooting other than box speed
 - added bulk film tracker
@@ -45,7 +69,7 @@ Known bugs:
   
 
 [v0.2] - 2026-05-23
-
+-
 - Map now showing tiles
 - 1/3 stops options for ISO/shutter/aperture
 - you can now load rolls from stash and stash shows rolls that are in camera
@@ -64,7 +88,7 @@ Known bugs:
 
 
 [v0.1] - 2026-05-19
-
+-
 - Complete overhaul of Light meter for actual metering
 - Stash add button is on the top
 - some bug fixes
@@ -75,7 +99,7 @@ Known bugs:
 
 
 [v0.0.1 - 0.0.5]
-
+-
 - added home screen
 - added timers
 - added suggested rolls and automatically adjusts ISO and brand

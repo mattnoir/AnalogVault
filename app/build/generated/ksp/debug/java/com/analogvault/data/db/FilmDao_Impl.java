@@ -55,7 +55,7 @@ public final class FilmDao_Impl implements FilmDao {
       @Override
       @NonNull
       protected String createQuery() {
-        return "INSERT INTO `films` (`id`,`name`,`brand`,`type`,`iso`,`shots`,`filmFormat`,`frameCount`,`expiryDate`,`storage`,`quantity`,`notes`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
+        return "INSERT INTO `films` (`id`,`name`,`brand`,`type`,`iso`,`shots`,`filmFormat`,`frameCount`,`expiryDate`,`storage`,`quantity`,`notes`,`costPerRoll`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
       }
 
       @Override
@@ -73,12 +73,13 @@ public final class FilmDao_Impl implements FilmDao {
         statement.bindString(10, entity.getStorage());
         statement.bindLong(11, entity.getQuantity());
         statement.bindString(12, entity.getNotes());
+        statement.bindDouble(13, entity.getCostPerRoll());
       }
     }, new EntityDeletionOrUpdateAdapter<FilmStock>(__db) {
       @Override
       @NonNull
       protected String createQuery() {
-        return "UPDATE `films` SET `id` = ?,`name` = ?,`brand` = ?,`type` = ?,`iso` = ?,`shots` = ?,`filmFormat` = ?,`frameCount` = ?,`expiryDate` = ?,`storage` = ?,`quantity` = ?,`notes` = ? WHERE `id` = ?";
+        return "UPDATE `films` SET `id` = ?,`name` = ?,`brand` = ?,`type` = ?,`iso` = ?,`shots` = ?,`filmFormat` = ?,`frameCount` = ?,`expiryDate` = ?,`storage` = ?,`quantity` = ?,`notes` = ?,`costPerRoll` = ? WHERE `id` = ?";
       }
 
       @Override
@@ -96,7 +97,8 @@ public final class FilmDao_Impl implements FilmDao {
         statement.bindString(10, entity.getStorage());
         statement.bindLong(11, entity.getQuantity());
         statement.bindString(12, entity.getNotes());
-        statement.bindString(13, entity.getId());
+        statement.bindDouble(13, entity.getCostPerRoll());
+        statement.bindString(14, entity.getId());
       }
     });
   }
@@ -159,6 +161,7 @@ public final class FilmDao_Impl implements FilmDao {
           final int _cursorIndexOfStorage = CursorUtil.getColumnIndexOrThrow(_cursor, "storage");
           final int _cursorIndexOfQuantity = CursorUtil.getColumnIndexOrThrow(_cursor, "quantity");
           final int _cursorIndexOfNotes = CursorUtil.getColumnIndexOrThrow(_cursor, "notes");
+          final int _cursorIndexOfCostPerRoll = CursorUtil.getColumnIndexOrThrow(_cursor, "costPerRoll");
           final List<FilmStock> _result = new ArrayList<FilmStock>(_cursor.getCount());
           while (_cursor.moveToNext()) {
             final FilmStock _item;
@@ -186,7 +189,9 @@ public final class FilmDao_Impl implements FilmDao {
             _tmpQuantity = _cursor.getInt(_cursorIndexOfQuantity);
             final String _tmpNotes;
             _tmpNotes = _cursor.getString(_cursorIndexOfNotes);
-            _item = new FilmStock(_tmpId,_tmpName,_tmpBrand,_tmpType,_tmpIso,_tmpShots,_tmpFilmFormat,_tmpFrameCount,_tmpExpiryDate,_tmpStorage,_tmpQuantity,_tmpNotes);
+            final double _tmpCostPerRoll;
+            _tmpCostPerRoll = _cursor.getDouble(_cursorIndexOfCostPerRoll);
+            _item = new FilmStock(_tmpId,_tmpName,_tmpBrand,_tmpType,_tmpIso,_tmpShots,_tmpFilmFormat,_tmpFrameCount,_tmpExpiryDate,_tmpStorage,_tmpQuantity,_tmpNotes,_tmpCostPerRoll);
             _result.add(_item);
           }
           return _result;

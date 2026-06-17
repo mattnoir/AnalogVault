@@ -96,7 +96,162 @@ fun TagRow(
     )
 }
 
-// ─── Section title ────────────────────────────────────────────────────────────
+// ─── Full Date Picker (day + month + year, optional time) ─────────────────────
+
+@Composable
+private fun SpinnerField(
+    label: String, value: String,
+    onDec: () -> Unit, onInc: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = TextTertiary, fontSize = 10.sp)
+        Spacer(Modifier.height(2.dp))
+        IconButton(onClick = onInc, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.ExpandLess, null, tint = Amber, modifier = Modifier.size(20.dp))
+        }
+        Box(
+            Modifier.background(Bg4, RoundedCornerShape(6.dp))
+                .border(1.dp, Border, RoundedCornerShape(6.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(value, color = TextPrimary, fontSize = 16.sp)
+        }
+        IconButton(onClick = onDec, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.ExpandMore, null, tint = Amber, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+// Compact spinner-style: arrow up/down for each field, all visible at once.
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FullDatePickerDialog(
+    initialDate: String,
+    includeTime: Boolean = false,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val parsed = remember(initialDate) {
+        try {
+            val fmt = if (includeTime && initialDate.length >= 16) "yyyy-MM-dd HH:mm" else "yyyy-MM-dd"
+            java.text.SimpleDateFormat(fmt, java.util.Locale.US)
+                .parse(initialDate.take(16)) ?: java.util.Date()
+        } catch (_: Exception) { java.util.Date() }
+    }
+    val cal = java.util.Calendar.getInstance().also { it.time = parsed }
+    var selDay    by remember { mutableIntStateOf(cal.get(java.util.Calendar.DAY_OF_MONTH)) }
+    var selMonth  by remember { mutableIntStateOf(cal.get(java.util.Calendar.MONTH) + 1) }
+    var selYear   by remember { mutableIntStateOf(cal.get(java.util.Calendar.YEAR)) }
+    var selHour   by remember { mutableIntStateOf(cal.get(java.util.Calendar.HOUR_OF_DAY)) }
+    var selMinute by remember { mutableIntStateOf(cal.get(java.util.Calendar.MINUTE)) }
+
+    val months = listOf("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+    val daysInMonth = remember(selYear, selMonth) {
+        java.util.Calendar.getInstance().also { c -> c.set(selYear, selMonth - 1, 1) }
+            .getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+    }
+    // Clamp day if month shrinks
+    if (selDay > daysInMonth) selDay = daysInMonth
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Bg3,
+        title = { Text(if (includeTime) "Date & Time" else "Select Date", color = AmberBright) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Date row: Day | Month | Year
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SpinnerField(
+                        label = "Day",
+                        value = "%02d".format(selDay),
+                        onInc = { selDay = if (selDay >= daysInMonth) 1 else selDay + 1 },
+                        onDec = { selDay = if (selDay <= 1) daysInMonth else selDay - 1 },
+                        modifier = Modifier.weight(1f)
+                    )
+                    SpinnerField(
+                        label = "Month",
+                        value = months[selMonth - 1],
+                        onInc = { selMonth = if (selMonth >= 12) 1 else selMonth + 1 },
+                        onDec = { selMonth = if (selMonth <= 1) 12 else selMonth - 1 },
+                        modifier = Modifier.weight(1.3f)
+                    )
+                    SpinnerField(
+                        label = "Year",
+                        value = selYear.toString(),
+                        onInc = { selYear++ },
+                        onDec = { selYear-- },
+                        modifier = Modifier.weight(1.3f)
+                    )
+                }
+                if (includeTime) {
+                    Spacer(Modifier.height(12.dp))
+                    Divider(color = Border)
+                    Spacer(Modifier.height(12.dp))
+                    // Time row: Hour | : | Minute
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SpinnerField(
+                            label = "Hour",
+                            value = "%02d".format(selHour),
+                            onInc = { selHour = (selHour + 1) % 24 },
+                            onDec = { selHour = (selHour - 1 + 24) % 24 },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(":", color = Amber, fontSize = 24.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 32.dp))
+                        SpinnerField(
+                            label = "Min",
+                            value = "%02d".format(selMinute),
+                            onInc = { selMinute = (selMinute + 5) % 60 },
+                            onDec = { selMinute = (selMinute - 5 + 60) % 60 },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val result = if (includeTime)
+                    "%04d-%02d-%02d %02d:%02d".format(selYear, selMonth, selDay, selHour, selMinute)
+                else
+                    "%04d-%02d-%02d".format(selYear, selMonth, selDay)
+                onConfirm(result)
+            }) { Text("Set", color = Amber) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) }
+        }
+    )
+}
+// ─── Section card ─────────────────────────────────────────────────────────────
+
+@Composable
+fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Bg2)
+            .border(1.dp, Border, RoundedCornerShape(10.dp))
+            .padding(14.dp)
+    ) {
+        Text(title, color = Amber, fontSize = 14.sp)
+        Spacer(Modifier.height(10.dp))
+        content()
+    }
+}
+
+// ─── Section title ─────────────────────────────────────────────────────────────
 
 @Composable
 fun SectionTitle(text: String, badge: String? = null) {
@@ -149,11 +304,13 @@ fun VaultTextField(
     keyboardType: KeyboardType = KeyboardType.Text,
     singleLine: Boolean = true,
     minLines: Int = 1,
-    placeholder: String = ""
+    placeholder: String = "",
+    enabled: Boolean = true
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         label = { Text(label, color = TextTertiary, fontSize = 11.sp) },
         placeholder = if (placeholder.isNotBlank()) {{ Text(placeholder, color = TextTertiary, fontSize = 12.sp) }} else null,
         singleLine = singleLine,

@@ -7,8 +7,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
-import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,7 +29,6 @@ import com.analogvault.ui.screens.*
 import com.analogvault.ui.theme.*
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.HiltAndroidApp
-import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class AnalogVaultApp : Application() {
@@ -67,211 +67,160 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Tab(val label: String, val icon: ImageVector) {
-    DASH("Home",       Icons.Default.Home),
-    STASH("Stash",     Icons.Default.Inventory),
-    ACTIVE("Rolls",    Icons.Default.CameraRoll),
-    DARK("Darkroom",   Icons.Default.Science),
-    METER("Meter",     Icons.Default.WbSunny),
-    WEATHER("Weather", Icons.Default.Cloud),
-    STATS("Stats",     Icons.Default.BarChart),
-    BACKUP("Backup",   Icons.Default.CloudDownload)
+    DASH    ("Home",     Icons.Default.Home),
+    STASH   ("Stash",   Icons.Default.Inventory),
+    ACTIVE  ("Loaded",  Icons.Default.CameraRoll),
+    METER   ("Meter",   Icons.Default.WbSunny),
+    WEATHER ("Weather", Icons.Default.Cloud),
+    MORE    ("More",    Icons.Default.MoreHoriz),
+    // "More" sub-items — not shown in bottom bar directly
+    DARK    ("Darkroom",Icons.Default.Science),
+    STATS   ("Stats",   Icons.Default.BarChart),
+    BACKUP  ("Backup",  Icons.Default.CloudDownload),
+    SETTINGS("Settings",Icons.Default.Settings)
 }
 
-// Tabs shown in bottom bar (most used); rest live in drawer
-private val BOTTOM_TABS = listOf(Tab.DASH, Tab.ACTIVE, Tab.DARK, Tab.METER, Tab.STASH)
+private val BOTTOM_TABS = listOf(Tab.DASH, Tab.STASH, Tab.ACTIVE, Tab.METER, Tab.WEATHER, Tab.MORE)
+private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.BACKUP, Tab.SETTINGS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultApp() {
     val vm: MainViewModel = hiltViewModel()
     val rolls by vm.rolls.collectAsState()
-    val activeCount by remember { derivedStateOf { rolls.count { !it.developed } } }
+    val activeCount by remember { derivedStateOf { rolls.count { !it.finished && !it.developed } } }
 
-    // Navigation state
-    // Back stack: DASH is root, each nav push appends, back pops
-    var backStack    by remember { mutableStateOf(listOf(Tab.DASH)) }
-    var activeSubTab     by remember { mutableIntStateOf(0) }
-    var meterShutter     by remember { mutableStateOf("") }
-    var meterAperture    by remember { mutableStateOf("") }
-    var meterIso         by remember { mutableStateOf("") }
-    var initialRollId    by remember { mutableStateOf<String?>(null) }
-    val currentTab = backStack.last()
+    var activeSubTab by remember { mutableIntStateOf(0) }
+    var initialRollId by remember { mutableStateOf<String?>(null) }
+    var meterShutter  by remember { mutableStateOf("") }
+    var meterAperture by remember { mutableStateOf("") }
+    var meterIso      by remember { mutableStateOf("") }
 
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    // Back stack: DASH is always the root, never popped
+    val backStack = remember { androidx.compose.runtime.snapshots.SnapshotStateList<Tab>().also { it.add(Tab.DASH) } }
+    val currentTab by remember { derivedStateOf { backStack.last() } }
 
     fun navigateTo(tab: Tab, subTab: Int = 0) {
-        scope.launch { drawerState.close() }
         if (tab == Tab.ACTIVE) activeSubTab = subTab
-        if (tab == currentTab) return
-        backStack = if (tab == Tab.DASH) listOf(Tab.DASH)
-        else (backStack.filter { it != tab } + tab).takeLast(10)
-    }
-    fun navigateToIndex(idx: Int, subTab: Int = 0, rollId: String? = null) {
-        initialRollId = rollId
-        Tab.entries.getOrNull(idx)?.let { navigateTo(it, subTab) }
+        // Don't push duplicates — just bring to front
+        if (backStack.last() != tab) backStack.add(tab)
     }
 
-    // Back: pop stack; from DASH let system exit
+    // Back: pop the stack; if only root remains, let system handle (exit)
     BackHandler(enabled = backStack.size > 1) {
-        backStack = backStack.dropLast(1)
+        backStack.removeLastOrNull()
     }
 
-    // Also close drawer on back if open
-    BackHandler(enabled = drawerState.isOpen) {
-        scope.launch { drawerState.close() }
-    }
+    val isMoreSub = currentTab in MORE_TABS
 
-    // Disable swipe-to-open on tabs where horizontal gestures are needed (map, camera)
-    // When drawer is open: gestures enabled (tap outside / swipe to close works)
-    // When drawer is closed: gestures disabled (no accidental swipe-open on map/camera)
-    val gestureEnabled = drawerState.isOpen
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = gestureEnabled,
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = Bg2,
-                drawerContentColor = TextPrimary,
-                modifier = Modifier.width(280.dp)
-            ) {
-                Spacer(Modifier.height(16.dp))
-                // Header
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    Text("Analog Vault", color = AmberBright, fontSize = 20.sp)
-                    Text("FILM & GEAR TRACKER", color = TextTertiary, fontSize = 9.sp)
-                }
-                HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
-                Spacer(Modifier.height(8.dp))
-
-                Tab.entries.forEach { tab ->
-                    val selected = currentTab == tab
-                    val label = if (tab == Tab.ACTIVE && activeCount > 0) "${tab.label} ($activeCount)" else tab.label
-                    NavigationDrawerItem(
-                        icon = { Icon(tab.icon, null, tint = if (selected) AmberBright else TextSecondary) },
-                        label = { Text(label, color = if (selected) AmberBright else TextPrimary, fontSize = 14.sp) },
+    Scaffold(
+        bottomBar = {
+            NavigationBar(containerColor = Bg2, tonalElevation = 0.dp) {
+                BOTTOM_TABS.forEach { tab ->
+                    val selected = currentTab == tab || (tab == Tab.MORE && isMoreSub)
+                    NavigationBarItem(
                         selected = selected,
                         onClick = { navigateTo(tab) },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-                        colors = NavigationDrawerItemDefaults.colors(
-                            selectedContainerColor = AmberDark.copy(alpha = 0.25f),
-                            unselectedContainerColor = androidx.compose.ui.graphics.Color.Transparent
-                        )
-                    )
-                }
-
-                Spacer(Modifier.weight(1f))
-                HorizontalDivider(color = Border, modifier = Modifier.padding(horizontal = 16.dp))
-                // Back stack breadcrumb
-                if (backStack.size > 1) {
-                    Text(
-                        backStack.joinToString(" › ") { it.label },
-                        color = TextTertiary, fontSize = 10.sp,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-    ) {
-        Scaffold(
-            containerColor = Bg,
-            contentColor = TextPrimary,
-            topBar = {
-                Column(
-                    modifier = Modifier
-                        .background(Bg2)
-                        .statusBarsPadding()
-                        .fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Amber)
-                        }
-                        Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                            Text("Analog Vault", color = AmberBright, fontSize = 20.sp)
-                            Text("FILM & GEAR TRACKER", color = TextTertiary, fontSize = 8.sp)
-                        }
-                        // Current tab breadcrumb
-                        if (backStack.size > 1) {
-                            IconButton(onClick = { backStack = backStack.dropLast(1) }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextSecondary)
-                            }
-                        }
-                        Text(currentTab.label, color = TextSecondary, fontSize = 12.sp,
-                            modifier = Modifier.padding(end = 8.dp))
-                    }
-                }
-            },
-            bottomBar = {
-                NavigationBar(
-                    containerColor = Bg2,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.navigationBarsPadding()
-                ) {
-                    BOTTOM_TABS.forEach { tab ->
-                        val label = if (tab == Tab.ACTIVE && activeCount > 0) "Rolls($activeCount)" else tab.label
-                        NavigationBarItem(
-                            selected = currentTab == tab,
-                            onClick = { navigateTo(tab) },
-                            icon = { Icon(tab.icon, null, modifier = Modifier.size(20.dp)) },
-                            label = { Text(label, fontSize = 8.sp) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = AmberBright,
-                                selectedTextColor = AmberBright,
-                                unselectedIconColor = TextTertiary,
-                                unselectedTextColor = TextTertiary,
-                                indicatorColor = AmberDark.copy(alpha = 0.3f)
-                            )
-                        )
-                    }
-                    // "More" button opens drawer
-                    NavigationBarItem(
-                        selected = currentTab in listOf(Tab.WEATHER, Tab.STATS, Tab.BACKUP),
-                        onClick = { scope.launch { drawerState.open() } },
-                        icon = { Icon(Icons.Default.MoreHoriz, null, modifier = Modifier.size(20.dp)) },
-                        label = { Text("More", fontSize = 8.sp) },
+                        icon = {
+                            BadgedBox(badge = {
+                                if (tab == Tab.ACTIVE && activeCount > 0)
+                                    Badge(containerColor = Amber) {
+                                        Text(activeCount.toString(), color = Bg, fontSize = 10.sp)
+                                    }
+                            }) { Icon(tab.icon, tab.label) }
+                        },
+                        label = { Text(tab.label, fontSize = 10.sp) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = AmberBright,
-                            selectedTextColor = AmberBright,
-                            unselectedIconColor = TextTertiary,
-                            unselectedTextColor = TextTertiary,
+                            selectedIconColor = Amber,
+                            selectedTextColor = Amber,
+                            unselectedIconColor = TextSecondary,
+                            unselectedTextColor = TextSecondary,
                             indicatorColor = AmberDark.copy(alpha = 0.3f)
                         )
                     )
                 }
             }
-        ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding).background(Bg)) {
-                // No AnimatedContent — instant swap is faster than composited fade on Mali GPU
-                when (currentTab) {
-                    // Note: using 'currentTab' not 'tab' since we removed AnimatedContent
-                    Tab.DASH    -> DashboardScreen(vm, onNavigate = { idx, sub, rollId -> navigateToIndex(idx, sub, rollId) })
-                    Tab.STASH   -> StashScreen(vm)
-                    Tab.ACTIVE  -> ActiveScreen(
+        }
+    ) { padding ->
+        AnimatedContent(
+            targetState = currentTab,
+            transitionSpec = {
+                (fadeIn(tween(180)) + slideInHorizontally(tween(180)) { it / 12 }) togetherWith
+                (fadeOut(tween(120)) + slideOutHorizontally(tween(120)) { -it / 12 })
+            },
+            modifier = Modifier.padding(padding)
+        ) { tab ->
+            when (tab) {
+                Tab.DASH     -> DashboardScreen(vm,
+                    onNavigate = { tabIndex, subTab, rollId ->
+                        if (rollId != null) initialRollId = rollId
+                        val target = when (tabIndex) {
+                            1 -> Tab.STASH;  2 -> Tab.ACTIVE; 3 -> Tab.DARK
+                            4 -> Tab.METER;  5 -> Tab.WEATHER; 6 -> Tab.STATS
+                            else -> Tab.DASH
+                        }
+                        navigateTo(target, subTab)
+                    })
+                Tab.STASH    -> StashScreen(vm)
+                Tab.ACTIVE   -> ActiveScreen(
                     vm = vm,
                     initialSubTab = activeSubTab,
                     initialRollId = initialRollId.also { initialRollId = null },
-                    meterShutter = meterShutter.also { meterShutter = "" },
-                    meterAperture = meterAperture.also { meterAperture = "" },
-                    meterIso = meterIso.also { meterIso = "" },
+                    meterShutter  = meterShutter,
+                    meterAperture = meterAperture,
+                    meterIso      = meterIso,
+                    onMeterConsumed      = { meterShutter = ""; meterAperture = ""; meterIso = "" },
                     onNavigateToDarkroom = { navigateTo(Tab.DARK) }
                 )
-                    Tab.DARK    -> DarkroomScreen(vm)
-                    Tab.METER   -> MeterScreen(vm, onUseInShot = { sh, ap, iso ->
+                Tab.METER    -> MeterScreen(vm, onUseInShot = { sh, ap, iso ->
                     meterShutter = sh; meterAperture = ap; meterIso = iso
                     navigateTo(Tab.ACTIVE, 0)
                 })
-                    Tab.WEATHER -> WeatherScreen(vm)
-                    Tab.STATS   -> StatsScreen(vm)
-                    Tab.BACKUP  -> BackupScreen()
+                Tab.WEATHER  -> WeatherScreen(vm)
+                Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
+                Tab.DARK     -> DarkroomScreen(vm)
+                Tab.STATS    -> StatsScreen(vm)
+                Tab.BACKUP   -> BackupScreen()
+                Tab.SETTINGS -> SettingsScreen(vm)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreScreen(currentSub: Tab?, onNavigate: (Tab) -> Unit) {
+    val items = listOf(
+        Tab.DARK     to "Darkroom timers, develop logs and scan logs",
+        Tab.STATS    to "Roll statistics, cost breakdown, shot map",
+        Tab.BACKUP   to "Export and import your vault data",
+        Tab.SETTINGS to "OWM key, currency, units, custom ISOs"
+    )
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("More", color = AmberBright, fontSize = 22.sp)
+        Spacer(Modifier.height(4.dp))
+        items.forEach { (tab, subtitle) ->
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (currentSub == tab) AmberDark.copy(alpha = 0.2f) else Bg2)
+                    .border(1.dp, if (currentSub == tab) Amber else Border,
+                        RoundedCornerShape(10.dp))
+                    .clickable { onNavigate(tab) }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(tab.icon, null, tint = if (currentSub == tab) Amber else TextSecondary,
+                    modifier = Modifier.size(28.dp))
+                Column {
+                    Text(tab.label, color = if (currentSub == tab) Amber else TextPrimary, fontSize = 16.sp)
+                    Text(subtitle, color = TextTertiary, fontSize = 12.sp)
                 }
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight, null, tint = TextTertiary, modifier = Modifier.size(20.dp))
             }
         }
     }

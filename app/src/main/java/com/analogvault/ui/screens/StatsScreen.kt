@@ -3,6 +3,7 @@ package com.analogvault.ui.screens
 import androidx.compose.foundation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import com.analogvault.util.Constants
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -26,9 +27,10 @@ import com.analogvault.ui.theme.*
 
 @Composable
 fun StatsScreen(vm: MainViewModel) {
-    val stats by vm.stats.collectAsState()
-    val rolls by vm.rolls.collectAsState()
-    val films by vm.films.collectAsState()
+    val stats    by vm.stats.collectAsState()
+    val rolls    by vm.rolls.collectAsState()
+    val films    by vm.films.collectAsState()
+    val currency by vm.currency.collectAsState()
 
     val tabs = listOf("Numbers", "Map")
     val pagerState = rememberPagerState { tabs.size }
@@ -54,7 +56,7 @@ fun StatsScreen(vm: MainViewModel) {
             when (page) {
                 0 -> StatsNumbers(stats)
                 1 -> StatsMap(vm)
-                else -> StatsNumbers(stats)
+                else -> StatsNumbers(stats, currency)
             }
         }
     }
@@ -63,7 +65,7 @@ fun StatsScreen(vm: MainViewModel) {
 // ─── Numbers tab ──────────────────────────────────────────────────────────────
 
 @Composable
-fun StatsNumbers(stats: Stats) {
+fun StatsNumbers(stats: Stats, currency: String = "€") {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -87,6 +89,104 @@ fun StatsNumbers(stats: Stats) {
         if (stats.byMonth.isNotEmpty()) {
             item { SectionTitle("Shots by Month") }
             item { MonthBarChart(stats) }
+        }
+
+        // Cost breakdown — only shown if any cost has been recorded
+        val totalCost = stats.totalFilmCost + stats.totalDevCost + stats.totalScanCost
+        val rollsWithAnyCost = stats.totalRolls  // always show section if we have rolls
+        if (stats.totalRolls > 0) {
+            item { SectionTitle("Cost Breakdown") }
+            item {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .drawBehind { drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())) }
+                        .border(1.dp, Border, RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val fmt = { v: Double -> if (v > 0.0) "${currency}%.2f".format(v) else "—" }
+                    val perShot = if (stats.totalShots > 0 && totalCost > 0.0)
+                        "${currency}%.3f/shot".format(totalCost / stats.totalShots) else null
+
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Film",         color = TextSecondary, fontSize = 13.sp)
+                        Text(fmt(stats.totalFilmCost), color = TextPrimary, fontSize = 13.sp)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        val devLabel = when {
+                            stats.selfDevRolls > 0 && stats.labDevRolls > 0 ->
+                                "Development (${stats.selfDevRolls} self / ${stats.labDevRolls} lab)"
+                            stats.selfDevRolls > 0 -> "Development (self, ${stats.selfDevRolls} rolls)"
+                            stats.labDevRolls > 0  -> "Development (lab, ${stats.labDevRolls} rolls)"
+                            else -> "Development"
+                        }
+                        Text(devLabel, color = TextSecondary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Text(fmt(stats.totalDevCost), color = TextPrimary, fontSize = 13.sp)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Scanning",     color = TextSecondary, fontSize = 13.sp)
+                        Text(fmt(stats.totalScanCost), color = TextPrimary, fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    androidx.compose.material3.Divider(color = Border)
+                    Spacer(Modifier.height(2.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Total", color = if (totalCost > 0) Amber else TextSecondary,
+                            fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                        Text(if (totalCost > 0) "${currency}%.2f".format(totalCost) else "No costs recorded",
+                            color = if (totalCost > 0) Amber else TextTertiary,
+                            fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                    }
+                    if (perShot != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Avg cost/shot", color = TextSecondary, fontSize = 12.sp)
+                            Text(perShot, color = TextSecondary, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            // Per-roll breakdown
+            if (stats.rollCosts.isNotEmpty()) {
+                item { SectionTitle("Cost per Roll") }
+                item {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .drawBehind { drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())) }
+                            .border(1.dp, Border, RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Header
+                        Row(Modifier.fillMaxWidth()) {
+                            Text("Film", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                            Text("Total", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            Text("/shot", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                        }
+                        androidx.compose.material3.Divider(color = Border)
+                        stats.rollCosts.forEach { rc ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(rc.filmName, color = TextPrimary, fontSize = 13.sp,
+                                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    val breakdown = buildList {
+                                        if (rc.filmCost > 0) add("film ${currency}%.2f".format(rc.filmCost))
+                                        if (rc.devCost > 0) add("dev ${currency}%.2f".format(rc.devCost))
+                                        if (rc.scanCost > 0) add("scan ${currency}%.2f".format(rc.scanCost))
+                                    }
+                                    if (breakdown.isNotEmpty())
+                                        Text(breakdown.joinToString(" · "), color = TextTertiary, fontSize = 10.sp)
+                                }
+                                Text("${currency}%.2f".format(rc.totalCost),
+                                    color = Amber, fontSize = 13.sp,
+                                    modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                Text(if (rc.costPerShot > 0) "${currency}%.3f".format(rc.costPerShot) else "—",
+                                    color = TextSecondary, fontSize = 12.sp,
+                                    modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if (stats.byFilm.isNotEmpty()) {

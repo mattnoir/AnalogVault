@@ -51,7 +51,8 @@ data class FilmStock(
     val expiryDate: String = "",
     val storage: String = "Shelf",
     val quantity: Int = 1,
-    val notes: String = ""
+    val notes: String = "",
+    val costPerRoll: Double = 0.0  // purchase price per roll; 0 = gifted / unknown
 )
 
 // ─── Camera ──────────────────────────────────────────────────────────────────
@@ -148,7 +149,11 @@ data class Roll(
     /** ISO override — if blank, use film box speed */
     val pushIso: String = "",
     /** Total exposures on this roll */
-    val totalShots: Int = 36
+    val totalShots: Int = 36,
+    // ── Cost tracking ───────────────────────────────────────────────────────
+    val devCost: Double = 0.0,     // lab dev cost OR self-dev chemical cost
+    val scanCost: Double = 0.0,    // scanning cost (lab or home scanner)
+    val isSelfDev: Boolean = false // true = self-developed (cost is chemicals, not lab)
 )
 
 // ─── Chemical ─────────────────────────────────────────────────────────────────
@@ -182,7 +187,8 @@ data class BulkRoll(
     val usedFrames: Int = 0,         // frames already loaded into rolls
     val notes: String = "",
     val purchaseDate: String = "",
-    val expiryDate: String = ""
+    val expiryDate: String = "",
+    val totalCost: Double = 0.0      // total price of the bulk canister; 0 = gifted / unknown
 )
 
 // ─── Zoom Level (for light meter) ─────────────────────────────────────────────

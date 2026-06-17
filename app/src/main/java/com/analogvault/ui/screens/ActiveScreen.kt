@@ -3,6 +3,7 @@ package com.analogvault.ui.screens
 
 import android.Manifest
 import android.content.Context
+import com.analogvault.ui.WeatherState
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -70,6 +71,7 @@ fun ActiveScreen(
     meterShutter: String = "",
     meterAperture: String = "",
     meterIso: String = "",
+    onMeterConsumed: () -> Unit = {},
     onNavigateToDarkroom: () -> Unit = {}
 ) {
     val rolls   by vm.rolls.collectAsState()
@@ -79,37 +81,83 @@ fun ActiveScreen(
 
     var selectedRollId by remember { mutableStateOf<String?>(null) }
     var showLoadSheet  by remember { mutableStateOf(false) }
-    // If we arrived from meter, show shot sheet on the most recent shooting roll
+    // Copy meter values into local state once on arrival; parent clears its copy via callback
     var pendingMeterShutter  by remember { mutableStateOf(meterShutter) }
     var pendingMeterAperture by remember { mutableStateOf(meterAperture) }
     var pendingMeterIso      by remember { mutableStateOf(meterIso) }
+    var showMeterRollPicker  by remember { mutableStateOf(false) }
     var subTab         by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 3)) }
+
+    // Pull fresh meter values when parent updates them (user taps Use in Shot again)
+    LaunchedEffect(meterShutter) {
+        if (meterShutter.isNotBlank() && meterShutter != pendingMeterShutter) {
+            pendingMeterShutter  = meterShutter
+            pendingMeterAperture = meterAperture
+            pendingMeterIso      = meterIso
+            onMeterConsumed()  // tell parent to clear its copy
+        }
+    }
 
     val shooting  by remember { derivedStateOf { rolls.filter { !it.finished && !it.developed } } }
     val awaitDev  by remember { derivedStateOf { rolls.filter { it.finished && !it.developed } } }
     val awaitScan by remember { derivedStateOf { rolls.filter { it.developed && !it.scanned } } }
     val done      by remember { derivedStateOf { rolls.filter { it.scanned } } }
 
-    // Resolve sentinel: open first shooting roll when coming from meter
-    if (selectedRollId == "__OPEN_FIRST_SHOOTING__" && shooting.isNotEmpty()) {
-        selectedRollId = shooting.first().id
-    }
-
     val selectedRoll = selectedRollId?.let { id -> rolls.find { it.id == id } }
 
     // Open specific roll from dashboard tap
     LaunchedEffect(initialRollId) {
-        if (initialRollId != null && selectedRollId == null) {
-            selectedRollId = initialRollId
+        if (initialRollId != null && selectedRollId == null) selectedRollId = initialRollId
+    }
+
+    // When arriving from meter: auto-select if one roll, show picker if multiple
+    LaunchedEffect(pendingMeterShutter, shooting.size) {
+        if (pendingMeterShutter.isNotBlank() && selectedRollId == null && !showMeterRollPicker) {
+            when {
+                shooting.size == 1 -> selectedRollId = shooting.first().id
+                shooting.size > 1  -> showMeterRollPicker = true
+            }
         }
     }
 
-    // Auto-navigate to most recent active roll when coming from meter
-    // (shooting list is derived below; we just set flag here and let the list settle)
-    LaunchedEffect(pendingMeterShutter) {
-        if (pendingMeterShutter.isNotBlank() && selectedRollId == null) {
-            selectedRollId = "__OPEN_FIRST_SHOOTING__"
-        }
+    // Roll picker dialog when arriving from meter with multiple active rolls
+    if (showMeterRollPicker) {
+        AlertDialog(
+            onDismissRequest = {
+                showMeterRollPicker = false
+                pendingMeterShutter = ""; pendingMeterAperture = ""; pendingMeterIso = ""
+            },
+            containerColor = Bg3,
+            title = { Text("Log shot to which roll?", color = AmberBright) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    shooting.forEach { roll ->
+                        val film = films.find { it.id == roll.filmId }
+                        val cam  = cameras.find { it.id == roll.cameraId }
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Bg4)
+                                .border(1.dp, Border, RoundedCornerShape(8.dp))
+                                .clickable { selectedRollId = roll.id; showMeterRollPicker = false }
+                                .padding(12.dp)
+                        ) {
+                            Column {
+                                Text(film?.name ?: "Unknown Film", color = TextPrimary, fontSize = 14.sp)
+                                Text(cam?.name ?: "Unknown Camera", color = TextSecondary, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = {
+                    showMeterRollPicker = false
+                    pendingMeterShutter = ""; pendingMeterAperture = ""; pendingMeterIso = ""
+                }) { Text("Cancel", color = TextSecondary) }
+            }
+        )
     }
 
     if (selectedRoll != null) {
@@ -120,9 +168,14 @@ fun ActiveScreen(
             films = films,
             vm = vm,
             onBack = { selectedRollId = null },
-            pendingMeterShutter  = pendingMeterShutter.also  { pendingMeterShutter = "" },
-            pendingMeterAperture = pendingMeterAperture.also { pendingMeterAperture = "" },
-            pendingMeterIso      = pendingMeterIso.also      { pendingMeterIso = "" }
+            pendingMeterShutter  = pendingMeterShutter,
+            pendingMeterAperture = pendingMeterAperture,
+            pendingMeterIso      = pendingMeterIso,
+            onMeterConsumed = {
+                pendingMeterShutter = ""
+                pendingMeterAperture = ""
+                pendingMeterIso = ""
+            }
         )
         return
     }
@@ -390,7 +443,8 @@ fun RollDetailScreen(
     vm: MainViewModel, onBack: () -> Unit,
     pendingMeterShutter: String = "",
     pendingMeterAperture: String = "",
-    pendingMeterIso: String = ""
+    pendingMeterIso: String = "",
+    onMeterConsumed: () -> Unit = {}
 ) {
     val cam   = cameras.find { it.id == roll.cameraId }
     val lens  = lenses.find  { it.id == roll.cameraLensId }
@@ -402,6 +456,7 @@ fun RollDetailScreen(
     LaunchedEffect(pendingMeterShutter) {
         if (pendingMeterShutter.isNotBlank()) {
             showShotSheet = true
+            onMeterConsumed()
         }
     }
     var editingShot    by remember { mutableStateOf<Shot?>(null) }
@@ -607,10 +662,14 @@ fun RollDetailScreen(
         }
     }
     if (showDevSheet) {
-        DevSheet(onDismiss = { showDevSheet = false }) { vm.markDeveloped(roll.id, it); showDevSheet = false }
+        DevSheet(onDismiss = { showDevSheet = false }) { devLog, cost, selfDev ->
+            vm.markDeveloped(roll.id, devLog, cost, selfDev); showDevSheet = false
+        }
     }
     if (showScanSheet) {
-        ScanSheet(onDismiss = { showScanSheet = false }) { vm.markScanned(roll.id, it); showScanSheet = false }
+        ScanSheet(onDismiss = { showScanSheet = false }) { scanLog, cost ->
+            vm.markScanned(roll.id, scanLog, cost); showScanSheet = false
+        }
     }
     confirmMsg?.let { (msg, action) ->
         ConfirmDialog(msg, confirmLabel = "Confirm",
@@ -643,28 +702,21 @@ fun ShotSheet(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
-    // Derive defaults from roll
     val rollFilm   = remember(roll, films)   { films.find   { it.id == roll.filmId } }
     val rollCamera = remember(roll, cameras) { cameras.find { it.id == roll.cameraId } }
-    val rollLens   = remember(roll, lenses)  { lenses.find  { it.id == roll.cameraLensId } }
+    val defaultIso = prefillIso.ifBlank { roll.pushIso.ifBlank { rollFilm?.iso?.toString() ?: "" } }
+    val customIsos by vm.customIsos.collectAsState()
+    val currency   by vm.currency.collectAsState()
+    val isMetric   by vm.isMetric.collectAsState()
 
-    // ISO: meter prefill > roll push ISO > film box speed
-    val defaultIso = prefillIso.ifBlank {
-        roll.pushIso.ifBlank { rollFilm?.iso?.toString() ?: "" }
-    }
-
-    // Compatible lenses for this camera (filtered by mount)
     val compatLenses = remember(rollCamera, lenses) {
         if (rollCamera == null || rollCamera.lensSystem == "fixed") emptyList()
         else lenses.filter { l ->
             Constants.mountCompat(rollCamera.mount, l.mount, rollCamera.adapterMounts) != "incompatible"
         }
     }
-
-    // If camera has fixed lens or one lens attached, pre-select it
     val defaultLensName = remember(roll, lenses) {
-        if (roll.cameraLensId.isNotBlank()) lenses.find { it.id == roll.cameraLensId }?.name ?: ""
-        else ""
+        if (roll.cameraLensId.isNotBlank()) lenses.find { it.id == roll.cameraLensId }?.name ?: "" else ""
     }
 
     var shutter   by remember { mutableStateOf(ed?.shutter   ?: prefillShutter) }
@@ -676,10 +728,14 @@ fun ShotSheet(
     var weather   by remember { mutableStateOf(ed?.weather   ?: "") }
     var date      by remember { mutableStateOf(ed?.date ?: SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())) }
     var thumbPath by remember { mutableStateOf(ed?.photoThumbPath ?: "") }
-    var gpsLoading by remember { mutableStateOf(false) }
-    var showCamera by remember { mutableStateOf(false) }
+    var gpsLoading    by remember { mutableStateOf(false) }
+    var autoLocation  by remember { mutableStateOf(ed == null) }  // auto-fetch for new shots
+    var showCamera    by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showAddIsoDialog by remember { mutableStateOf(false) }
+    var customIsoInput by remember { mutableStateOf("") }
+    var weatherLoading by remember { mutableStateOf(false) }
 
-    // Max aperture from selected lens
     val selectedLens = remember(lensName, lenses) { lenses.find { it.name == lensName } }
     val apertureOptions = remember(selectedLens) {
         val maxAp = selectedLens?.maxAperture?.toDoubleOrNull()
@@ -687,29 +743,38 @@ fun ShotSheet(
             .filter { maxAp == null || it >= maxAp - 0.01 }
             .map { ap -> if (ap == ap.toLong().toDouble()) "f/${ap.toInt()}" else "f/$ap" }
     }
+    val allIsos = remember(customIsos) {
+        (Constants.ISOS + customIsos).distinct().sorted()
+    }
 
-    // Auto-fill weather
     val weatherState by vm.weatherState.collectAsState()
+    // Auto-fill weather on open for new shots
     LaunchedEffect(Unit) {
-        if (weather.isBlank()) {
-            (weatherState as? com.analogvault.ui.WeatherState.Success)?.data?.let { d ->
+        if (weather.isBlank() && ed == null) {
+            (weatherState as? WeatherState.Success)?.data?.let { d ->
+                val unit = if (isMetric) "°C" else "°F"
+                val temp = if (isMetric) d.main.temp else d.main.temp * 9/5 + 32
                 weather = buildString {
-                    append("${"%.0f".format(d.main.temp)}°C")
+                    append("${"%.0f".format(temp)}$unit")
                     d.weather.firstOrNull()?.description?.let { append(", $it") }
                     append(", ${d.clouds.all}% cloud")
-                    if (d.wind.speed > 0) append(", wind ${"%.1f".format(d.wind.speed)}m/s")
+                    if (d.wind.speed > 0) append(", wind ${"%.1f".format(d.wind.speed)}${if (isMetric) "m/s" else "mph"}")
                 }
             }
         }
+        // Auto-fetch location for new shots if toggled on
+        if (ed == null && autoLocation && location.isBlank()) {
+            gpsLoading = true
+            location = getGpsHighAccuracy(context) ?: ""
+            gpsLoading = false
+        }
     }
 
-    // When lens changes, reset aperture if it's now out of range
     LaunchedEffect(lensName) {
         val maxAp = selectedLens?.maxAperture?.toDoubleOrNull()
         val curAp = aperture.toDoubleOrNull()
-        if (maxAp != null && curAp != null && curAp < maxAp - 0.01) {
+        if (maxAp != null && curAp != null && curAp < maxAp - 0.01)
             aperture = "%.1f".format(maxAp).trimEnd('0').trimEnd('.')
-        }
     }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -723,15 +788,48 @@ fun ShotSheet(
     ) { perms ->
         if (perms.values.any { it }) {
             gpsLoading = true
-            scope.launch {
-                // Use high-accuracy GPS with longer timeout for better fix
-                location = getGpsHighAccuracy(context) ?: location
-                gpsLoading = false
-            }
+            scope.launch { location = getGpsHighAccuracy(context) ?: location; gpsLoading = false }
         }
     }
 
+    // Add custom ISO dialog
+    if (showAddIsoDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddIsoDialog = false; customIsoInput = "" },
+            containerColor = Bg3,
+            title = { Text("Add custom ISO", color = AmberBright) },
+            text = {
+                VaultTextField(customIsoInput, { customIsoInput = it.filter(Char::isDigit) },
+                    "ISO value (e.g. 1000)",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    customIsoInput.toIntOrNull()?.let { v ->
+                        vm.addCustomIso(v)
+                        iso = v.toString()
+                    }
+                    showAddIsoDialog = false; customIsoInput = ""
+                }) { Text("Add", color = Amber) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddIsoDialog = false; customIsoInput = "" }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    if (showDatePicker) {
+        FullDatePickerDialog(
+            initialDate = date, includeTime = true,
+            onConfirm = { date = it; showDatePicker = false },
+            onDismiss = { showDatePicker = false }
+        )
+    }
+
     VaultSheet(if (ed != null) "Edit Shot" else "Log Shot", onDismiss) {
+        // Shutter + Aperture
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             VaultDropdown("Shutter", shutter, listOf("") + Constants.SHUTTER_SPEEDS,
                 { shutter = it }, modifier = Modifier.weight(1f))
@@ -740,18 +838,38 @@ fun ShotSheet(
                 { aperture = it.removePrefix("f/") }, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultDropdown("ISO", iso, listOf("") + Constants.ISOS.map { it.toString() },
-                { iso = it }, modifier = Modifier.weight(1f))
-            // Lens: show compatible lenses if camera has interchangeable mount, else all
+        // ISO + custom ISO button + Lens
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                VaultDropdown("ISO", iso, listOf("") + allIsos.map { it.toString() }, { iso = it })
+            }
+            VaultButton("+", small = true, ghost = true, onClick = { showAddIsoDialog = true })
             val lensOptions = listOf("") + (compatLenses.ifEmpty { lenses }).map { it.name }
-            VaultDropdown("Lens", lensName, lensOptions, { lensName = it }, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                VaultDropdown("Lens", lensName, lensOptions, { lensName = it })
+            }
         }
         Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            VaultTextField(location, { location = it }, "Location (GPS)", modifier = Modifier.weight(1f))
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Location row with toggle and fetch button
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Location", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                Text("Auto", color = TextTertiary, fontSize = 11.sp)
+                Switch(checked = autoLocation, onCheckedChange = { autoLocation = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark),
+                    modifier = Modifier.height(20.dp))
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                VaultTextField(
+                    value = if (gpsLoading) "Getting fix…" else location,
+                    onValueChange = { location = it },
+                    label = "",
+                    modifier = Modifier.weight(1f),
+                    enabled = !autoLocation && !gpsLoading
+                )
                 IconButton(onClick = {
                     locationPermLauncher.launch(arrayOf(
                         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -759,17 +877,68 @@ fun ShotSheet(
                     ))
                 }) {
                     if (gpsLoading) CircularProgressIndicator(Modifier.size(18.dp), color = Amber, strokeWidth = 2.dp)
-                    else Icon(imageVector = Icons.Default.LocationOn, contentDescription = "GPS", tint = Amber)
+                    else Icon(Icons.Default.LocationOn, "GPS", tint = if (autoLocation) Amber else TextTertiary)
                 }
-                if (gpsLoading) Text("Getting fix…", color = TextTertiary, fontSize = 8.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
-        VaultTextField(weather, { weather = it }, "Weather notes")
+        // Weather row with fetch button
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            VaultTextField(weather, { weather = it }, "Weather", modifier = Modifier.weight(1f))
+            IconButton(onClick = {
+                weatherLoading = true
+                scope.launch {
+                    // First try to populate from already-loaded weather state
+                    val loaded = (vm.weatherState.value as? WeatherState.Success)?.data
+                    if (loaded != null) {
+                        val unit = if (isMetric) "°C" else "°F"
+                        val temp = if (isMetric) loaded.main.temp else loaded.main.temp * 9/5 + 32
+                        weather = buildString {
+                            append("${"%.0f".format(temp)}$unit")
+                            loaded.weather.firstOrNull()?.description?.let { append(", $it") }
+                            append(", ${loaded.clouds.all}% cloud")
+                            if (loaded.wind.speed > 0) append(", wind ${"%.1f".format(loaded.wind.speed)}${if (isMetric) "m/s" else "mph"}")
+                        }
+                    } else {
+                        // No weather loaded yet — fetch now using GPS
+                        val coords = getGpsLatLon(context)
+                        if (coords != null) {
+                            vm.fetchWeather(coords.first, coords.second)
+                            // Wait briefly for state to update
+                            kotlinx.coroutines.delay(2000)
+                            (vm.weatherState.value as? WeatherState.Success)?.data?.let { d ->
+                                val unit = if (isMetric) "°C" else "°F"
+                                val temp = if (isMetric) d.main.temp else d.main.temp * 9/5 + 32
+                                weather = buildString {
+                                    append("${"%.0f".format(temp)}$unit")
+                                    d.weather.firstOrNull()?.description?.let { append(", $it") }
+                                    append(", ${d.clouds.all}% cloud")
+                                    if (d.wind.speed > 0) append(", wind ${"%.1f".format(d.wind.speed)}${if (isMetric) "m/s" else "mph"}")
+                                }
+                            }
+                        }
+                    }
+                    weatherLoading = false
+                }
+            }) {
+                if (weatherLoading) CircularProgressIndicator(Modifier.size(18.dp), color = Amber, strokeWidth = 2.dp)
+                else Icon(Icons.Default.Cloud, "Fetch weather", tint = Amber)
+            }
+        }
         Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
         Spacer(Modifier.height(10.dp))
-        VaultTextField(date, { date = it }, "Date & Time (YYYY-MM-DD HH:mm)")
+        // Date & time with picker button
+        Column {
+            Text("Date & Time", color = TextTertiary, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(date, color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                VaultButton("Pick", small = true, ghost = true, onClick = { showDatePicker = true })
+            }
+        }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             VaultButton("📷 Camera", small = true, ghost = true,
@@ -852,13 +1021,15 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
 // ─── Dev / Scan sheets ────────────────────────────────────────────────────────
 
 @Composable
-fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog) -> Unit) {
+fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog, Double, Boolean) -> Unit) {
     var process   by remember { mutableStateOf(Constants.DEVELOP_PROCESSES[0]) }
     var developer by remember { mutableStateOf("") }
     var dilution  by remember { mutableStateOf("") }
     var temp      by remember { mutableStateOf("20") }
     var devTime   by remember { mutableStateOf("") }
     var notes     by remember { mutableStateOf("") }
+    var isSelfDev by remember { mutableStateOf(true) }
+    var devCost   by remember { mutableStateOf("") }
 
     VaultSheet("Develop Roll", onDismiss) {
         VaultDropdown("Process", process, Constants.DEVELOP_PROCESSES, { process = it })
@@ -873,20 +1044,34 @@ fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog) -> Unit) {
         Spacer(Modifier.height(10.dp))
         VaultTextField(devTime, { devTime = it }, "Dev Time (min)", keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
         Spacer(Modifier.height(10.dp))
+        // Cost tracking
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Switch(checked = isSelfDev, onCheckedChange = { isSelfDev = it },
+                colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark))
+            Text(if (isSelfDev) "Self-developed" else "Lab development", color = TextSecondary, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(6.dp))
+        VaultTextField(devCost, { devCost = it },
+            if (isSelfDev) "Chemical cost (optional)" else "Lab cost (optional)",
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+        Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Dev Log", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(DevLog(process = process, developer = developer, dilution = dilution,
-                temp = temp, devTime = devTime, notes = notes))
+                temp = temp, devTime = devTime, notes = notes),
+                devCost.toDoubleOrNull() ?: 0.0, isSelfDev)
         })
     }
 }
 
 @Composable
-fun ScanSheet(onDismiss: () -> Unit, onSave: (ScanLog) -> Unit) {
+fun ScanSheet(onDismiss: () -> Unit, onSave: (ScanLog, Double) -> Unit) {
     var method   by remember { mutableStateOf(Constants.SCAN_METHODS[0]) }
     var dpi      by remember { mutableStateOf("") }
     var software by remember { mutableStateOf("") }
+    var scanCost by remember { mutableStateOf("") }
     var notes    by remember { mutableStateOf("") }
 
     VaultSheet("Log Scan", onDismiss) {
@@ -898,10 +1083,14 @@ fun ScanSheet(onDismiss: () -> Unit, onSave: (ScanLog) -> Unit) {
             VaultTextField(software, { software = it }, "Software", modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
+        VaultTextField(scanCost, { scanCost = it }, "Scan cost (optional)",
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+        Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Scan Log", modifier = Modifier.fillMaxWidth(), onClick = {
-            onSave(ScanLog(method = method, dpi = dpi, software = software, notes = notes))
+            onSave(ScanLog(method = method, dpi = dpi, software = software, notes = notes),
+                scanCost.toDoubleOrNull() ?: 0.0)
         })
     }
 }
@@ -928,6 +1117,28 @@ private fun saveUriToCache(context: Context, uri: Uri): String {
 }
 
 private suspend fun getGps(context: Context): String? = getGpsHighAccuracy(context)
+
+/** Returns raw (lat, lon) pair for use with fetchWeather, or null if unavailable */
+private suspend fun getGpsLatLon(context: Context): Pair<Double, Double>? =
+    suspendCancellableCoroutine { cont ->
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val cts    = CancellationTokenSource()
+        try {
+            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                .addOnSuccessListener { loc ->
+                    if (loc != null) cont.resume(loc.latitude to loc.longitude)
+                    else {
+                        try {
+                            client.lastLocation.addOnSuccessListener { last ->
+                                cont.resume(if (last != null) last.latitude to last.longitude else null)
+                            }.addOnFailureListener { cont.resume(null) }
+                        } catch (e: SecurityException) { cont.resume(null) }
+                    }
+                }
+                .addOnFailureListener { cont.resume(null) }
+        } catch (e: SecurityException) { cont.resume(null) }
+        cont.invokeOnCancellation { cts.cancel() }
+    }
 
 private suspend fun getGpsHighAccuracy(context: Context): String? =
     suspendCancellableCoroutine { cont ->

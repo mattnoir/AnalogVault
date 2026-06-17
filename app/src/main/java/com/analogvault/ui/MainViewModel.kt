@@ -29,10 +29,20 @@ class MainViewModel @Inject constructor(
     // Settings
     private val _owmKey = MutableStateFlow("")
     val owmKey: StateFlow<String> = _owmKey.asStateFlow()
+    private val _currency = MutableStateFlow("€")
+    val currency: StateFlow<String> = _currency.asStateFlow()
+    private val _isMetric = MutableStateFlow(true)
+    val isMetric: StateFlow<Boolean> = _isMetric.asStateFlow()
+    private val _customIsos = MutableStateFlow<List<Int>>(emptyList())
+    val customIsos: StateFlow<List<Int>> = _customIsos.asStateFlow()
 
     init {
         viewModelScope.launch {
-            _owmKey.value = repo.getSetting("owm_key") ?: ""
+            _owmKey.value   = repo.getSetting("owm_key") ?: ""
+            _currency.value = repo.getSetting("currency") ?: "€"
+            _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
+            val raw = repo.getSetting("custom_isos") ?: ""
+            _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
             // Seed default zoom levels if empty
             val zooms = repo.zoomLevels.first()
             if (zooms.isEmpty()) {
@@ -47,8 +57,23 @@ class MainViewModel @Inject constructor(
     }
 
     fun saveOwmKey(key: String) = viewModelScope.launch {
-        _owmKey.value = key
-        repo.setSetting("owm_key", key)
+        _owmKey.value = key; repo.setSetting("owm_key", key)
+    }
+    fun saveCurrency(c: String) = viewModelScope.launch {
+        _currency.value = c; repo.setSetting("currency", c)
+    }
+    fun saveMetric(m: Boolean) = viewModelScope.launch {
+        _isMetric.value = m; repo.setSetting("is_metric", m.toString())
+    }
+    fun addCustomIso(iso: Int) = viewModelScope.launch {
+        val updated = (_customIsos.value + iso).distinct().sorted()
+        _customIsos.value = updated
+        repo.setSetting("custom_isos", updated.joinToString(","))
+    }
+    fun removeCustomIso(iso: Int) = viewModelScope.launch {
+        val updated = _customIsos.value.filter { it != iso }
+        _customIsos.value = updated
+        repo.setSetting("custom_isos", updated.joinToString(","))
     }
 
     // ─── Film Stock CRUD ─────────────────────────────────────────────────────
@@ -87,13 +112,13 @@ class MainViewModel @Inject constructor(
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
         repo.upsertRoll(roll.copy(finished = finished))
     }
-    fun markDeveloped(rollId: String, devLog: DevLog?) = viewModelScope.launch {
+    fun markDeveloped(rollId: String, devLog: DevLog?, devCost: Double = 0.0, isSelfDev: Boolean = false) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(developed = devLog != null, devLog = devLog))
+        repo.upsertRoll(roll.copy(developed = devLog != null, devLog = devLog, devCost = devCost, isSelfDev = isSelfDev))
     }
-    fun markScanned(rollId: String, scanLog: ScanLog?) = viewModelScope.launch {
+    fun markScanned(rollId: String, scanLog: ScanLog?, scanCost: Double = 0.0) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(scanned = scanLog != null, scanLog = scanLog))
+        repo.upsertRoll(roll.copy(scanned = scanLog != null, scanLog = scanLog, scanCost = scanCost))
     }
 
     // ─── Chemical CRUD ───────────────────────────────────────────────────────
@@ -138,7 +163,7 @@ class MainViewModel @Inject constructor(
     }
 
     // ─── Stats ───────────────────────────────────────────────────────────────
-    val stats: StateFlow<Stats> = combine(rolls, films, cameras) { r, f, c ->
+    val stats: StateFlow<Stats> = combine(rolls, films, cameras, bulkRolls) { r, f, c, b ->
         val totalShots = r.sumOf { it.shots.size }
         val byFilm = r.groupBy { roll -> f.find { it.id == roll.filmId }?.name ?: "Unknown" }
             .mapValues { it.value.size }.entries.sortedByDescending { it.value }.take(8)
@@ -150,6 +175,21 @@ class MainViewModel @Inject constructor(
         val byProc = r.filter { it.devLog != null }
             .groupBy { it.devLog!!.process.ifBlank { "Unknown" } }
             .mapValues { it.value.size }.entries.sortedByDescending { it.value }
+        // Film cost: from FilmStock.costPerRoll (per roll consumed) + BulkRoll.totalCost (whole canisters)
+        val filmRollCost = r.sumOf { roll -> f.find { it.id == roll.filmId }?.costPerRoll ?: 0.0 }
+        val bulkCost     = b.sumOf { it.totalCost }
+        val rollCosts = r.map { roll ->
+            val film = f.find { it.id == roll.filmId }
+            RollCostSummary(
+                rollId    = roll.id,
+                filmName  = film?.name ?: "Unknown Film",
+                shotCount = roll.shots.size,
+                filmCost  = film?.costPerRoll ?: 0.0,
+                devCost   = roll.devCost,
+                scanCost  = roll.scanCost
+            )
+        }.filter { it.totalCost > 0.0 || it.devCost > 0.0 || it.scanCost > 0.0 }
+            .sortedByDescending { it.totalCost }
         Stats(
             totalRolls = r.size,
             developed = r.count { it.developed },
@@ -160,12 +200,30 @@ class MainViewModel @Inject constructor(
             byFilm = byFilm,
             byCam = byCam,
             byMonth = byMonth,
-            byProc = byProc
+            byProc = byProc,
+            totalFilmCost = filmRollCost + bulkCost,
+            totalDevCost  = r.sumOf { it.devCost },
+            totalScanCost = r.sumOf { it.scanCost },
+            selfDevRolls  = r.count { it.isSelfDev && it.developed },
+            labDevRolls   = r.count { !it.isSelfDev && it.developed },
+            rollCosts     = rollCosts
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Stats())
 }
 
 fun uid() = UUID.randomUUID().toString()
+
+data class RollCostSummary(
+    val rollId: String,
+    val filmName: String,
+    val shotCount: Int,
+    val filmCost: Double,
+    val devCost: Double,
+    val scanCost: Double
+) {
+    val totalCost get() = filmCost + devCost + scanCost
+    val costPerShot get() = if (shotCount > 0 && totalCost > 0.0) totalCost / shotCount else 0.0
+}
 
 data class Stats(
     val totalRolls: Int = 0,
@@ -177,7 +235,15 @@ data class Stats(
     val byFilm: List<Map.Entry<String, Int>> = emptyList(),
     val byCam: List<Map.Entry<String, Int>> = emptyList(),
     val byMonth: List<Map.Entry<String, Int>> = emptyList(),
-    val byProc: List<Map.Entry<String, Int>> = emptyList()
+    val byProc: List<Map.Entry<String, Int>> = emptyList(),
+    // Cost totals
+    val totalFilmCost: Double = 0.0,
+    val totalDevCost: Double = 0.0,
+    val totalScanCost: Double = 0.0,
+    val selfDevRolls: Int = 0,
+    val labDevRolls: Int = 0,
+    // Per-roll breakdown (only rolls that have any cost data)
+    val rollCosts: List<RollCostSummary> = emptyList()
 )
 
 sealed class WeatherState {

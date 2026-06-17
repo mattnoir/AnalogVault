@@ -92,8 +92,10 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     var confirmDelete by remember { mutableStateOf<FilmStock?>(null) }
     var viewingFilm   by remember { mutableStateOf<FilmStock?>(null) }
     var loadingFilm   by remember { mutableStateOf<FilmStock?>(null) }
+    var bulkExpanded  by remember { mutableStateOf(true) }
     val rolls         by vm.rolls.collectAsState()
     val bulkRolls     by vm.bulkRolls.collectAsState()
+    val currency      by vm.currency.collectAsState()
     var showBulkSheet   by remember { mutableStateOf(false) }
     var editingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
     var loadingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
@@ -159,27 +161,40 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         // ── Bulk Film section ──────────────────────────────────────────────
         item(key = "bulk_header") {
             Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("Bulk Film", color = AmberBright, fontSize = 13.sp)
+            Row(
+                Modifier.fillMaxWidth().clickable { bulkExpanded = !bulkExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(
+                        imageVector = if (bulkExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null, tint = TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("Bulk Film (${bulkRolls.size})", color = AmberBright, fontSize = 13.sp)
+                }
                 VaultButton("+ Bulk", small = true, ghost = true,
                     onClick = { editingBulk = null; showBulkSheet = true })
             }
             Spacer(Modifier.height(6.dp))
         }
-        if (bulkRolls.isEmpty()) {
-            item(key = "bulk_empty") {
-                Text("No bulk film tracked yet", color = TextTertiary, fontSize = 12.sp,
-                    modifier = Modifier.padding(bottom = 4.dp))
+        if (bulkExpanded) {
+            if (bulkRolls.isEmpty()) {
+                item(key = "bulk_empty") {
+                    Text("No bulk film tracked yet", color = TextTertiary, fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 4.dp))
+                }
             }
-        }
-        items(bulkRolls, key = { "bulk_${it.id}" }, contentType = { "bulk" }) { bulk ->
-            BulkRollCard(
-                bulk = bulk,
-                onLoad   = { loadingBulk = bulk },
-                onEdit   = { editingBulk = bulk; showBulkSheet = true },
-                onDelete = { confirmDeleteBulk = bulk }
-            )
+            items(bulkRolls, key = { "bulk_${it.id}" }, contentType = { "bulk" }) { bulk ->
+                BulkRollCard(
+                    bulk = bulk,
+                    onLoad   = { loadingBulk = bulk },
+                    onEdit   = { editingBulk = bulk; showBulkSheet = true },
+                    onDelete = { confirmDeleteBulk = bulk }
+                )
+            }
         }
 
         // ── Divider before regular stash ──────────────────────────────────
@@ -219,14 +234,20 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         item(key = "spacer") { Spacer(Modifier.height(4.dp)) }
     }
 
-    if (showSheet) FilmSheet(editing, onDismiss = { showSheet = false; editing = null }) { vm.upsertFilm(it); showSheet = false; editing = null }
+    if (showSheet) FilmSheet(
+        ed = editing,
+        onDismiss = { showSheet = false; editing = null },
+        onSave = { vm.upsertFilm(it); showSheet = false; editing = null },
+        vm = vm
+    )
     confirmDelete?.let { ConfirmDialog("Delete \"${it.name}\"?", onConfirm = { vm.deleteFilm(it); confirmDelete = null }, onDismiss = { confirmDelete = null }) }
     viewingFilm?.let { film ->
         val inCamera = film.id in activeFilmIds
         FilmInfoDialog(film,
             onDismiss = { viewingFilm = null },
             onEdit = { viewingFilm = null; editing = film; showSheet = true },
-            onLoad = { viewingFilm = null; loadingFilm = film }
+            onLoad = { viewingFilm = null; loadingFilm = film },
+            currency = currency
         )
     }
     loadingFilm?.let { film ->
@@ -408,10 +429,12 @@ fun BulkRollSheet(
     var footage  by remember { mutableStateOf("") }   // helper field only — not stored
     var footageMetric by remember { mutableStateOf(false) }  // false = ft, true = m
     var notes    by remember { mutableStateOf(editing?.notes ?: "") }
+    var totalCost by remember { mutableStateOf(if ((editing?.totalCost ?: 0.0) > 0.0) "%.2f".format(editing!!.totalCost) else "") }
     var purchaseDate by remember { mutableStateOf(editing?.purchaseDate
         ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())) }
     var expiryDate by remember { mutableStateOf(editing?.expiryDate ?: "") }
     var showExpPicker by remember { mutableStateOf(false) }
+    var showPurchaseDatePicker by remember { mutableStateOf(false) }
     var pickerYear  by remember { mutableStateOf(
         expiryDate.take(4).toIntOrNull()
             ?: java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) }
@@ -491,8 +514,20 @@ fun BulkRollSheet(
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultTextField(purchaseDate, { purchaseDate = it }, "Purchase Date",
-                placeholder = "YYYY-MM-DD", modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("Purchase Date", color = TextTertiary, fontSize = 11.sp)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        purchaseDate.ifBlank { "Not set" },
+                        color = if (purchaseDate.isBlank()) TextTertiary else TextPrimary,
+                        fontSize = 13.sp, modifier = Modifier.weight(1f)
+                    )
+                    VaultButton("Pick", small = true, ghost = true,
+                        onClick = { showPurchaseDatePicker = true })
+                }
+            }
             Column(Modifier.weight(1f)) {
                 Text("Expiry", color = TextTertiary, fontSize = 11.sp)
                 Spacer(Modifier.height(4.dp))
@@ -512,6 +547,9 @@ fun BulkRollSheet(
         Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2,
             placeholder = "Storage, batch number…")
+        Spacer(Modifier.height(10.dp))
+        VaultTextField(totalCost, { totalCost = it }, "Total Canister Cost (optional)",
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Bulk Roll", modifier = Modifier.fillMaxWidth(), onClick = {
             val totalFrames = frames.toIntOrNull() ?: 0
@@ -525,7 +563,8 @@ fun BulkRollSheet(
                 usedFrames   = editing?.usedFrames ?: 0,  // preserve existing usage on edit
                 notes        = notes,
                 purchaseDate = purchaseDate,
-                expiryDate   = expiryDate
+                expiryDate   = expiryDate,
+                totalCost    = totalCost.toDoubleOrNull() ?: 0.0
             ))
         })
     }
@@ -541,11 +580,16 @@ fun BulkRollSheet(
             onDismiss = { showExpPicker = false }
         )
     }
-}
-
-// ─── Load Roll from Bulk sheet ────────────────────────────────────────────────
-
-@Composable
+    if (showPurchaseDatePicker) {
+        FullDatePickerDialog(
+            initialDate = purchaseDate.ifBlank {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            },
+            onConfirm = { purchaseDate = it; showPurchaseDatePicker = false },
+            onDismiss = { showPurchaseDatePicker = false }
+        )
+    }
+}@Composable
 fun LoadFromBulkSheet(
     bulk: BulkRoll,
     onDismiss: () -> Unit,
@@ -915,7 +959,8 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit) {
+fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit,
+              vm: MainViewModel) {
     var name       by remember { mutableStateOf(ed?.name ?: "") }
     var brand      by remember { mutableStateOf(ed?.brand ?: "") }
     var type       by remember { mutableStateOf(ed?.type ?: Constants.FILM_TYPES[0]) }
@@ -925,6 +970,37 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     var expiry     by remember { mutableStateOf(ed?.expiryDate ?: "") }
     var storage    by remember { mutableStateOf(ed?.storage ?: Constants.STORAGE_TYPES[0]) }
     var quantity   by remember { mutableStateOf(ed?.quantity?.toString() ?: "1") }
+    var costPerRoll by remember { mutableStateOf(if ((ed?.costPerRoll ?: 0.0) > 0.0) "%.2f".format(ed!!.costPerRoll) else "") }
+    val customIsos by vm.customIsos.collectAsState()
+    val allIsos = remember(customIsos) { (Constants.ISOS + customIsos).distinct().sorted() }
+    var showAddIsoDialog by remember { mutableStateOf(false) }
+    var customIsoInput by remember { mutableStateOf("") }
+
+    if (showAddIsoDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddIsoDialog = false; customIsoInput = "" },
+            containerColor = Bg3,
+            title = { Text("Add custom ISO", color = AmberBright) },
+            text = {
+                VaultTextField(customIsoInput, { customIsoInput = it.filter(Char::isDigit) },
+                    "ISO value", keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    customIsoInput.toIntOrNull()?.let { v ->
+                        vm.addCustomIso(v)
+                        iso = v.toString()
+                    }
+                    showAddIsoDialog = false; customIsoInput = ""
+                }) { Text("Add", color = Amber) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddIsoDialog = false; customIsoInput = "" }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
     var notes      by remember { mutableStateOf(ed?.notes ?: "") }
 
     // Expiry month/year picker state
@@ -955,8 +1031,9 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
         Spacer(Modifier.height(10.dp))
         VaultDropdown("Type", type, Constants.FILM_TYPES, { type = it })
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultDropdown("ISO", iso, Constants.ISOS.map { it.toString() }, { iso = it }, modifier = Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+            VaultDropdown("ISO", iso, allIsos.map { it.toString() }, { iso = it }, modifier = Modifier.weight(1f))
+            VaultButton("+", small = true, ghost = true, onClick = { showAddIsoDialog = true })
             VaultDropdown("Format", filmFormat, FILM_FORMATS_DISPLAY, {
                 filmFormat = it
                 // Reset frame count to sensible default when format changes
@@ -1039,6 +1116,9 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
             VaultDropdown("Storage", storage, Constants.STORAGE_TYPES, { storage = it }, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
+        VaultTextField(costPerRoll, { costPerRoll = it }, "Cost per Roll (optional)",
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+        Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Film", modifier = Modifier.fillMaxWidth(), onClick = {
@@ -1054,7 +1134,8 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                 expiryDate  = expiry,
                 storage     = storage,
                 quantity    = quantity.toIntOrNull() ?: 1,
-                notes       = notes
+                notes       = notes,
+                costPerRoll = costPerRoll.toDoubleOrNull() ?: 0.0
             ))
         })
     }
@@ -1332,7 +1413,8 @@ fun AccessorySheet(ed: Accessory?, onDismiss: () -> Unit, onSave: (Accessory) ->
 // ─── Film Info Dialog ─────────────────────────────────────────────────────────
 
 @Composable
-fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, onLoad: (() -> Unit)? = null) {
+fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit,
+                   onLoad: (() -> Unit)? = null, currency: String = "€") {
     val expKey = film.expiryDate
     val (exLabel, exColor, _) = expiryStatus(expKey)
     AlertDialog(
@@ -1345,6 +1427,7 @@ fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit, o
                 InfoRow("ISO", film.iso.toString())
                 InfoRow("Storage", film.storage)
                 if (film.quantity > 1) InfoRow("Quantity", "${film.quantity} rolls")
+                if (film.costPerRoll > 0.0) InfoRow("Cost/Roll", "${currency}%.2f".format(film.costPerRoll))
                 if (exLabel.isNotBlank()) TagRow() {
                     Text("Expiry", color = TextTertiary, fontSize = 12.sp)
                     VaultTag(exLabel, textColor = exColor)
