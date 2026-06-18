@@ -1,76 +1,55 @@
-[v0.2.5b] - 2026-05-27
+[v0.3.5] - 2026-06-18
+-
+**Code rework and fixes**
+- **Currency missing in Stats**
+    - Fixed Stats tab not passing the user's selected currency.
+    - Cost Breakdown now correctly respects the app currency setting instead of always displaying `€`.
+    - Removed unreachable tab logic.
 
-- okay now it should be fixed. Previous version worked in Android Studio, but not in release after minification
+- **Progress calculations using legacy shot count**
+    - Fixed progress tracking using the deprecated `shots` field instead of `frameCount`.
+    - Updated:
+        - Dashboard
+        - Roll list cards
+        - Roll details
 
+- **Incorrect film format detection for shot options**
+    - Replaced fragile shot-count string matching with proper `filmFormat` detection.
+    - Correct handling added for:
+        - 120
+        - 220
+        - 4×5
+        - 110
+        - 126
+        - 135
 
-[v0.2.5a] - 2026-05-27
-
-- now finally fixed the critical bug crashing app due to DB changes
-- some code cleanup
-
-
-
-[v0.2.5 - v0.2.1] - 2026-05-27
-
-- fixed critical bug where adding a camera crashed the whole app without option of recovery
-- Film ISO override for shooting other than box speed
-- added bulk film tracker
-- film formats now include number of shots
-- Making sub-tabs (like film/camera/lens etc) swipable
-- Drawer not swipable currently due to map nav issues (will properly patch it later). Exit drawer by tapping outside or swiping away should work
-- App DB migration to v3 also due to issues with camera and adding bulk rolls
-- backups can now include photos from shot rolls
-- reworked weather to show best roll from stash for shooting in current weather (time of day aware)
-- some performance tweaks
-
-Known bugs:
-- number of frames per roll in stash format still not visible
-- UI and UX are a mess unfixable with LLM
-- tapping outside drawer doesn't close it on some devices
-- swipe to dismiss not working as intentional, but at least there is X button
-- maybe still 0.6x zoom not zooming
-- You tell me (really, please, I only test on one phone)
-
-  
-
-[v0.2] - 2026-05-23
-
-- Map now showing tiles
-- 1/3 stops options for ISO/shutter/aperture
-- you can now load rolls from stash and stash shows rolls that are in camera
-- burger menu now openable only through "more" or by tapping on burger menu
-- ISO and lenses are now automatically selected for shot log
-- rotating screen does not dismiss windows
-- stash has filters now and instead of number of shots shows format
-- more stocks available
-- in stash, selectable month and year is available instead of previous year month day
-
-Known bugs:
-- navigation is still choppy despite 120fps refresh rate available
-- formats are not enough, need number of shots too
-- ...
+- **Weather data race condition**
+    - Fixed weather occasionally appearing empty on slower connections.
+    - Weather loading now waits for the actual fetch result instead of relying on a fixed delay.
 
 
-
-[v0.1] - 2026-05-19
-
-- Complete overhaul of Light meter for actual metering
-- Stash add button is on the top
-- some bug fixes
-
-Known bugs:
-- navigation slow and locked to 60fps
-- metering modes don't seem to do anything
+- **Removed**
+  - Removed development HTTP logger that sent debug logs to local development endpoints.
+  - Removed unused `LocalSetMapScreenActive` CompositionLocal left from removed navigation code.
+  - Removed unused hardcoded currency symbol.
+  - Removed unused "future use" code and related imports.
+  - Removed unused GPS wrapper function.
 
 
-[v0.0.1 - 0.0.5]
+- **Maintenance**
+  - Fixed deprecated Material 3 `Divider` usage.
+  - Replaced deprecated tab indicator implementation with the current approach.
+  - Removed duplicate `SectionCard` component and switched to the shared component.
+  - Limited OkHttp logging to debug builds only.
+  - Simplified redundant cost filtering logic.
+  - Extracted duplicated weather formatting code into a reusable function.
+  - Corrected misleading comments around bottom sheet dismissal behaviour.
 
-- added home screen
-- added timers
-- added suggested rolls and automatically adjusts ISO and brand
-- improved navigation and backswipe/backbutton action
-- hamburger menu
-- automatic weather notes in shot log
-- backup/restore
 
-- various bug fixes
+- **UI Improvements**
+  - Added missing borders to roll cards for visual consistency with other app surfaces.
+  - Improved card styling consistency across the app.
+
+
+- **Versioning**
+  - Versioning now works and is not stuck at 1.0

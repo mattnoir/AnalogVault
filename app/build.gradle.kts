@@ -14,8 +14,8 @@ android {
         applicationId = "com.analogvault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 35
+        versionName = "0.3.5"
     }
 
     signingConfigs {
