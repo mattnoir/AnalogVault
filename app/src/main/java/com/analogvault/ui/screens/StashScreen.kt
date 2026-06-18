@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
-import com.analogvault.data.model.Roll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.analogvault.data.model.*
@@ -244,7 +243,6 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     )
     confirmDelete?.let { ConfirmDialog("Delete \"${it.name}\"?", onConfirm = { vm.deleteFilm(it); confirmDelete = null }, onDismiss = { confirmDelete = null }) }
     viewingFilm?.let { film ->
-        val inCamera = film.id in activeFilmIds
         FilmInfoDialog(film,
             onDismiss = { viewingFilm = null },
             onEdit = { viewingFilm = null; editing = film; showSheet = true },

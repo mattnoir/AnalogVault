@@ -41,7 +41,6 @@ class VaultRepository @Inject constructor(
     // Rolls
     val rolls: Flow<List<Roll>> = rollDao.getAll()
     suspend fun upsertRoll(r: Roll) = rollDao.upsert(r)
-    suspend fun deleteRoll(r: Roll) = rollDao.delete(r)
     suspend fun deleteRollById(id: String) = rollDao.deleteById(id)
 
     // Chemicals
@@ -53,10 +52,6 @@ class VaultRepository @Inject constructor(
     val zoomLevels: Flow<List<ZoomLevel>> = zoomLevelDao.getAll()
     suspend fun upsertZoomLevel(z: ZoomLevel) = zoomLevelDao.upsert(z)
     suspend fun deleteZoomLevel(z: ZoomLevel) = zoomLevelDao.delete(z)
-    suspend fun replaceZoomLevels(levels: List<ZoomLevel>) {
-        zoomLevelDao.deleteAll()
-        levels.forEach { zoomLevelDao.upsert(it) }
-    }
 
     // Settings
     suspend fun getSetting(key: String): String? = settingDao.get(key)?.value

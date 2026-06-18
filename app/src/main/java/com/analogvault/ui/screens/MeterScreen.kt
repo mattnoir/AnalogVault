@@ -1,12 +1,11 @@
 package com.analogvault.ui.screens
 
 import android.Manifest
-import android.content.Context
-import android.net.Uri
 import android.hardware.camera2.CaptureResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -19,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,15 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.exifinterface.media.ExifInterface
 import com.analogvault.data.model.ZoomLevel
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlin.math.*
 import kotlin.math.roundToInt
 
@@ -81,8 +76,7 @@ data class MeterReading(
 
 // ─── Main content ─────────────────────────────────────────────────────────────
 
-// Note: Camera2Interop / ExperimentalCamera2Interop is NOT a @RequiresOptIn marker in
-// CameraX 1.3.x, so no @OptIn or -opt-in compiler flag is needed (adding one only warns).
+@OptIn(ExperimentalCamera2Interop::class)
 @Composable
 fun MeterContent(
     vm: MainViewModel,
@@ -108,7 +102,6 @@ fun MeterContent(
 
     // ── Live metadata reading ─────────────────────────────────────────────────
     var liveReading  by remember { mutableStateOf<MeterReading?>(null) }
-    val liveReadingRef = rememberUpdatedState(liveReading)
 
     // ── Manual EV (slider) ────────────────────────────────────────────────────
     var manualEV     by remember { mutableStateOf(12.0) }
@@ -124,12 +117,6 @@ fun MeterContent(
     // ── Zoom ──────────────────────────────────────────────────────────────────
     var activeZoom   by remember { mutableStateOf<ZoomLevel?>(null) }
     var showZoomEdit by remember { mutableStateOf(false) }
-
-    // ── EXIF ──────────────────────────────────────────────────────────────────
-    var exifResult   by remember { mutableStateOf<ExifReading?>(null) }
-    val exifPicker   = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { exifResult = readExif(context, it) }
-    }
 
     val solvedAperture = remember(filmIso, shutter, effectiveEV) {
         "f/${"%.1f".format(Constants.calcAperture(filmIso, shutter, effectiveEV))}"
@@ -502,51 +489,6 @@ private fun NearbyTable(filmIso: Int, shutter: String, effectiveEV: Double) {
     }
 }
 
-@Composable
-private fun ExifPanel(
-    exif: ExifReading, onDismiss: () -> Unit,
-    onUseEV: (Double) -> Unit, onApplyInputs: () -> Unit
-) {
-    val exifEV = if (exif.iso != null && exif.shutter != null && exif.aperture != null) {
-        val ap = exif.aperture.toDoubleOrNull() ?: 0.0
-        val t  = Constants.evalShutter(exif.shutter)
-        if (ap > 0 && t > 0) (log2(ap * ap / t) - log2(exif.iso / 100.0)) else null
-    } else null
-
-    Box(Modifier.fillMaxWidth()
-        .clip(RoundedCornerShape(10.dp))
-        .background(BlueInfo.copy(alpha = 0.08f))
-        .border(1.dp, BlueInfo.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-        .padding(12.dp)) {
-        Column {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("EXIF", color = BlueInfo, fontSize = 10.sp)
-                IconButton(onClick = onDismiss, Modifier.size(24.dp)) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = null,
-                        tint = TextTertiary, modifier = Modifier.size(14.dp))
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                exif.iso?.let     { VaultTag("ISO $it", textColor = AmberBright) }
-                exif.shutter?.let { VaultTag(it, textColor = AmberBright) }
-                exif.aperture?.let { VaultTag("f/$it", textColor = AmberBright) }
-            }
-            exif.lens?.let { Text("Lens: $it", color = TextTertiary, fontSize = 10.sp) }
-            exifEV?.let { ev ->
-                Spacer(Modifier.height(6.dp))
-                Text("EV ${"%.1f".format(ev)}", color = TextSecondary, fontSize = 11.sp)
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    VaultButton("Use EV", small = true, onClick = { onUseEV(ev) })
-                    VaultButton("Apply ISO+Shutter", small = true, ghost = true, onClick = onApplyInputs)
-                }
-            }
-        }
-    }
-}
-
 // ─── Zoom Edit Sheet ──────────────────────────────────────────────────────────
 
 @Composable
@@ -617,27 +559,3 @@ fun ZoomEditSheet(zoomLevels: List<ZoomLevel>, vm: MainViewModel, onDismiss: () 
     }
 }
 
-// ─── EXIF reading ─────────────────────────────────────────────────────────────
-
-data class ExifReading(val iso: Int?, val shutter: String?, val aperture: String?, val lens: String?)
-
-private fun readExif(context: Context, uri: Uri): ExifReading = try {
-    context.contentResolver.openInputStream(uri)?.use { stream ->
-        val exif = ExifInterface(stream)
-        val iso = exif.getAttributeInt(ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY, -1).takeIf { it > 0 }
-        val shutterStr = exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)?.toDoubleOrNull()?.let { t ->
-            if (t >= 1.0) "${"%.0f".format(t)}s" else if (t > 0) "1/${(1.0 / t).roundToInt()}" else null
-        }
-        val apRaw = exif.getAttribute(ExifInterface.TAG_F_NUMBER)
-            ?: exif.getAttribute(ExifInterface.TAG_APERTURE_VALUE)
-        val apStr = apRaw?.let { raw ->
-            val parts = raw.split("/")
-            if (parts.size == 2) {
-                val n = parts[0].toDoubleOrNull() ?: return@let raw
-                val d = parts[1].toDoubleOrNull()?.takeIf { it != 0.0 } ?: return@let raw
-                "%.1f".format(n / d)
-            } else raw
-        }
-        ExifReading(iso, shutterStr, apStr, exif.getAttribute(ExifInterface.TAG_LENS_MODEL))
-    } ?: ExifReading(null, null, null, null)
-} catch (e: Exception) { ExifReading(null, null, null, null) }

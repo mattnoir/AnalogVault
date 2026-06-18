@@ -9,8 +9,6 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraControl
-import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -790,7 +788,6 @@ fun ShotSheet(
     val rollCamera = remember(roll, cameras) { cameras.find { it.id == roll.cameraId } }
     val defaultIso = prefillIso.ifBlank { roll.pushIso.ifBlank { rollFilm?.iso?.toString() ?: "" } }
     val customIsos by vm.customIsos.collectAsState()
-    val currency   by vm.currency.collectAsState()
     val isMetric   by vm.isMetric.collectAsState()
 
     val compatLenses = remember(rollCamera, lenses) {

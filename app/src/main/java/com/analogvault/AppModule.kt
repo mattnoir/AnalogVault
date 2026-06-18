@@ -2,7 +2,6 @@ package com.analogvault
 
 import android.content.Context
 import androidx.room.Room
-import com.analogvault.BuildConfig
 import com.analogvault.data.db.*
 import com.analogvault.data.network.WeatherApi
 import dagger.Module
