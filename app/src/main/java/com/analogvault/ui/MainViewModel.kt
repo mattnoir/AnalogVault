@@ -96,6 +96,14 @@ class MainViewModel @Inject constructor(
     fun upsertRoll(r: Roll) = viewModelScope.launch { repo.upsertRoll(r) }
     fun deleteRoll(id: String) = viewModelScope.launch { repo.deleteRollById(id) }
 
+    /** Unload a roll loaded by mistake: return its film to the stash and delete the roll. */
+    fun unloadRoll(roll: Roll) = viewModelScope.launch {
+        films.value.find { it.id == roll.filmId }?.let { film ->
+            repo.upsertFilm(film.copy(quantity = film.quantity + 1))
+        }
+        repo.deleteRollById(roll.id)
+    }
+
     fun addShot(rollId: String, shot: Shot) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
         repo.upsertRoll(roll.copy(shots = roll.shots + shot))
@@ -175,9 +183,16 @@ class MainViewModel @Inject constructor(
         val byProc = r.filter { it.devLog != null }
             .groupBy { it.devLog!!.process.ifBlank { "Unknown" } }
             .mapValues { it.value.size }.entries.sortedByDescending { it.value }
-        // Film cost: from FilmStock.costPerRoll (per roll consumed) + BulkRoll.totalCost (whole canisters)
+        // Film cost = per-roll film cost of shot rolls (stash films + bulk-cut rolls carry an
+        // amortised costPerRoll) PLUS the value of bulk film not yet cut into rolls. Counting
+        // only the uncut remainder avoids double-counting frames already cut into stash/rolls.
         val filmRollCost = r.sumOf { roll -> f.find { it.id == roll.filmId }?.costPerRoll ?: 0.0 }
-        val bulkCost     = b.sumOf { it.totalCost }
+        val bulkRemaining = b.sumOf { bulk ->
+            if (bulk.totalCost <= 0.0) 0.0
+            else if (bulk.totalFrames > 0)
+                bulk.totalCost * (bulk.totalFrames - bulk.usedFrames).coerceAtLeast(0) / bulk.totalFrames
+            else bulk.totalCost
+        }
         val rollCosts = r.map { roll ->
             val film = f.find { it.id == roll.filmId }
             RollCostSummary(
@@ -201,7 +216,7 @@ class MainViewModel @Inject constructor(
             byCam = byCam,
             byMonth = byMonth,
             byProc = byProc,
-            totalFilmCost = filmRollCost + bulkCost,
+            totalFilmCost = filmRollCost + bulkRemaining,
             totalDevCost  = r.sumOf { it.devCost },
             totalScanCost = r.sumOf { it.scanCost },
             selfDevRolls  = r.count { it.isSelfDev && it.developed },

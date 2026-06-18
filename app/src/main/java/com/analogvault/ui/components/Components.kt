@@ -98,38 +98,102 @@ fun TagRow(
 
 // ─── Full Date Picker (day + month + year, optional time) ─────────────────────
 
+// Compact spinner: arrow up/down for quick steps, tap the value to jump directly —
+// either via a dropdown of choices (pickerOptions) or a custom action (onValueClick,
+// e.g. the analog clock). Shared by FullDatePickerDialog and MonthYearPickerDialog.
 @Composable
-private fun SpinnerField(
+fun SpinnerField(
     label: String, value: String,
     onDec: () -> Unit, onInc: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    pickerOptions: List<Pair<String, Int>>? = null,
+    onPick: ((Int) -> Unit)? = null,
+    onValueClick: (() -> Unit)? = null
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    val tappable = onValueClick != null || (pickerOptions != null && onPick != null)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, color = TextTertiary, fontSize = 10.sp)
         Spacer(Modifier.height(2.dp))
         IconButton(onClick = onInc, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.ExpandLess, null, tint = Amber, modifier = Modifier.size(20.dp))
         }
-        Box(
-            Modifier.background(Bg4, RoundedCornerShape(6.dp))
-                .border(1.dp, Border, RoundedCornerShape(6.dp))
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(value, color = TextPrimary, fontSize = 16.sp)
+        Box {
+            Box(
+                Modifier.background(if (tappable) Bg3 else Bg4, RoundedCornerShape(6.dp))
+                    .border(1.dp, if (tappable) Amber.copy(alpha = 0.45f) else Border, RoundedCornerShape(6.dp))
+                    .then(if (tappable) Modifier.clickable {
+                        if (onValueClick != null) onValueClick() else expanded = true
+                    } else Modifier)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(value, color = TextPrimary, fontSize = 16.sp)
+            }
+            if (pickerOptions != null && onPick != null) {
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    containerColor = Bg3,
+                    modifier = Modifier.heightIn(max = 280.dp)
+                ) {
+                    pickerOptions.forEach { (lbl, v) ->
+                        DropdownMenuItem(
+                            text = { Text(lbl, color = if (lbl == value) Amber else TextPrimary, fontSize = 14.sp) },
+                            onClick = { onPick(v); expanded = false }
+                        )
+                    }
+                }
+            }
         }
         IconButton(onClick = onDec, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Default.ExpandMore, null, tint = Amber, modifier = Modifier.size(20.dp))
         }
     }
 }
-// Compact spinner-style: arrow up/down for each field, all visible at once.
+
+// Classic round analog clock for picking the time — opened by tapping the time value.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClockTimeDialog(
+    hour: Int, minute: Int,
+    onConfirm: (Int, Int) -> Unit, onDismiss: () -> Unit
+) {
+    val state = rememberTimePickerState(initialHour = hour, initialMinute = minute, is24Hour = true)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Bg3,
+        title = { Text("Pick Time", color = AmberBright) },
+        text = {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TimePicker(
+                    state = state,
+                    colors = TimePickerDefaults.colors(
+                        clockDialColor = Bg4,
+                        clockDialSelectedContentColor = Bg,
+                        clockDialUnselectedContentColor = TextPrimary,
+                        selectorColor = Amber,
+                        timeSelectorSelectedContainerColor = AmberDark,
+                        timeSelectorSelectedContentColor = AmberBright,
+                        timeSelectorUnselectedContainerColor = Bg4,
+                        timeSelectorUnselectedContentColor = TextSecondary
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(state.hour, state.minute) }) { Text("Set", color = Amber) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+    )
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FullDatePickerDialog(
     initialDate: String,
     includeTime: Boolean = false,
+    yearRange: IntRange? = null,   // null = wide default (1950 .. now+30); shot log passes a narrow one
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -155,6 +219,22 @@ fun FullDatePickerDialog(
     // Clamp day if month shrinks
     if (selDay > daysInMonth) selDay = daysInMonth
 
+    // Tap-to-expand options for each field, and the analog clock for time.
+    val nowYear      = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
+    val years        = yearRange ?: (1950..(nowYear + 30))
+    val dayOptions   = (1..daysInMonth).map { "%02d".format(it) to it }
+    val monthOptions = months.mapIndexed { i, m -> m to (i + 1) }
+    val yearOptions  = remember(years) { years.map { it.toString() to it } }
+    var showClock    by remember { mutableStateOf(false) }
+
+    if (showClock) {
+        ClockTimeDialog(
+            hour = selHour, minute = selMinute,
+            onConfirm = { h, m -> selHour = h; selMinute = m; showClock = false },
+            onDismiss = { showClock = false }
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Bg3,
@@ -172,6 +252,7 @@ fun FullDatePickerDialog(
                         value = "%02d".format(selDay),
                         onInc = { selDay = if (selDay >= daysInMonth) 1 else selDay + 1 },
                         onDec = { selDay = if (selDay <= 1) daysInMonth else selDay - 1 },
+                        pickerOptions = dayOptions, onPick = { selDay = it },
                         modifier = Modifier.weight(1f)
                     )
                     SpinnerField(
@@ -179,13 +260,15 @@ fun FullDatePickerDialog(
                         value = months[selMonth - 1],
                         onInc = { selMonth = if (selMonth >= 12) 1 else selMonth + 1 },
                         onDec = { selMonth = if (selMonth <= 1) 12 else selMonth - 1 },
+                        pickerOptions = monthOptions, onPick = { selMonth = it },
                         modifier = Modifier.weight(1.3f)
                     )
                     SpinnerField(
                         label = "Year",
                         value = selYear.toString(),
-                        onInc = { selYear++ },
-                        onDec = { selYear-- },
+                        onInc = { if (selYear < years.last) selYear++ },
+                        onDec = { if (selYear > years.first) selYear-- },
+                        pickerOptions = yearOptions, onPick = { selYear = it },
                         modifier = Modifier.weight(1.3f)
                     )
                 }
@@ -193,7 +276,7 @@ fun FullDatePickerDialog(
                     Spacer(Modifier.height(12.dp))
                     HorizontalDivider(color = Border)
                     Spacer(Modifier.height(12.dp))
-                    // Time row: Hour | : | Minute
+                    // Time row: Hour | : | Minute — tap a value to open the round clock
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center,
@@ -204,6 +287,7 @@ fun FullDatePickerDialog(
                             value = "%02d".format(selHour),
                             onInc = { selHour = (selHour + 1) % 24 },
                             onDec = { selHour = (selHour - 1 + 24) % 24 },
+                            onValueClick = { showClock = true },
                             modifier = Modifier.weight(1f)
                         )
                         Text(":", color = Amber, fontSize = 24.sp,
@@ -213,9 +297,12 @@ fun FullDatePickerDialog(
                             value = "%02d".format(selMinute),
                             onInc = { selMinute = (selMinute + 5) % 60 },
                             onDec = { selMinute = (selMinute - 5 + 60) % 60 },
+                            onValueClick = { showClock = true },
                             modifier = Modifier.weight(1f)
                         )
                     }
+                    Spacer(Modifier.height(6.dp))
+                    Text("Tap the time to open the clock", color = TextTertiary, fontSize = 10.sp)
                 }
             }
         },

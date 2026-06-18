@@ -96,6 +96,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     val rolls         by vm.rolls.collectAsState()
     val bulkRolls     by vm.bulkRolls.collectAsState()
     val currency      by vm.currency.collectAsState()
+    val isMetric      by vm.isMetric.collectAsState()
     var showBulkSheet   by remember { mutableStateOf(false) }
     var editingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
     var loadingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
@@ -190,6 +191,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             items(bulkRolls, key = { "bulk_${it.id}" }, contentType = { "bulk" }) { bulk ->
                 BulkRollCard(
                     bulk = bulk,
+                    isMetric = isMetric,
                     onLoad   = { loadingBulk = bulk },
                     onEdit   = { editingBulk = bulk; showBulkSheet = true },
                     onDelete = { confirmDeleteBulk = bulk }
@@ -253,11 +255,9 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     loadingFilm?.let { film ->
         val cameras by vm.cameras.collectAsState()
         val lenses  by vm.lenses.collectAsState()
-        LoadRollSheetFromStash(
-            film = film,
-            cameras = cameras,
-            lenses = lenses,
-            rolls = rolls,
+        LoadRollSheet(
+            films = films, cameras = cameras, lenses = lenses, rolls = rolls,
+            vm = vm, fixedFilm = film,
             onDismiss = { loadingFilm = null },
             onSave = { roll ->
                 vm.upsertRoll(roll)
@@ -273,6 +273,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     if (showBulkSheet) {
         BulkRollSheet(
             editing = editingBulk,
+            isMetric = isMetric,
             onDismiss = { showBulkSheet = false; editingBulk = null },
             onSave = { vm.upsertBulkRoll(it); showBulkSheet = false; editingBulk = null }
         )
@@ -349,11 +350,15 @@ private fun FilmCard(
 @Composable
 fun BulkRollCard(
     bulk: BulkRoll,
+    isMetric: Boolean = false,
     onLoad: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val remaining = (bulk.totalFrames - bulk.usedFrames).coerceAtLeast(0)
+    // Approx canister length in the user's preferred unit (35mm: ~32 frames/ft, ~105 frames/m).
+    val perUnit   = if (isMetric) 105 else 32
+    val unitLabel = if (isMetric) "m" else "ft"
     val pct       = if (bulk.totalFrames > 0) bulk.usedFrames.toFloat() / bulk.totalFrames else 0f
     val barColor  = when {
         pct >= 0.9f -> RedErr
@@ -372,10 +377,8 @@ fun BulkRollCard(
                 TagRow() {
                     VaultTag(bulk.type.split(" ").first())
                     VaultTag("ISO ${bulk.iso}")
-                    VaultTag(
-                        text = "$remaining frames left",
-                        textColor = barColor
-                    )
+                    VaultTag(text = "$remaining frames left", textColor = barColor)
+                    if (remaining > 0) VaultTag("≈ ${remaining / perUnit} $unitLabel", textColor = TextSecondary)
                 }
                 if (bulk.expiryDate.isNotBlank()) {
                     Spacer(Modifier.height(3.dp))
@@ -418,6 +421,7 @@ fun BulkRollCard(
 @Composable
 fun BulkRollSheet(
     editing: BulkRoll?,
+    isMetric: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (BulkRoll) -> Unit
 ) {
@@ -427,7 +431,7 @@ fun BulkRollSheet(
     var iso      by remember { mutableStateOf(editing?.iso?.toString() ?: "400") }
     var frames   by remember { mutableStateOf(editing?.totalFrames?.toString() ?: "") }
     var footage  by remember { mutableStateOf("") }   // helper field only — not stored
-    var footageMetric by remember { mutableStateOf(false) }  // false = ft, true = m
+    var footageMetric by remember { mutableStateOf(isMetric) }  // default unit from settings; false = ft, true = m
     var notes    by remember { mutableStateOf(editing?.notes ?: "") }
     var totalCost by remember { mutableStateOf(if ((editing?.totalCost ?: 0.0) > 0.0) "%.2f".format(editing!!.totalCost) else "") }
     var purchaseDate by remember { mutableStateOf(editing?.purchaseDate
@@ -968,6 +972,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     var filmFormat by remember { mutableStateOf(ed?.filmFormat?.ifBlank { "135 (35mm)" } ?: "135 (35mm)") }
     var frameCount by remember { mutableStateOf(ed?.frameCount?.toString() ?: "36") }
     var expiry     by remember { mutableStateOf(ed?.expiryDate ?: "") }
+    var purchaseDate by remember { mutableStateOf(ed?.purchaseDate ?: "") }
     var storage    by remember { mutableStateOf(ed?.storage ?: Constants.STORAGE_TYPES[0]) }
     var quantity   by remember { mutableStateOf(ed?.quantity?.toString() ?: "1") }
     var costPerRoll by remember { mutableStateOf(if ((ed?.costPerRoll ?: 0.0) > 0.0) "%.2f".format(ed!!.costPerRoll) else "") }
@@ -1003,8 +1008,9 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     }
     var notes      by remember { mutableStateOf(ed?.notes ?: "") }
 
-    // Expiry month/year picker state
+    // Expiry month/year picker + purchase date picker state
     var showExpPicker by remember { mutableStateOf(false) }
+    var showPurchaseDatePicker by remember { mutableStateOf(false) }
     var pickerYear    by remember { mutableStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) }
     var pickerMonth   by remember { mutableIntStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1) }
 
@@ -1116,6 +1122,19 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
             VaultDropdown("Storage", storage, Constants.STORAGE_TYPES, { storage = it }, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
+        // Purchase date — optional, uses the same date picker as the rest of the app
+        Column {
+            Text("Purchase Date", color = TextTertiary, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (purchaseDate.isBlank()) "Not set" else formatDate(purchaseDate),
+                    color = if (purchaseDate.isBlank()) TextTertiary else TextPrimary,
+                    fontSize = 13.sp, modifier = Modifier.weight(1f))
+                VaultButton("Pick", small = true, ghost = true, onClick = { showPurchaseDatePicker = true })
+                if (purchaseDate.isNotBlank()) VaultButton("✕", small = true, ghost = true, onClick = { purchaseDate = "" })
+            }
+        }
+        Spacer(Modifier.height(10.dp))
         VaultTextField(costPerRoll, { costPerRoll = it }, "Cost per Roll (optional)",
             keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
         Spacer(Modifier.height(10.dp))
@@ -1132,6 +1151,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                 filmFormat  = filmFormat,
                 frameCount  = frameCount.toIntOrNull() ?: 36,
                 expiryDate  = expiry,
+                purchaseDate = purchaseDate,
                 storage     = storage,
                 quantity    = quantity.toIntOrNull() ?: 1,
                 notes       = notes,
@@ -1151,92 +1171,55 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
             onDismiss = { showExpPicker = false }
         )
     }
+    if (showPurchaseDatePicker) {
+        FullDatePickerDialog(
+            initialDate = purchaseDate.ifBlank {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            },
+            includeTime = false,
+            onConfirm = { purchaseDate = it; showPurchaseDatePicker = false },
+            onDismiss = { showPurchaseDatePicker = false }
+        )
+    }
 }
 
 // ─── Month/Year Picker ────────────────────────────────────────────────────────
 
 @Composable
 fun MonthYearPickerDialog(year: Int, month: Int, onConfirm: (Int, Int) -> Unit, onDismiss: () -> Unit) {
-    var selYear    by remember { mutableIntStateOf(year) }
-    var selMonth   by remember { mutableIntStateOf(month) }
-    // decadeStart is always the floored decade, e.g. 1978 → 1970
-    var decadeStart by remember { mutableIntStateOf((year / 10) * 10) }
+    var selYear  by remember { mutableIntStateOf(year) }
+    var selMonth by remember { mutableIntStateOf(month) }
     val months = listOf("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
-    // 12 years per page: decadeStart .. decadeStart+11  (3 cols × 4 rows)
-    val yearRange = (decadeStart until decadeStart + 12).toList()
+    val monthOptions = months.mapIndexed { i, m -> m to (i + 1) }
+    val nowYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
+    // Same wide range as FullDatePickerDialog (vintage film .. far future expiry).
+    val years = remember(nowYear) { 1950..(nowYear + 30) }
+    val yearOptions = remember(years) { years.map { it.toString() to it } }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Bg3,
         title = { Text("Expiry Date", color = AmberBright) },
         text = {
-            Column {
-                // ── Year decade grid ──────────────────────────────────────────
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { decadeStart -= 12 }) {
-                        Icon(Icons.Default.ChevronLeft, null, tint = Amber)
-                    }
-                    Text(
-                        "$decadeStart – ${decadeStart + 11}",
-                        color = TextSecondary,
-                        fontSize = 12.sp
-                    )
-                    IconButton(onClick = { decadeStart += 12 }) {
-                        Icon(Icons.Default.ChevronRight, null, tint = Amber)
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                yearRange.chunked(3).forEach { rowYears ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        rowYears.forEach { y ->
-                            val selected = y == selYear
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(if (selected) AmberDark else Bg4)
-                                    .border(1.dp, if (selected) Amber else Border, RoundedCornerShape(6.dp))
-                                    .clickable { selYear = y }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    y.toString(),
-                                    color = if (selected) AmberBright else TextSecondary,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
-                Spacer(Modifier.height(6.dp))
-                // ── Month grid ────────────────────────────────────────────────
-                months.chunked(3).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { m ->
-                            val mIdx = months.indexOf(m) + 1
-                            val selected = mIdx == selMonth
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(if (selected) AmberDark else Bg4)
-                                    .border(1.dp, if (selected) Amber else Border, RoundedCornerShape(6.dp))
-                                    .clickable { selMonth = mIdx }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(m, color = if (selected) AmberBright else TextSecondary, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SpinnerField(
+                    label = "Month", value = months[selMonth - 1],
+                    onInc = { selMonth = if (selMonth >= 12) 1 else selMonth + 1 },
+                    onDec = { selMonth = if (selMonth <= 1) 12 else selMonth - 1 },
+                    pickerOptions = monthOptions, onPick = { selMonth = it },
+                    modifier = Modifier.weight(1f)
+                )
+                SpinnerField(
+                    label = "Year", value = selYear.toString(),
+                    onInc = { if (selYear < years.last) selYear++ },
+                    onDec = { if (selYear > years.first) selYear-- },
+                    pickerOptions = yearOptions, onPick = { selYear = it },
+                    modifier = Modifier.weight(1f)
+                )
             }
         },
         confirmButton = {
@@ -1451,84 +1434,6 @@ fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit,
     }
 }
 
-@Composable
-fun LoadRollSheetFromStash(
-    film: FilmStock,
-    cameras: List<Camera>,
-    lenses: List<Lens>,
-    rolls: List<Roll> = emptyList(),
-    onDismiss: () -> Unit,
-    onSave: (Roll) -> Unit
-) {
-    // Cameras that currently have an active (unfinished, undeveloped) roll in them
-    val busyCameraIds = remember(rolls) {
-        rolls.filter { !it.finished && !it.developed }.map { it.cameraId }.toSet()
-    }
-
-    var cameraId  by remember { mutableStateOf("") }
-    var lensId    by remember { mutableStateOf("") }
-    var startDate by remember { mutableStateOf(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())) }
-
-    val cameraName = cameras.find { it.id == cameraId }?.name ?: ""
-    val lensName   = lenses.find  { it.id == lensId }?.name ?: ""
-    val selCamera  = cameras.find { it.id == cameraId }
-    val isBusy     = cameraId.isNotBlank() && cameraId in busyCameraIds
-
-    VaultSheet("Load ${film.name}", onDismiss) {
-        // Film info summary
-        TagRow() {
-            VaultTag(film.type.split(" ").first())
-            VaultTag("ISO ${film.iso}")
-            if (film.storage.isNotBlank()) VaultTag(film.storage)
-        }
-        Spacer(Modifier.height(14.dp))
-
-        // Show cameras with busy indicator
-        val cameraDisplayNames = cameras.map { cam ->
-            if (cam.id in busyCameraIds) "${cam.name} 📷" else cam.name
-        }
-        VaultDropdown("Camera", if (cameraName.isBlank()) "" else if (cameraId in busyCameraIds) "$cameraName 📷" else cameraName,
-            cameraDisplayNames,
-            { displayName ->
-                val cleanName = displayName.removeSuffix(" 📷")
-                cameraId = cameras.find { it.name == cleanName }?.id ?: ""; lensId = ""
-            })
-        // Warning if camera already has a roll
-        if (isBusy) {
-            Spacer(Modifier.height(4.dp))
-            Text("⚠ This camera already has a roll loaded. Load anyway for MF cameras with multiple backs.",
-                color = OrangeWarn, fontSize = 11.sp)
-        }
-        Spacer(Modifier.height(10.dp))
-
-        if (selCamera?.lensSystem == "interchangeable") {
-            val compatLenses = lenses.filter { lens ->
-                Constants.mountCompat(selCamera.mount, lens.mount, selCamera.adapterMounts) != "incompatible"
-            }
-            val lensOptions = listOf("— No lens —") + compatLenses.map { l ->
-                val compat = Constants.mountCompat(selCamera.mount, l.mount, selCamera.adapterMounts)
-                "${l.name} [${if (compat == "native") "native" else "via adapter"}]"
-            }
-            VaultDropdown("Lens", if (lensId.isBlank()) "— No lens —" else lensName, lensOptions,
-                { sel -> lensId = if (sel.startsWith("—")) "" else compatLenses.find { l -> sel.startsWith(l.name) }?.id ?: "" })
-            Spacer(Modifier.height(10.dp))
-        }
-
-        VaultTextField(startDate, { startDate = it }, "Load Date (YYYY-MM-DD)")
-        Spacer(Modifier.height(16.dp))
-
-        VaultButton(
-            text = if (isBusy) "Load Anyway (MF / multiple backs)" else "Load into Camera",
-            modifier = Modifier.fillMaxWidth(),
-            ghost = isBusy,
-            onClick = {
-                if (cameraId.isNotBlank()) {
-                    onSave(Roll(
-                        id = uid(), filmId = film.id, cameraId = cameraId,
-                        cameraLensId = lensId, startDate = startDate
-                    ))
-                }
-            }
-        )
-    }
-}
+// Loading film into a camera (from stash or the Loaded tab) uses the shared
+// LoadRollSheet(fixedFilm = …) in ActiveScreen.kt — one consistent flow with a date
+// picker, exposure count and shoot-at-ISO (incl. custom ISOs).

@@ -14,8 +14,8 @@ android {
         applicationId = "com.analogvault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 35
-        versionName = "0.3.5"
+        versionCode = 40
+        versionName = "0.4.0"
     }
 
     signingConfigs {
@@ -47,9 +47,6 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-opt-in=androidx.camera.camera2.interop.ExperimentalCamera2Interop"
-        )
     }
     buildFeatures { compose = true; buildConfig = true }
 }
@@ -58,6 +55,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)          // needed for Theme.AppCompat
     implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.compose)  // For LocalLifecycleOwner (moved here in newer versions)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)

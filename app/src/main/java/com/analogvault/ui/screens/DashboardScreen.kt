@@ -103,7 +103,7 @@ fun DashboardScreen(
             items(shooting.take(3)) { roll ->
                 val film  = films.find { it.id == roll.filmId }
                 val cam   = cameras.find { it.id == roll.cameraId }
-                val total = film?.frameCount ?: 36
+                val total = roll.totalShots.takeIf { it > 0 } ?: film?.frameCount ?: 36
                 val pct   = (roll.shots.size.toFloat() / total).coerceIn(0f, 1f)
                 DashRollRow(
                     filmName   = film?.name ?: "Unknown Film",

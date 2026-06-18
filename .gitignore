@@ -3,6 +3,7 @@
 /build/
 **/build/
 *.gradle~
+.claude/
 
 # Android Studio
 .idea/
@@ -26,6 +27,7 @@ app/generated/
 *.class
 *.jar
 *.log
+.kotlin/
 
 # Editor
 .vscode/

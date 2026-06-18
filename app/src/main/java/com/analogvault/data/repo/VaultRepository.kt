@@ -79,20 +79,27 @@ class VaultRepository @Inject constructor(
         quantity: Int,
         expiryDate: String
     ) {
+        // Amortise the canister price over the rolls it can produce so each cut roll
+        // carries its share of the cost (otherwise per-roll cost shows €0 for bulk film).
+        val perRollCost =
+            if (bulk.totalCost > 0.0 && bulk.totalFrames > 0 && frames > 0)
+                bulk.totalCost * frames / bulk.totalFrames
+            else 0.0
         repeat(quantity) {
             val stock = FilmStock(
-                id         = java.util.UUID.randomUUID().toString(),
-                name       = bulk.name,
-                brand      = bulk.brand,
-                type       = bulk.type,
-                iso        = bulk.iso,
-                shots      = frames,
-                filmFormat = "135 (35mm)",
-                frameCount = frames,
-                expiryDate = expiryDate,
-                storage    = "Bulk",
-                quantity   = 1,
-                notes      = "Cut from bulk — ${bulk.name}"
+                id          = java.util.UUID.randomUUID().toString(),
+                name        = bulk.name,
+                brand       = bulk.brand,
+                type        = bulk.type,
+                iso         = bulk.iso,
+                shots       = frames,
+                filmFormat  = "135 (35mm)",
+                frameCount  = frames,
+                expiryDate  = expiryDate,
+                storage     = "Bulk",
+                quantity    = 1,
+                notes       = "Cut from bulk — ${bulk.name}",
+                costPerRoll = perRollCost
             )
             filmDao.upsert(stock)
         }

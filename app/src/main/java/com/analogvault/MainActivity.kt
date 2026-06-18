@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +85,14 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 private val BOTTOM_TABS = listOf(Tab.DASH, Tab.STASH, Tab.ACTIVE, Tab.METER, Tab.WEATHER, Tab.MORE)
 private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.BACKUP, Tab.SETTINGS)
 
+// Left-to-right position of each tab. The screen transition slides toward the side the new
+// tab sits on (e.g. Home→Meter slides in from the right, Meter→Stash slides in from the left).
+private fun tabOrder(tab: Tab): Int = when (tab) {
+    Tab.DASH -> 0; Tab.STASH -> 1; Tab.ACTIVE -> 2; Tab.METER -> 3
+    Tab.WEATHER -> 4; Tab.MORE -> 5
+    Tab.DARK -> 6; Tab.STATS -> 7; Tab.BACKUP -> 8; Tab.SETTINGS -> 9
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultApp() {
@@ -96,19 +106,18 @@ fun VaultApp() {
     var meterAperture by remember { mutableStateOf("") }
     var meterIso      by remember { mutableStateOf("") }
 
-    // Back stack: DASH is always the root, never popped
-    val backStack = remember { androidx.compose.runtime.snapshots.SnapshotStateList<Tab>().also { it.add(Tab.DASH) } }
-    val currentTab by remember { derivedStateOf { backStack.last() } }
+    // Hierarchical navigation: Home (DASH) is the root, the bottom tabs sit beneath it, and the
+    // "More" sub-screens sit one level deeper. Back always walks up the hierarchy toward Home.
+    var currentTab by remember { mutableStateOf(Tab.DASH) }
 
     fun navigateTo(tab: Tab, subTab: Int = 0) {
         if (tab == Tab.ACTIVE) activeSubTab = subTab
-        // Don't push duplicates — just bring to front
-        if (backStack.last() != tab) backStack.add(tab)
+        currentTab = tab
     }
 
-    // Back: pop the stack; if only root remains, let system handle (exit)
-    BackHandler(enabled = backStack.size > 1) {
-        backStack.removeLastOrNull()
+    // Back: walk up one level — More sub-screens → More, any other tab → Home, Home → exit.
+    BackHandler(enabled = currentTab != Tab.DASH) {
+        currentTab = if (currentTab in MORE_TABS) Tab.MORE else Tab.DASH
     }
 
     val isMoreSub = currentTab in MORE_TABS
@@ -122,12 +131,20 @@ fun VaultApp() {
                         selected = selected,
                         onClick = { navigateTo(tab) },
                         icon = {
+                            // Subtle lift on the selected tab for a livelier bottom bar.
+                            val iconScale by animateFloatAsState(
+                                targetValue = if (selected) 1.18f else 1f,
+                                animationSpec = tween(220), label = "navIconScale"
+                            )
                             BadgedBox(badge = {
                                 if (tab == Tab.ACTIVE && activeCount > 0)
                                     Badge(containerColor = Amber) {
                                         Text(activeCount.toString(), color = Bg, fontSize = 10.sp)
                                     }
-                            }) { Icon(tab.icon, tab.label) }
+                            }) {
+                                Icon(tab.icon, tab.label,
+                                    modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale })
+                            }
                         },
                         label = { Text(tab.label, fontSize = 10.sp) },
                         colors = NavigationBarItemDefaults.colors(
@@ -145,9 +162,13 @@ fun VaultApp() {
         AnimatedContent(
             targetState = currentTab,
             transitionSpec = {
-                (fadeIn(tween(180)) + slideInHorizontally(tween(180)) { it / 12 }) togetherWith
-                (fadeOut(tween(120)) + slideOutHorizontally(tween(120)) { -it / 12 })
+                // Slide toward the side the target tab sits on: rightward tab → enter from right,
+                // leftward tab → enter from left. Gives a sense of where each tab lives.
+                val dir = if (tabOrder(targetState) >= tabOrder(initialState)) 1 else -1
+                (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { dir * it / 6 }) togetherWith
+                (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { -dir * it / 6 })
             },
+            label = "tab",
             modifier = Modifier.padding(padding)
         ) { tab ->
             when (tab) {

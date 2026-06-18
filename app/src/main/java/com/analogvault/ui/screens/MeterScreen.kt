@@ -3,13 +3,10 @@ package com.analogvault.ui.screens
 import android.Manifest
 import android.content.Context
 import android.net.Uri
-import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -31,7 +28,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,7 +81,8 @@ data class MeterReading(
 
 // ─── Main content ─────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalCamera2Interop::class)
+// Note: Camera2Interop / ExperimentalCamera2Interop is NOT a @RequiresOptIn marker in
+// CameraX 1.3.x, so no @OptIn or -opt-in compiler flag is needed (adding one only warns).
 @Composable
 fun MeterContent(
     vm: MainViewModel,
@@ -385,7 +383,11 @@ fun MeterContent(
             // Use in Shot button
             if (onUseInShot != null) {
                 Spacer(Modifier.height(12.dp))
-                val apNum = "%.1f".format(Constants.calcAperture(filmIso, shutter, effectiveEV))
+                // Normalise to match the ShotSheet aperture options ("f/8", "f/5.6")
+                // and stored convention — whole stops drop the trailing ".0".
+                val apRaw = Constants.calcAperture(filmIso, shutter, effectiveEV)
+                val apNum = if (apRaw == apRaw.toLong().toDouble()) apRaw.toLong().toString()
+                            else "%.1f".format(apRaw)
                 VaultButton(
                     text = "📋 Use in Shot  $shutter · f/$apNum · ISO $filmIso",
                     modifier = Modifier.fillMaxWidth(),

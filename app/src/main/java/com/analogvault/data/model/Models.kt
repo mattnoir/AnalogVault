@@ -49,6 +49,7 @@ data class FilmStock(
     val filmFormat: String = "135 (35mm)",   // value from FILM_FORMATS_DISPLAY
     val frameCount: Int = 36,     // actual frame count for this roll
     val expiryDate: String = "",
+    val purchaseDate: String = "",  // when acquired; "" = unknown
     val storage: String = "Shelf",
     val quantity: Int = 1,
     val notes: String = "",

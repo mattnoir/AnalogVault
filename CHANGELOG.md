@@ -1,4 +1,4 @@
-[v0.3.5] - 2026-06-18
+[v0.4.0] - 2026-06-18
 -
 **Code rework and fixes**
 - **Currency missing in Stats**
@@ -54,15 +54,51 @@
 - **Versioning**
   - Versioning now works and is not stuck at 1.0
 
+
+
+**Feature work and further fixes**
+- **Build / compilation**
+    - Fixed an invalid Kotlin compiler flag and an incorrect `@Suppress` that broke the build.
+    - Removed the no-op `ExperimentalCamera2Interop` opt-in (not an opt-in marker in CameraX 1.3.x) and unused CameraX interop imports.
+
+- **Loading film into camera**
+    - Unified the stash and Loaded-tab load flows into a single consistent sheet.
+    - Load Date is now a date picker instead of free text.
+    - Removed the manual exposure count — taken from the film's own frame count.
+    - "Shoot at ISO" is now available when loading from stash.
+    - Custom ISO values are now selectable (and can be added inline) in "Shoot at ISO".
+    - Added an **Unload** button that returns a mistakenly-loaded roll to the stash.
+
+- **Light meter "Use in Shot"**
+    - Fixed the prefill being cleared before the shot sheet read it — shutter, aperture and ISO now carry over.
+    - Aperture normalised to match the shot form's options (e.g. `f/8`, not `f/8.0`).
+    - Fixed a stale meter reading re-opening the shot sheet when later opening the Loaded tab.
+
+- **Costs**
+    - Per-roll film cost now shown for bulk-cut rolls (canister price amortised per roll).
+    - Fixed Stats cost total double-counting bulk canisters — now counts the uncut remainder.
+    - Added a **Purchase Date** field to individual film stocks (previously bulk-only).
+
+- **Date & time pickers**
+    - Tap a day / month / year value to jump directly via a dropdown, not just the arrows.
+    - Tap the time to open a classic analog clock.
+    - Unified the expiry month/year picker to the same style.
+    - Consistent year range across pickers (1950 → +30 years); shot log limited to the last 2 years.
+
+- **Navigation**
+    - Reworked into a clear hierarchy (Home → tabs → sub-screens); Back walks up toward Home.
+    - System Back now closes an open roll before leaving the Loaded tab.
+    - Tab transitions slide toward the side the target tab sits on (position-aware), instead of always one direction.
+    - Subtle scale animation on the selected bottom-bar icon.
+
+- **Units**
+    - Metric / Imperial setting now applies to bulk film, showing canister length in `ft` or `m`.
+
+- **Database**
+    - Added migration to schema v7 for the new film purchase-date field.
+
+
+
 **Known bugs**
-- **loading film into camera differences**
-    - Exposure count not necessary in loading film from loaded tab
-    - Date and time in loaded tab only text, should be picker
-    - "Shoot at ISO" option not available when loading from stash
-    - 
-- Custom ISO not working for loading film into camera in "shoot at ISO"
-- "Use in shot" option still not working as intended from light meter screen
-- Costs per individual roll not added yet
-- nav stacking still needs hierarchy
-- 
-- if you find more create issue
+-
+- now I really don't know, make an issue if you find any

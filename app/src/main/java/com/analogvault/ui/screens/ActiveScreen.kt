@@ -6,6 +6,7 @@ import android.content.Context
 import com.analogvault.data.network.WeatherResponse
 import com.analogvault.ui.WeatherState
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraControl
@@ -23,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -35,7 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -84,15 +86,17 @@ fun ActiveScreen(
     var selectedRollId by remember { mutableStateOf<String?>(null) }
     var showLoadSheet  by remember { mutableStateOf(false) }
     // Copy meter values into local state once on arrival; parent clears its copy via callback
-    var pendingMeterShutter  by remember { mutableStateOf(meterShutter) }
-    var pendingMeterAperture by remember { mutableStateOf(meterAperture) }
-    var pendingMeterIso      by remember { mutableStateOf(meterIso) }
+    var pendingMeterShutter  by remember { mutableStateOf("") }
+    var pendingMeterAperture by remember { mutableStateOf("") }
+    var pendingMeterIso      by remember { mutableStateOf("") }
     var showMeterRollPicker  by remember { mutableStateOf(false) }
     var subTab         by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 3)) }
 
-    // Pull fresh meter values when parent updates them (user taps Use in Shot again)
+    // Capture meter values whenever the parent supplies them, then immediately tell the
+    // parent to clear its copy. Starting blank (not from the param) avoids re-triggering the
+    // shot sheet with a stale reading when the Loaded tab is later opened normally.
     LaunchedEffect(meterShutter) {
-        if (meterShutter.isNotBlank() && meterShutter != pendingMeterShutter) {
+        if (meterShutter.isNotBlank()) {
             pendingMeterShutter  = meterShutter
             pendingMeterAperture = meterAperture
             pendingMeterIso      = meterIso
@@ -278,7 +282,7 @@ fun ActiveScreen(
 
     if (showLoadSheet) {
         LoadRollSheet(films = films, cameras = cameras, lenses = lenses, rolls = rolls,
-            onDismiss = { showLoadSheet = false }) { roll ->
+            vm = vm, onDismiss = { showLoadSheet = false }) { roll ->
             vm.upsertRoll(roll)
             // Decrement stash quantity or delete if last roll
             val film = films.find { it.id == roll.filmId }
@@ -339,43 +343,86 @@ private fun RollListCard(
 fun LoadRollSheet(
     films: List<FilmStock>, cameras: List<VaultCamera>, lenses: List<Lens>,
     rolls: List<Roll> = emptyList(),
+    vm: MainViewModel,
+    fixedFilm: FilmStock? = null,   // when loading a specific stash item — film is pre-chosen
     onDismiss: () -> Unit, onSave: (Roll) -> Unit
 ) {
-    var filmId    by remember { mutableStateOf("") }
+    var filmId    by remember { mutableStateOf(fixedFilm?.id ?: "") }
     var cameraId  by remember { mutableStateOf("") }
     var lensId    by remember { mutableStateOf("") }
     var startDate by remember { mutableStateOf(SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())) }
     var pushIso   by remember { mutableStateOf("") }   // blank = box speed
-    var totalShots by remember { mutableStateOf("36") }
+    var showDatePicker   by remember { mutableStateOf(false) }
+    var showAddIsoDialog by remember { mutableStateOf(false) }
+    var customIsoInput   by remember { mutableStateOf("") }
+
+    val customIsos by vm.customIsos.collectAsState()
 
     val busyCameraIds = remember(rolls) {
         rolls.filter { !it.finished && !it.developed }.map { it.cameraId }.toSet()
     }
 
-    val selFilm    = films.find { it.id == filmId }
+    val selFilm    = fixedFilm ?: films.find { it.id == filmId }
     val filmName   = selFilm?.name ?: ""
     val selCamera  = cameras.find { it.id == cameraId }
     val cameraName = selCamera?.name ?: ""
     val lensName   = lenses.find { it.id == lensId }?.name ?: ""
     val isBusy     = cameraId.isNotBlank() && cameraId in busyCameraIds
+    // Stash flow allows loading into a busy camera (MF backs); loaded-tab flow blocks it.
+    val allowBusyLoad = fixedFilm != null
 
-    // Shot count options depend on film format — derive from filmFormat field, not from
-    // the frame count value, which would be ambiguous (e.g. 12 shots = 120/6x6 OR 35mm half-roll).
-    val shotOptions = remember(filmId) {
-        when {
-            selFilm?.filmFormat == "120"  -> listOf("4","8","10","12","16") // 6x17→4, 6x9→8, 6x7→10, 6x6→12, 6x4.5→16
-            selFilm?.filmFormat == "220"  -> listOf("8","16","20","24","32")
-            selFilm?.filmFormat == "4x5" || selFilm?.filmFormat == "8x10" -> listOf("5","10","20")
-            selFilm?.filmFormat == "110"  -> listOf("12","24")
-            selFilm?.filmFormat == "126"  -> listOf("12","20")
-            else                          -> listOf("12","24","36","72")  // 135 (35mm) and anything unknown
-        }
+    // Exposure count is taken from the film/roll itself (FilmStock.frameCount) — no manual picker.
+    val rollFrames = selFilm?.frameCount?.takeIf { it > 0 } ?: 36
+
+    val isoOptions = remember(selFilm?.iso, customIsos) {
+        listOf("Box (${selFilm?.iso ?: "?"})") +
+            (Constants.ISOS + customIsos).distinct().sorted().map { it.toString() }
     }
 
-    VaultSheet("Load Film into Camera", onDismiss) {
-        VaultDropdown("Film Stock", filmName, films.map { it.name },
-            { name -> filmId = films.find { it.name == name }?.id ?: "" })
-        Spacer(Modifier.height(10.dp))
+    if (showAddIsoDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddIsoDialog = false; customIsoInput = "" },
+            containerColor = Bg3,
+            title = { Text("Add custom ISO", color = AmberBright) },
+            text = {
+                VaultTextField(customIsoInput, { customIsoInput = it.filter(Char::isDigit) },
+                    "ISO value (e.g. 1000)",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    customIsoInput.toIntOrNull()?.let { v -> vm.addCustomIso(v); pushIso = v.toString() }
+                    showAddIsoDialog = false; customIsoInput = ""
+                }) { Text("Add", color = Amber) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddIsoDialog = false; customIsoInput = "" }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
+    if (showDatePicker) {
+        FullDatePickerDialog(
+            initialDate = startDate, includeTime = false,
+            onConfirm = { startDate = it; showDatePicker = false },
+            onDismiss = { showDatePicker = false }
+        )
+    }
+
+    VaultSheet(if (fixedFilm != null) "Load ${fixedFilm.name}" else "Load Film into Camera", onDismiss) {
+        if (fixedFilm != null) {
+            TagRow {
+                VaultTag(fixedFilm.type.split(" ").first())
+                VaultTag("ISO ${fixedFilm.iso}")
+                if (fixedFilm.storage.isNotBlank()) VaultTag(fixedFilm.storage)
+            }
+            Spacer(Modifier.height(12.dp))
+        } else {
+            VaultDropdown("Film Stock", filmName, films.map { it.name },
+                { name -> filmId = films.find { it.name == name }?.id ?: "" })
+            Spacer(Modifier.height(10.dp))
+        }
         VaultDropdown("Camera",
             if (cameraName.isBlank()) "" else if (isBusy) "$cameraName 📷" else cameraName,
             cameras.map { if (it.id in busyCameraIds) "${it.name} 📷" else it.name },
@@ -397,20 +444,30 @@ fun LoadRollSheet(
                 { sel -> lensId = if (sel.startsWith("—")) "" else compatLenses.find { l -> sel.startsWith(l.name) }?.id ?: "" })
             Spacer(Modifier.height(10.dp))
         }
-        VaultTextField(startDate, { startDate = it }, "Load Date (YYYY-MM-DD)")
+        // Load date — picker, not free text
+        Column {
+            Text("Load Date", color = TextTertiary, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(formatDate(startDate), color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                VaultButton("Pick", small = true, ghost = true, onClick = { showDatePicker = true })
+            }
+        }
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultDropdown(
-                "Exposures", totalShots, shotOptions,
-                { totalShots = it }, modifier = Modifier.weight(1f)
-            )
+        if (selFilm != null) {
+            Text("$rollFrames-exposure roll", color = TextTertiary, fontSize = 11.sp)
+            Spacer(Modifier.height(6.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
             VaultDropdown(
                 "Shoot at ISO",
                 if (pushIso.isBlank()) "Box (${selFilm?.iso ?: "?"})" else pushIso,
-                listOf("Box (${selFilm?.iso ?: "?"})") + Constants.ISOS.map { it.toString() },
+                isoOptions,
                 { pushIso = if (it.startsWith("Box")) "" else it },
                 modifier = Modifier.weight(1f)
             )
+            VaultButton("+", small = true, ghost = true, onClick = { showAddIsoDialog = true })
         }
         if (pushIso.isNotBlank() && selFilm != null) {
             val stops = kotlin.math.log2((selFilm.iso.toDouble()) / pushIso.toDouble())
@@ -422,18 +479,24 @@ fun LoadRollSheet(
         Spacer(Modifier.height(16.dp))
         if (isBusy) {
             Text(
-                "⚠ This camera already has a roll loaded. Finish or remove it first.",
+                if (allowBusyLoad)
+                    "⚠ This camera already has a roll loaded. Load anyway for MF cameras with multiple backs."
+                else "⚠ This camera already has a roll loaded. Finish or remove it first.",
                 color = OrangeWarn, fontSize = 11.sp
             )
             Spacer(Modifier.height(8.dp))
         }
-        VaultButton("Load Roll", modifier = Modifier.fillMaxWidth(),
-            enabled = !isBusy,
+        VaultButton(
+            if (isBusy && allowBusyLoad) "Load Anyway (MF / multiple backs)" else "Load Roll",
+            modifier = Modifier.fillMaxWidth(),
+            ghost = isBusy && allowBusyLoad,
+            enabled = !isBusy || allowBusyLoad,
             onClick = {
-                if (filmId.isNotBlank() && cameraId.isNotBlank()) {
-                    onSave(Roll(id = uid(), filmId = filmId, cameraId = cameraId,
+                val fid = fixedFilm?.id ?: filmId
+                if (fid.isNotBlank() && cameraId.isNotBlank()) {
+                    onSave(Roll(id = uid(), filmId = fid, cameraId = cameraId,
                         cameraLensId = lensId, startDate = startDate,
-                        pushIso = pushIso, totalShots = totalShots.toIntOrNull() ?: 36))
+                        pushIso = pushIso, totalShots = rollFrames))
                 }
             })
     }
@@ -454,24 +517,32 @@ fun RollDetailScreen(
 ) {
     val cam   = cameras.find { it.id == roll.cameraId }
     val lens  = lenses.find  { it.id == roll.cameraLensId }
-    val total = film?.frameCount ?: 36
+    // Use the exposure count chosen at load time; fall back to the film's frame count.
+    val total = roll.totalShots.takeIf { it > 0 } ?: film?.frameCount ?: 36
     val pct   = (roll.shots.size.toFloat() / total).coerceIn(0f, 1f)
 
+    var editingShot    by remember { mutableStateOf<Shot?>(null) }
     var showShotSheet  by remember { mutableStateOf(false) }
+    // Meter prefill captured locally so it survives the parent clearing its copy
+    // (onMeterConsumed) before the ShotSheet is composed and reads it.
+    var meterPrefill   by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     // Open shot sheet immediately pre-filled from meter
     LaunchedEffect(pendingMeterShutter) {
         if (pendingMeterShutter.isNotBlank()) {
+            meterPrefill  = Triple(pendingMeterShutter, pendingMeterAperture, pendingMeterIso)
+            editingShot   = null
             showShotSheet = true
             onMeterConsumed()
         }
     }
-    var editingShot    by remember { mutableStateOf<Shot?>(null) }
     var showDevSheet   by remember { mutableStateOf(false) }
     var showScanSheet  by remember { mutableStateOf(false) }
     var confirmMsg     by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var lightboxPath   by remember { mutableStateOf<String?>(null) }
     var showMap        by remember { mutableStateOf(false) }
-    // Pre-filled values coming from the light meter
+
+    // System back returns to the roll list before leaving the Loaded tab.
+    BackHandler { onBack() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -480,7 +551,7 @@ fun RollDetailScreen(
     ) {
         item {
             TextButton(onClick = onBack, contentPadding = PaddingValues(0.dp)) {
-                Icon(Icons.Default.ArrowBack, null, tint = Amber, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Amber, modifier = Modifier.size(18.dp))
                 Text(" All Rolls", color = Amber, fontSize = 13.sp)
             }
         }
@@ -516,6 +587,13 @@ fun RollDetailScreen(
                     if (!roll.finished) {
                         VaultButton("Mark Finished", small = true, onClick = {
                             confirmMsg = "Mark this roll as finished?" to { vm.markFinished(roll.id, true) }
+                        })
+                        VaultButton("Unload", small = true, ghost = true, onClick = {
+                            val n = roll.shots.size
+                            val msg = if (n > 0)
+                                "Unload film and return it to stash? $n logged shot${if (n != 1) "s" else ""} will be lost."
+                            else "Unload film and return it to stash?"
+                            confirmMsg = msg to { vm.unloadRoll(roll); onBack() }
                         })
                     }
                     if (roll.finished && !roll.developed) {
@@ -657,14 +735,14 @@ fun RollDetailScreen(
         ShotSheet(
             ed = editingShot, roll = roll, lenses = lenses,
             cameras = cameras, films = films, vm = vm,
-            prefillShutter   = if (editingShot == null) pendingMeterShutter else "",
-            prefillAperture  = if (editingShot == null) pendingMeterAperture else "",
-            prefillIso       = if (editingShot == null) pendingMeterIso else "",
-            onDismiss = { showShotSheet = false; editingShot = null }
+            prefillShutter   = if (editingShot == null) meterPrefill?.first.orEmpty() else "",
+            prefillAperture  = if (editingShot == null) meterPrefill?.second.orEmpty() else "",
+            prefillIso       = if (editingShot == null) meterPrefill?.third.orEmpty() else "",
+            onDismiss = { showShotSheet = false; editingShot = null; meterPrefill = null }
         ) { shot ->
             if (editingShot != null) vm.updateShot(roll.id, shot)
             else vm.addShot(roll.id, shot)
-            showShotSheet = false; editingShot = null
+            showShotSheet = false; editingShot = null; meterPrefill = null
         }
     }
     if (showDevSheet) {
@@ -820,8 +898,11 @@ fun ShotSheet(
     }
 
     if (showDatePicker) {
+        // Shot dates: today back to at most 2 years ago — no future, no distant past.
+        val nowY = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
         FullDatePickerDialog(
             initialDate = date, includeTime = true,
+            yearRange = (nowY - 2)..nowY,
             onConfirm = { date = it; showDatePicker = false },
             onDismiss = { showDatePicker = false }
         )
