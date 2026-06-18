@@ -13,7 +13,7 @@
 *.keystore
 local.properties
 changes.patch
-changelog.ignore
+CHAGNELOG.md
 
 # Build outputs
 app/release/
