@@ -101,8 +101,6 @@
     - Set `isShrinkResources = true` on the minified release build (required alongside `isMinifyEnabled`).
     - Removed the dead EXIF reader path from the light meter (`ExifPanel`, `readExif`, unused state).
     - Removed unused variables, repository functions, imports, and a stale version-catalog alias.
-    - The project now compiles with zero compiler warnings. (One remaining IDE-only opt-in notice on `Camera2Interop` is a false positive in CameraX 1.3.x — the Gradle build is clean.)
-
 
 
 **Known bugs**
