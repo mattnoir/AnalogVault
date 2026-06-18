@@ -26,6 +26,8 @@ app/generated/
 # Kotlin/Java
 *.class
 *.jar
+# but the Gradle wrapper jar MUST be committed or CI can't run ./gradlew
+!gradle/wrapper/gradle-wrapper.jar
 *.log
 .kotlin/
 
