@@ -1,0 +1,35 @@
+# Gradle
+.gradle/
+/build/
+**/build/
+*.gradle~
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+*.apk
+*.jks
+*.keystore
+local.properties
+changes.patch
+
+# Build outputs
+app/release/
+app/debug/
+
+# Generated source files
+app/generated/
+
+# Kotlin/Java
+*.class
+*.jar
+*.log
+
+# Editor
+.vscode/
+*.swp
+
+# Secrets (NEVER commit these)
+keystore.properties
+google-services.json

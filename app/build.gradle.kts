@@ -1,0 +1,99 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
+}
+
+android {
+    namespace = "com.analogvault"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.analogvault"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("KEYSTORE_PATH")
+            if (keystorePath != null) {
+                storeFile     = file(keystorePath)
+                storePassword = System.getenv("STORE_PASSWORD") ?: ""
+                keyAlias      = System.getenv("KEY_ALIAS") ?: ""
+                keyPassword   = System.getenv("KEY_PASSWORD") ?: ""
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = if (System.getenv("KEYSTORE_PATH") != null)
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-opt-in=androidx.camera.camera2.interop.ExperimentalCamera2Interop"
+        )
+    }
+    buildFeatures { compose = true; buildConfig = true }
+}
+
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)          // needed for Theme.AppCompat
+    implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.exifinterface)
+
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.icons.extended)
+    debugImplementation(libs.compose.ui.tooling)
+
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+
+    implementation(libs.retrofit.core)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp.logging)
+
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+
+    implementation(libs.coil.compose)
+    implementation(libs.coroutines.android)
+
+    // Location only — no Maps SDK, no billing
+    implementation(libs.play.services.location)
+
+    // OpenStreetMap
+    implementation(libs.osmdroid)
+}
