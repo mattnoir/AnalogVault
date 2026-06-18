@@ -43,7 +43,7 @@
   - Limited OkHttp logging to debug builds only.
   - Simplified redundant cost filtering logic.
   - Extracted duplicated weather formatting code into a reusable function.
-  - Corrected misleading comments around bottom sheet dismissal behaviour.
+  - Corrected misleading comments around bottom sheet dismissal behavior.
 
 
 - **UI Improvements**
@@ -53,3 +53,16 @@
 
 - **Versioning**
   - Versioning now works and is not stuck at 1.0
+
+**Known bugs**
+- **loading film into camera differences**
+    - Exposure count not necessary in loading film from loaded tab
+    - Date and time in loaded tab only text, should be picker
+    - "Shoot at ISO" option not available when loading from stash
+    - 
+- Custom ISO not working for loading film into camera in "shoot at ISO"
+- "Use in shot" option still not working as intended from light meter screen
+- Costs per individual roll not added yet
+- nav stacking still needs hierarchy
+- 
+- if you find more create issue
