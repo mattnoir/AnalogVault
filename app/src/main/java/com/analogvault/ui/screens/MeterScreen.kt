@@ -5,7 +5,6 @@ import android.hardware.camera2.CaptureResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.camera2.interop.Camera2Interop
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -25,7 +24,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -75,8 +73,10 @@ data class MeterReading(
 )
 
 // ─── Main content ─────────────────────────────────────────────────────────────
+// CameraX's Camera2Interop is "experimental" but in 1.3.x it is NOT a @RequiresOptIn
+// marker, so neither @OptIn nor a compiler opt-in flag has any effect (the IDE may still
+// flag the usage — a false positive; the Gradle build is the source of truth and compiles).
 
-@OptIn(ExperimentalCamera2Interop::class)
 @Composable
 fun MeterContent(
     vm: MainViewModel,
@@ -85,7 +85,6 @@ fun MeterContent(
     onRequestPerm: () -> Unit,
     onUseInShot: ((shutter: String, aperture: String, iso: String) -> Unit)? = null
 ) {
-    val context        = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // ── User inputs ───────────────────────────────────────────────────────────
