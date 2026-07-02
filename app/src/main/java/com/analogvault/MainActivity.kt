@@ -6,6 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -43,6 +48,8 @@ class AnalogVaultApp : Application() {
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    private val vm: MainViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -56,12 +63,18 @@ class MainActivity : ComponentActivity() {
         // even though the GPU is capable.  Fixed-rate displays (A13, etc.) never
         // enter this loop, which is why they appear smooth despite being less powerful.
         //
-        // Note: the previous FLAG_HARDWARE_ACCELERATED + gradle.properties
-        // "android.graphics.renderer=opengl" approach had no effect — HA is already
-        // on by default for every API-26+ app, and that gradle key is not recognised
-        // by the build system or HWUI.
+        // User-togglable (Settings → "Prefer 120 Hz display") since it costs battery.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            window.attributes = window.attributes.apply { preferredRefreshRate = 120f }
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    vm.highRefresh.collect { on ->
+                        // 0f = no preference (system adaptive rate)
+                        window.attributes = window.attributes.apply {
+                            preferredRefreshRate = if (on) 120f else 0f
+                        }
+                    }
+                }
+            }
         }
 
         setContent { AnalogVaultTheme { VaultApp() } }

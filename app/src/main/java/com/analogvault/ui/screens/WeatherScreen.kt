@@ -37,6 +37,7 @@ fun WeatherScreen(vm: MainViewModel) {
     val scope       = rememberCoroutineScope()
     val weatherState by vm.weatherState.collectAsState()
     val owmKey      by vm.owmKey.collectAsState()
+    val isMetric    by vm.isMetric.collectAsState()
 
     var editingKey by remember { mutableStateOf(false) }
     var keyInput   by remember { mutableStateOf(owmKey) }
@@ -135,7 +136,7 @@ fun WeatherScreen(vm: MainViewModel) {
             }
             is WeatherState.Success -> {
                     val films by vm.films.collectAsState()
-                    WeatherDisplay(state.data, films)
+                    WeatherDisplay(state.data, films, isMetric)
                 }
             else -> {
                 EmptyState("Tap the button to fetch weather at your location")
@@ -160,10 +161,13 @@ fun WeatherStatBox(label: String, value: String, modifier: Modifier = Modifier) 
 }
 
 @Composable
-fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>) {
+fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Boolean = true) {
     val desc = data.weather.firstOrNull()
     val light = remember(data) { analyzeLightConditions(data) }
     val recs  = remember(data, films) { recommendFilms(films, light) }
+    // The API is queried with units=metric — convert here for imperial display
+    val tempUnit = if (isMetric) "°C" else "°F"
+    fun temp(c: Double) = if (isMetric) c else c * 9.0 / 5.0 + 32.0
 
     Column {
         // Main card
@@ -180,8 +184,8 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>) {
                             "${data.name}${if (data.sys?.country != null) ", ${data.sys.country}" else ""}",
                             color = TextSecondary, fontSize = 12.sp
                         )
-                        Text("${"%.0f".format(data.main.temp)}°C", color = Amber, fontSize = 48.sp)
-                        Text("Feels like ${"%.0f".format(data.main.feels_like)}°C", color = TextSecondary, fontSize = 12.sp)
+                        Text("${"%.0f".format(temp(data.main.temp))}$tempUnit", color = Amber, fontSize = 48.sp)
+                        Text("Feels like ${"%.0f".format(temp(data.main.feels_like))}$tempUnit", color = TextSecondary, fontSize = 12.sp)
                     }
                     if (desc != null) {
                         Column(horizontalAlignment = Alignment.End) {
@@ -210,13 +214,19 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             WeatherStatBox("Humidity", "${data.main.humidity}%", modifier = Modifier.weight(1f))
             WeatherStatBox("Pressure", "${data.main.pressure} hPa", modifier = Modifier.weight(1f))
-            WeatherStatBox("Wind", "${"%.1f".format(data.wind.speed)} m/s", modifier = Modifier.weight(1f))
+            WeatherStatBox("Wind",
+                if (isMetric) "${"%.1f".format(data.wind.speed)} m/s"
+                else "${"%.1f".format(data.wind.speed * 2.237)} mph",
+                modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             WeatherStatBox("Cloud cover", "${data.clouds.all}%", modifier = Modifier.weight(1f))
             if (data.visibility != null)
-                WeatherStatBox("Visibility", "${"%.1f".format(data.visibility / 1000.0)} km", modifier = Modifier.weight(1f))
+                WeatherStatBox("Visibility",
+                    if (isMetric) "${"%.1f".format(data.visibility / 1000.0)} km"
+                    else "${"%.1f".format(data.visibility / 1609.34)} mi",
+                    modifier = Modifier.weight(1f))
         }
 
         // Photography conditions note

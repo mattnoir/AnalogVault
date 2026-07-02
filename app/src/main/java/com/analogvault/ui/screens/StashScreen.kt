@@ -24,6 +24,7 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
+import com.analogvault.util.toDecimalOrNull
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
@@ -105,6 +106,11 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     val activeFilmIds by remember { derivedStateOf {
         rolls.filter { !it.finished && !it.developed }.map { it.filmId }.toSet()
     }}
+
+    // Quantity-0 films stay in the DB (rolls reference them by id for name lookups)
+    // but were previously invisible — surface them so users can restock or delete.
+    var depletedExpanded by remember { mutableStateOf(false) }
+    val depleted = remember(films) { films.filter { it.quantity <= 0 }.sortedBy { it.name } }
 
     // ── Sort + Filter ─────────────────────────────────────────────────────────
     var sortBy     by remember { mutableStateOf("Name") }
@@ -232,6 +238,52 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                 onDelete = { confirmDelete = film }
             )
         }
+
+        // ── Out of stock (quantity 0) ──────────────────────────────────────
+        if (depleted.isNotEmpty()) {
+            item(key = "depleted_header") {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { depletedExpanded = !depletedExpanded },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (depletedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null, tint = TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("Out of stock (${depleted.size})", color = TextTertiary, fontSize = 13.sp)
+                }
+            }
+            if (depletedExpanded) {
+                items(depleted, key = { "out_${it.id}" }, contentType = { "film_out" }) { film ->
+                    VaultCard {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(film.name.ifBlank { "Unnamed" }, color = TextSecondary, fontSize = 14.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(3.dp))
+                                TagRow() {
+                                    VaultTag(film.type.split(" ").first())
+                                    VaultTag("ISO ${film.iso}")
+                                    VaultTag("×0", textColor = OrangeWarn)
+                                }
+                            }
+                            Row {
+                                IconButton(onClick = { editing = film; showSheet = true }, Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary)
+                                }
+                                IconButton(onClick = { confirmDelete = film }, Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         item(key = "spacer") { Spacer(Modifier.height(4.dp)) }
     }
 
@@ -354,8 +406,9 @@ fun BulkRollCard(
     onDelete: () -> Unit
 ) {
     val remaining = (bulk.totalFrames - bulk.usedFrames).coerceAtLeast(0)
-    // Approx canister length in the user's preferred unit (35mm: ~32 frames/ft, ~105 frames/m).
-    val perUnit   = if (isMetric) 105 else 32
+    // Approx remaining length. 35mm bulk yields ~18×36exp rolls per 100 ft
+    // (38 mm frame pitch + per-roll leader/trailer waste) → ≈6.5 usable frames/ft, ≈21/m.
+    val perUnit   = if (isMetric) 21.0 else 6.5
     val unitLabel = if (isMetric) "m" else "ft"
     val pct       = if (bulk.totalFrames > 0) bulk.usedFrames.toFloat() / bulk.totalFrames else 0f
     val barColor  = when {
@@ -376,7 +429,7 @@ fun BulkRollCard(
                     VaultTag(bulk.type.split(" ").first())
                     VaultTag("ISO ${bulk.iso}")
                     VaultTag(text = "$remaining frames left", textColor = barColor)
-                    if (remaining > 0) VaultTag("≈ ${remaining / perUnit} $unitLabel", textColor = TextSecondary)
+                    if (remaining > 0) VaultTag("≈ ${(remaining / perUnit).toInt()} $unitLabel", textColor = TextSecondary)
                 }
                 if (bulk.expiryDate.isNotBlank()) {
                     Spacer(Modifier.height(3.dp))
@@ -431,7 +484,10 @@ fun BulkRollSheet(
     var footage  by remember { mutableStateOf("") }   // helper field only — not stored
     var footageMetric by remember { mutableStateOf(isMetric) }  // default unit from settings; false = ft, true = m
     var notes    by remember { mutableStateOf(editing?.notes ?: "") }
-    var totalCost by remember { mutableStateOf(if ((editing?.totalCost ?: 0.0) > 0.0) "%.2f".format(editing!!.totalCost) else "") }
+    // Locale.US: default-locale formatting writes "12,50" on comma-decimal locales,
+    // which then fails to parse on save and silently zeroes the cost.
+    var totalCost by remember { mutableStateOf(if ((editing?.totalCost ?: 0.0) > 0.0)
+        String.format(java.util.Locale.US, "%.2f", editing!!.totalCost) else "") }
     var purchaseDate by remember { mutableStateOf(editing?.purchaseDate
         ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())) }
     var expiryDate by remember { mutableStateOf(editing?.expiryDate ?: "") }
@@ -454,10 +510,10 @@ fun BulkRollSheet(
         }
     }
 
-    // Footage → frames helper
-    // 35mm: 1ft ≈ 32 usable frames at 36mm spacing; 1m ≈ 105 frames
+    // Footage → frames helper. 35mm bulk yields ~18×36exp rolls per 100 ft
+    // (38 mm frame pitch + leader/trailer waste per roll) → ≈6.5 frames/ft, ≈21/m.
     val footageFrames = remember(footage, footageMetric) {
-        footage.toIntOrNull()?.let { v -> if (footageMetric) (v * 105) else (v * 32) }
+        footage.toIntOrNull()?.let { v -> if (footageMetric) (v * 21) else (v * 6.5).toInt() }
     }
 
     VaultSheet(if (editing != null) "Edit Bulk Roll" else "Add Bulk Film", onDismiss) {
@@ -566,7 +622,7 @@ fun BulkRollSheet(
                 notes        = notes,
                 purchaseDate = purchaseDate,
                 expiryDate   = expiryDate,
-                totalCost    = totalCost.toDoubleOrNull() ?: 0.0
+                totalCost    = totalCost.toDecimalOrNull() ?: 0.0
             ))
         })
     }
@@ -973,7 +1029,9 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     var purchaseDate by remember { mutableStateOf(ed?.purchaseDate ?: "") }
     var storage    by remember { mutableStateOf(ed?.storage ?: Constants.STORAGE_TYPES[0]) }
     var quantity   by remember { mutableStateOf(ed?.quantity?.toString() ?: "1") }
-    var costPerRoll by remember { mutableStateOf(if ((ed?.costPerRoll ?: 0.0) > 0.0) "%.2f".format(ed!!.costPerRoll) else "") }
+    // Locale.US — see BulkRollSheet.totalCost
+    var costPerRoll by remember { mutableStateOf(if ((ed?.costPerRoll ?: 0.0) > 0.0)
+        String.format(java.util.Locale.US, "%.2f", ed!!.costPerRoll) else "") }
     val customIsos by vm.customIsos.collectAsState()
     val allIsos = remember(customIsos) { (Constants.ISOS + customIsos).distinct().sorted() }
     var showAddIsoDialog by remember { mutableStateOf(false) }
@@ -1153,7 +1211,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                 storage     = storage,
                 quantity    = quantity.toIntOrNull() ?: 1,
                 notes       = notes,
-                costPerRoll = costPerRoll.toDoubleOrNull() ?: 0.0
+                costPerRoll = costPerRoll.toDecimalOrNull() ?: 0.0
             ))
         })
     }

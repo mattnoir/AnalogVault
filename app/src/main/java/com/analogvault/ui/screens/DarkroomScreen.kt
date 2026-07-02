@@ -23,12 +23,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.analogvault.data.model.Chemical
+import com.analogvault.ui.DarkroomTimerState
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
-import kotlinx.coroutines.delay
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
@@ -225,15 +225,11 @@ val DEV_PRESETS = listOf(
 @Composable
 fun TimersTab(vm: MainViewModel) {
     val chemicals by vm.chemicals.collectAsState()
-    var activeTimer  by remember { mutableStateOf<DevTimer?>(null) }
-    var showPresets  by remember { mutableStateOf(false) }
-    var showCustom   by remember { mutableStateOf(false) }
+    val timerState by vm.timerState.collectAsState()
+    var showCustom by remember { mutableStateOf(false) }
 
-    if (activeTimer != null) {
-        ActiveTimerScreen(
-            timer = activeTimer!!,
-            onDone = { activeTimer = null }
-        )
+    timerState?.let { state ->
+        ActiveTimerScreen(state = state, vm = vm)
         return
     }
 
@@ -250,7 +246,7 @@ fun TimersTab(vm: MainViewModel) {
             Spacer(Modifier.height(8.dp))
         }
         items(DEV_PRESETS) { preset ->
-            PresetCard(preset) { activeTimer = preset }
+            PresetCard(preset) { vm.startTimer(preset) }
         }
 
         // Custom from chemistry
@@ -277,10 +273,10 @@ fun TimersTab(vm: MainViewModel) {
                                 color = Amber, fontSize = 11.sp)
                         }
                         VaultButton("Start", small = true, onClick = {
-                            activeTimer = DevTimer(
+                            vm.startTimer(DevTimer(
                                 name = chem.name,
                                 steps = listOf(DevStep(name = chem.name, durationSec = totalSec))
-                            )
+                            ))
                         })
                     }
                 }
@@ -296,7 +292,7 @@ fun TimersTab(vm: MainViewModel) {
 
     if (showCustom) {
         CustomTimerSheet(onDismiss = { showCustom = false }) { timer ->
-            activeTimer = timer; showCustom = false
+            vm.startTimer(timer); showCustom = false
         }
     }
 }
@@ -328,31 +324,22 @@ private fun PresetCard(preset: DevTimer, onStart: () -> Unit) {
 // ─── Active timer screen ──────────────────────────────────────────────────────
 
 @Composable
-fun ActiveTimerScreen(timer: DevTimer, onDone: () -> Unit) {
-    var currentStep by remember { mutableIntStateOf(0) }
-    var secondsLeft by remember { mutableIntStateOf(timer.steps[0].durationSec) }
-    var running     by remember { mutableStateOf(false) }
-    var finished    by remember { mutableStateOf(false) }
+fun ActiveTimerScreen(state: DarkroomTimerState, vm: MainViewModel) {
+    // Countdown state lives in MainViewModel (wall-clock based) — it survives
+    // tab navigation and can't drift the way a delay(1000) tick loop does.
+    val timer       = state.timer
+    val currentStep = state.currentStep
+    val secondsLeft = state.secondsLeft
+    val running     = state.running
+    val finished    = state.finished
+    val step        = timer.steps.getOrNull(currentStep)
 
-    val step = timer.steps.getOrNull(currentStep)
-
-    // Countdown tick
-    LaunchedEffect(running, currentStep) {
-        if (!running) return@LaunchedEffect
-        while (secondsLeft > 0) {
-            delay(1000L)
-            secondsLeft--
-        }
-        // Step finished
-        if (currentStep < timer.steps.lastIndex) {
-            currentStep++
-            secondsLeft = timer.steps[currentStep].durationSec
-            // Auto-pause between steps so user sees the transition
-            running = false
-        } else {
-            running = false
-            finished = true
-        }
+    // Chemistry is time-critical: don't let the screen (and the user's view of
+    // the countdown) go dark mid-development.
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
     }
 
     val progress = if (step != null && step.durationSec > 0)
@@ -371,7 +358,7 @@ fun ActiveTimerScreen(timer: DevTimer, onDone: () -> Unit) {
                 Text("Step ${currentStep + 1} of ${timer.steps.size}",
                     color = TextSecondary, fontSize = 12.sp)
             }
-            IconButton(onClick = onDone) {
+            IconButton(onClick = { vm.stopTimer() }) {
                 Icon(Icons.Default.Close, contentDescription = "Stop", tint = TextSecondary)
             }
         }
@@ -416,7 +403,7 @@ fun ActiveTimerScreen(timer: DevTimer, onDone: () -> Unit) {
 
         // Controls
         if (finished) {
-            VaultButton("Done", modifier = Modifier.fillMaxWidth(), onClick = onDone)
+            VaultButton("Done", modifier = Modifier.fillMaxWidth(), onClick = { vm.stopTimer() })
         } else {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Next step preview
@@ -439,10 +426,10 @@ fun ActiveTimerScreen(timer: DevTimer, onDone: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     // Restart step
                     VaultButton("↺ Reset", ghost = true, modifier = Modifier.weight(0.4f),
-                        onClick = { secondsLeft = step?.durationSec ?: 0; running = false })
+                        onClick = { vm.resetTimerStep() })
                     // Play/pause
                     Button(
-                        onClick = { running = !running },
+                        onClick = { vm.toggleTimerRunning() },
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -461,11 +448,7 @@ fun ActiveTimerScreen(timer: DevTimer, onDone: () -> Unit) {
                     // Skip step
                     if (currentStep < timer.steps.lastIndex) {
                         VaultButton("Skip ›", ghost = true, modifier = Modifier.weight(0.4f),
-                            onClick = {
-                                running = false
-                                currentStep++
-                                secondsLeft = timer.steps[currentStep].durationSec
-                            })
+                            onClick = { vm.skipTimerStep() })
                     }
                 }
             }

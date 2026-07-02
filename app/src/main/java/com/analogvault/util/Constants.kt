@@ -1,7 +1,16 @@
 package com.analogvault.util
 
+import kotlin.math.abs
+import kotlin.math.log2
 import kotlin.math.sqrt
 import kotlin.math.pow
+
+/**
+ * Parse a user-typed decimal that may use a comma separator ("12,50").
+ * Decimal keyboards produce ',' in many locales; a plain toDoubleOrNull()
+ * would fail and silently drop the value.
+ */
+fun String.toDecimalOrNull(): Double? = trim().replace(',', '.').toDoubleOrNull()
 
 object Constants {
     val STORAGE_TYPES = listOf("Shelf","Fridge","Freezer","Cool Dark Place","Custom")
@@ -161,8 +170,8 @@ object Constants {
         "Graflex Speed Graphic","Graflex Crown Graphic","Toyo 810G",
         // Rangefinders / compact
         "Canonet QL17 GIII","Yashica Electro 35 GSN","Konica Auto S2","Minox GT-E",
-        "Nikon 35Ti","Nikon 28Ti","Leica Minilux","Contax T3","Ricoh GR1v","Ricoh GR1s",
-        "Fujifilm Klasse W","Fujifilm Natura S","Mju-II","Konica Big Mini","Nikon L35AF",
+        "Ricoh GR1v","Ricoh GR1s",
+        "Fujifilm Klasse W","Fujifilm Natura S","Mju-II","Konica Big Mini",
         // Toy / Lomography
         "Lomo LC-A","Lomo LC-A+","Lomo LC-Wide","Lomography Sprocket Rocket",
         "Holga 120N","Holga 120SF","Diana F+","Diana Mini",
@@ -385,7 +394,6 @@ object Constants {
         "Fujifilm Klasse W" to Pair("Fujifilm","35mm"), "Fujifilm Natura S" to Pair("Fujifilm","35mm"),
         "Konica Auto S2" to Pair("Konica","35mm"), "Konica Big Mini" to Pair("Konica","35mm"),
         "Yashica Electro 35 GSN" to Pair("Yashica","35mm"), "Yashica FX-3 Super" to Pair("Yashica","35mm"),
-        "Yashica Electro 35 GSN" to Pair("Yashica","35mm"),
         // Lomo / toy
         "Lomo LC-A" to Pair("Lomography","35mm"), "Lomo LC-A+" to Pair("Lomography","35mm"),
         "Lomo LC-Wide" to Pair("Lomography","35mm"),
@@ -457,6 +465,23 @@ object Constants {
         val t = evalShutter(shutter)
         val a2 = t * 2.0.pow(targetEV) * (iso / 100.0)
         return sqrt(maxOf(a2, 1.0))
+    }
+
+    /** Nearest standard third-stop f-number (what a classic lens ring can actually be set to). */
+    fun nearestStandardAperture(ap: Double): Double =
+        APERTURES.minByOrNull { abs(log2(it) - log2(ap.coerceAtLeast(0.5))) } ?: ap
+
+    /** Format a count of third-stops camera-style: 4 → "+1⅓", -2 → "-⅔", 0 → "0". */
+    fun formatThirds(thirds: Int): String {
+        if (thirds == 0) return "0"
+        val sign = if (thirds > 0) "+" else "-"
+        val whole = abs(thirds) / 3
+        val frac = when (abs(thirds) % 3) { 1 -> "⅓"; 2 -> "⅔"; else -> "" }
+        return sign + when {
+            whole == 0 -> frac
+            frac.isEmpty() -> "$whole"
+            else -> "$whole$frac"
+        }
     }
     // Film metadata: name -> Triple(brand, iso, type)
     val FILM_METADATA: Map<String, Triple<String, Int, String>> = mapOf(

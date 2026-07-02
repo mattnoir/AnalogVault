@@ -60,8 +60,8 @@ fun BackupScreen() {
         InfoCard(
             icon = Icons.Default.Info,
             text = "Backup saves all your film stocks, cameras, lenses, rolls, shot logs, " +
-                    "chemicals, and settings to a single JSON file you can store anywhere. " +
-                    "Photo thumbnails are not included (they stay on-device).",
+                    "chemicals, and settings to a single .avault file you can store anywhere. " +
+                    "Shot photos are included when the toggle below is on.",
             color = BlueInfo
         )
 
@@ -133,8 +133,9 @@ fun BackupScreen() {
 
         // Notes
         SectionCard(title = "Notes") {
-            NoteRow("File format", "JSON — human-readable, version-tagged")
-            NoteRow("Photo thumbs", "Not included — stored as local file paths")
+            NoteRow("File format", ".avault — ZIP with version-tagged JSON + photos")
+            NoteRow("Shot photos", "Included when the export toggle is on")
+            NoteRow("Older backups", "Plain .json exports import fine too")
             NoteRow("Merge behaviour", "Import is additive; same ID = overwrite")
             NoteRow("OWM API key", "Included in backup")
             NoteRow("Restore to new device", "Install the app, import the file, done")

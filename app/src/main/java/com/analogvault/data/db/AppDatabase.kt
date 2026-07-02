@@ -114,7 +114,9 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
     version = 7,
-    exportSchema = false
+    // Schemas are exported to app/schemas (see build.gradle.kts) so future
+    // migrations can be written/tested against exact historical definitions
+    exportSchema = true
 )
 @TypeConverters(
     StringListConverter::class,

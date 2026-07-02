@@ -24,6 +24,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val currency  by vm.currency.collectAsState()
     val isMetric  by vm.isMetric.collectAsState()
     val customIsos by vm.customIsos.collectAsState()
+    val highRefresh by vm.highRefresh.collectAsState()
 
     var owmDraft      by remember(owmKey)   { mutableStateOf(owmKey) }
     var currencyDraft by remember(currency) { mutableStateOf(currency) }
@@ -77,6 +78,23 @@ fun SettingsScreen(vm: MainViewModel) {
                 Switch(
                     checked = isMetric,
                     onCheckedChange = { vm.saveMetric(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Amber,
+                        checkedTrackColor = AmberDark
+                    )
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Prefer 120 Hz display", color = TextSecondary, fontSize = 13.sp)
+                    Text("Smoother scrolling on LTPO panels; uses more battery",
+                        color = TextTertiary, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = highRefresh,
+                    onCheckedChange = { vm.saveHighRefresh(it) },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Amber,
                         checkedTrackColor = AmberDark

@@ -50,11 +50,18 @@ fun MeterScreen(
     val displayZooms = remember(zoomLevels) {
         zoomLevels.distinctBy { it.label to it.mm }.sortedBy { it.mm }
     }
-    var hasCamPerm by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var hasCamPerm by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { hasCamPerm = it }
-    LaunchedEffect(Unit) { permLauncher.launch(Manifest.permission.CAMERA) }
+    // Only prompt when not already granted — avoids re-asking on every tab visit
+    LaunchedEffect(Unit) { if (!hasCamPerm) permLauncher.launch(Manifest.permission.CAMERA) }
     MeterContent(vm, displayZooms, hasCamPerm, { permLauncher.launch(Manifest.permission.CAMERA) }, onUseInShot)
 }
 
@@ -87,17 +94,29 @@ fun MeterContent(
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // ── User inputs ───────────────────────────────────────────────────────────
-    var filmIso      by remember { mutableIntStateOf(400) }
-    var shutter      by remember { mutableStateOf("1/125") }
-    var metering     by remember { mutableStateOf(Constants.METERING_TYPES[0]) }
-    var calibOffset  by remember { mutableStateOf(0.0) }   // user EV correction, persists
+    // ── User inputs — persisted via settings so the per-device calibration
+    //    (and last-used ISO/shutter/metering) survive restarts ────────────────
+    val filmIso     by vm.meterIso.collectAsState()
+    val shutter     by vm.meterShutter.collectAsState()
+    val metering    by vm.meterMetering.collectAsState()
+    val calibThirds by vm.meterCalibThirds.collectAsState()
+    // Draft tracks the slider while dragging; persisted on release
+    var calibDraft  by remember(calibThirds) { mutableIntStateOf(calibThirds) }
+    val calibOffset = calibDraft / 3.0
 
     // ── Camera ────────────────────────────────────────────────────────────────
     var cameraOn     by remember { mutableStateOf(false) }
     var cameraCtrl   by remember { mutableStateOf<CameraControl?>(null) }
     var cameraInfoObj by remember { mutableStateOf<CameraInfo?>(null) }
     var providerRef  by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var appliedMetering by remember { mutableStateOf<String?>(null) }
+
+    // The camera binds to the Activity lifecycle; without an explicit unbind it
+    // keeps running (privacy indicator on, battery draining) after the user
+    // navigates away from this tab.
+    DisposableEffect(Unit) {
+        onDispose { providerRef?.unbindAll() }
+    }
 
     // ── Live metadata reading ─────────────────────────────────────────────────
     var liveReading  by remember { mutableStateOf<MeterReading?>(null) }
@@ -117,9 +136,14 @@ fun MeterContent(
     var activeZoom   by remember { mutableStateOf<ZoomLevel?>(null) }
     var showZoomEdit by remember { mutableStateOf(false) }
 
-    val solvedAperture = remember(filmIso, shutter, effectiveEV) {
-        "f/${"%.1f".format(Constants.calcAperture(filmIso, shutter, effectiveEV))}"
+    val apExact = remember(filmIso, shutter, effectiveEV) {
+        Constants.calcAperture(filmIso, shutter, effectiveEV)
     }
+    // Snap to the nearest standard third-stop f-number — what a classic lens
+    // ring can actually be set to; the raw value is shown as a footnote.
+    val apSnapped = Constants.nearestStandardAperture(apExact)
+    val solvedAperture = formatAperture(apSnapped)
+    val solvedApertureExact = "exact f/${"%.1f".format(apExact)}"
 
     // ── Layout ───────────────────────────────────────────────────────────────
     // Outer Column is NOT scrollable — AndroidView breaks verticalScroll.
@@ -146,6 +170,8 @@ fun MeterContent(
                             // Build preview with Camera2Interop to capture metadata
                             val previewBuilder = Preview.Builder()
                             val captureCallback = object : android.hardware.camera2.CameraCaptureSession.CaptureCallback() {
+                                private var lastPostMs = 0L
+                                private var lastEv = Double.NaN
                                 override fun onCaptureCompleted(
                                     session: android.hardware.camera2.CameraCaptureSession,
                                     request: android.hardware.camera2.CaptureRequest,
@@ -161,6 +187,14 @@ fun MeterContent(
                                     // where N=aperture, t=shutter in seconds
                                     // This gives scene EV at the measured exposure
                                     val ev = log2((apertureF * apertureF) / shutterSec) - log2(isoVal / 100.0)
+
+                                    // Throttle: a state write per camera frame (~30 Hz) recomposes the
+                                    // screen constantly; ~4 Hz is plenty for a meter readout. Large EV
+                                    // jumps still post immediately so the needle feels responsive.
+                                    val now = android.os.SystemClock.elapsedRealtime()
+                                    if (now - lastPostMs < 250 && abs(ev - lastEv) < 0.05) return
+                                    lastPostMs = now
+                                    lastEv = ev
 
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                                         liveReading = MeterReading(
@@ -183,17 +217,43 @@ fun MeterContent(
                                 cameraCtrl    = cam.cameraControl
                                 cameraInfoObj = cam.cameraInfo
                                 providerRef   = provider
+                                appliedMetering = null   // re-apply AE region on (re)bind
                             } catch (e: Exception) { e.printStackTrace() }
                         }, ContextCompat.getMainExecutor(ctx))
                         pv
                     },
-                    update = {
+                    update = { pv ->
                         // Apply zoom
                         activeZoom?.mm?.toFloat()?.let { mm ->
                             cameraInfoObj?.zoomState?.value?.let { state ->
                                 val ratio = (mm / 23f).coerceIn(state.minZoomRatio, state.maxZoomRatio)
                                 cameraCtrl?.setZoomRatio(ratio)
                             }
+                        }
+                        // Apply an AE region matching the selected metering mode.
+                        // Previously the dropdown only changed the overlay graphics —
+                        // the reading was always whole-frame AE. Best-effort: devices
+                        // without AE-region support keep default metering.
+                        val ctrl = cameraCtrl
+                        if (ctrl != null && pv.width > 0 && appliedMetering != metering) {
+                            appliedMetering = metering
+                            try {
+                                val regionSize = when (metering) {
+                                    "Spot"            -> 0.15f
+                                    "Center-Weighted" -> 0.6f
+                                    else              -> null
+                                }
+                                if (regionSize != null) {
+                                    val pt = pv.meteringPointFactory
+                                        .createPoint(pv.width / 2f, pv.height / 2f, regionSize)
+                                    ctrl.startFocusAndMetering(
+                                        FocusMeteringAction.Builder(pt, FocusMeteringAction.FLAG_AE)
+                                            .disableAutoCancel().build()
+                                    )
+                                } else {
+                                    ctrl.cancelFocusAndMetering()
+                                }
+                            } catch (_: Exception) { /* fall back to full-frame AE */ }
                         }
                     },
                     modifier = Modifier.fillMaxSize()
@@ -246,6 +306,7 @@ fun MeterContent(
             EVCard(
                 effectiveEV    = effectiveEV,
                 solvedAperture = solvedAperture,
+                solvedApertureExact = solvedApertureExact,
                 filmIso        = filmIso,
                 shutter        = shutter,
                 isLive         = !evLocked && liveReading != null
@@ -268,7 +329,7 @@ fun MeterContent(
                         onClick = {
                             providerRef?.unbindAll()
                             providerRef = null
-                            cameraCtrl = null; cameraInfoObj = null
+                            cameraCtrl = null; cameraInfoObj = null; appliedMetering = null
                             cameraOn = false; liveReading = null; evLocked = false
                         })
                 }
@@ -280,21 +341,23 @@ fun MeterContent(
                     Text("Cal offset", color = TextSecondary, fontSize = 12.sp)
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("${if (calibOffset >= 0) "+" else ""}${"%.1f".format(calibOffset)}",
-                            color = if (calibOffset == 0.0) TextTertiary else OrangeWarn,
+                        Text("${Constants.formatThirds(calibDraft)} EV",
+                            color = if (calibDraft == 0) TextTertiary else OrangeWarn,
                             fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        if (calibOffset != 0.0) {
-                            TextButton(onClick = { calibOffset = 0.0 },
+                        if (calibDraft != 0) {
+                            TextButton(onClick = { calibDraft = 0; vm.saveMeterCalibThirds(0) },
                                 contentPadding = PaddingValues(0.dp)) {
                                 Text("reset", color = TextTertiary, fontSize = 10.sp)
                             }
                         }
                     }
                 }
+                // 1/3-stop increments (classic camera EV steps), ±5 EV; persisted on release
                 Slider(
-                    value = calibOffset.toFloat(),
-                    onValueChange = { calibOffset = it.toDouble() },
-                    valueRange = -5f..5f, steps = 49,
+                    value = calibDraft.toFloat(),
+                    onValueChange = { calibDraft = it.roundToInt() },
+                    onValueChangeFinished = { vm.saveMeterCalibThirds(calibDraft) },
+                    valueRange = -15f..15f, steps = 29,
                     colors = SliderDefaults.colors(thumbColor = OrangeWarn, activeTrackColor = OrangeWarn, inactiveTrackColor = Border)
                 )
             } else {
@@ -309,10 +372,11 @@ fun MeterContent(
                     Text("Manual EV", color = TextSecondary, fontSize = 12.sp)
                     Text("%.1f".format(manualEV), color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
+                // 1/3-stop increments to match camera EV convention
                 Slider(
                     value = manualEV.toFloat(),
-                    onValueChange = { manualEV = it.toDouble() },
-                    valueRange = -2f..22f, steps = 95,
+                    onValueChange = { manualEV = (it * 3).roundToInt() / 3.0 },
+                    valueRange = -2f..22f, steps = 71,
                     colors = SliderDefaults.colors(thumbColor = Amber, activeTrackColor = Amber, inactiveTrackColor = Border)
                 )
             }
@@ -354,11 +418,11 @@ fun MeterContent(
             // Metering + ISO + Shutter in one compact row — below zoom
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 VaultDropdown("Metering", metering, Constants.METERING_TYPES,
-                    { metering = it }, modifier = Modifier.weight(1.4f))
+                    { vm.saveMeterMetering(it) }, modifier = Modifier.weight(1.4f))
                 VaultDropdown("ISO", filmIso.toString(), Constants.ISOS.map { it.toString() },
-                    { filmIso = it.toIntOrNull() ?: 400 }, modifier = Modifier.weight(1f))
+                    { vm.saveMeterIso(it.toIntOrNull() ?: 400) }, modifier = Modifier.weight(1f))
                 VaultDropdown("Shutter", shutter, Constants.SHUTTER_SPEEDS,
-                    { shutter = it }, modifier = Modifier.weight(1f))
+                    { vm.saveMeterShutter(it) }, modifier = Modifier.weight(1f))
             }
 
             Spacer(Modifier.height(10.dp))
@@ -369,11 +433,11 @@ fun MeterContent(
             // Use in Shot button
             if (onUseInShot != null) {
                 Spacer(Modifier.height(12.dp))
-                // Normalise to match the ShotSheet aperture options ("f/8", "f/5.6")
-                // and stored convention — whole stops drop the trailing ".0".
-                val apRaw = Constants.calcAperture(filmIso, shutter, effectiveEV)
-                val apNum = if (apRaw == apRaw.toLong().toDouble()) apRaw.toLong().toString()
-                            else "%.1f".format(apRaw)
+                // Snapped to the standard third-stop scale so it matches the
+                // ShotSheet aperture options ("f/8", "f/5.6") exactly.
+                // toString (not %.1f) keeps a '.' decimal on comma-locales.
+                val apNum = if (apSnapped == apSnapped.toLong().toDouble()) apSnapped.toLong().toString()
+                            else apSnapped.toString()
                 VaultButton(
                     text = "📋 Use in Shot  $shutter · f/$apNum · ISO $filmIso",
                     modifier = Modifier.fillMaxWidth(),
@@ -387,6 +451,10 @@ fun MeterContent(
 
     if (showZoomEdit) ZoomEditSheet(zoomLevels, vm) { showZoomEdit = false }
 }
+
+/** "f/8" for whole stops, "f/5.6" otherwise — matches the APERTURES scale and stays '.'-decimal on all locales. */
+private fun formatAperture(a: Double): String =
+    if (a == a.toLong().toDouble()) "f/${a.toLong()}" else "f/$a"
 
 // ─── Canvas metering overlay ──────────────────────────────────────────────────
 
@@ -430,7 +498,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay
 
 @Composable
 private fun EVCard(
-    effectiveEV: Double, solvedAperture: String,
+    effectiveEV: Double, solvedAperture: String, solvedApertureExact: String,
     filmIso: Int, shutter: String, isLive: Boolean
 ) {
     Box(
@@ -453,6 +521,7 @@ private fun EVCard(
             Column(horizontalAlignment = Alignment.End) {
                 Text("USE APERTURE", color = TextTertiary, fontSize = 9.sp)
                 Text(solvedAperture, color = AmberBright, fontSize = 36.sp, fontFamily = FontFamily.Monospace)
+                Text(solvedApertureExact, color = TextTertiary, fontSize = 9.sp)
                 Text("ISO $filmIso · $shutter", color = TextSecondary, fontSize = 10.sp)
             }
         }
@@ -473,7 +542,7 @@ private fun NearbyTable(filmIso: Int, shutter: String, effectiveEV: Double) {
             val idx = (Constants.SHUTTER_SPEEDS.indexOf(shutter) + offset)
                 .coerceIn(0, Constants.SHUTTER_SPEEDS.lastIndex)
             val sh  = Constants.SHUTTER_SPEEDS[idx]
-            val ap  = "f/${"%.1f".format(Constants.calcAperture(filmIso, sh, effectiveEV))}"
+            val ap  = formatAperture(Constants.nearestStandardAperture(Constants.calcAperture(filmIso, sh, effectiveEV)))
             val hl  = offset == 0
             Row(
                 Modifier.fillMaxWidth()

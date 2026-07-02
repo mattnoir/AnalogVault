@@ -1,18 +1,35 @@
 package com.analogvault.ui
 
+import android.content.Context
+import android.os.Build
+import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.analogvault.data.model.*
 import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.ui.screens.DevTimer
+import com.analogvault.util.Constants
+import com.analogvault.util.legacyPhotoCacheDir
+import com.analogvault.util.photoDir
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val repo: VaultRepository,
     private val weatherApi: WeatherApi
 ) : ViewModel() {
@@ -35,12 +52,32 @@ class MainViewModel @Inject constructor(
     val isMetric: StateFlow<Boolean> = _isMetric.asStateFlow()
     private val _customIsos = MutableStateFlow<List<Int>>(emptyList())
     val customIsos: StateFlow<List<Int>> = _customIsos.asStateFlow()
+    private val _highRefresh = MutableStateFlow(true)
+    val highRefresh: StateFlow<Boolean> = _highRefresh.asStateFlow()
+
+    // Meter settings — persisted so the per-device calibration (and last-used
+    // ISO/shutter/metering) survive app restarts. Calibration is stored as a
+    // count of third-stops (classic camera increments).
+    private val _meterCalibThirds = MutableStateFlow(0)
+    val meterCalibThirds: StateFlow<Int> = _meterCalibThirds.asStateFlow()
+    private val _meterIso = MutableStateFlow(400)
+    val meterIso: StateFlow<Int> = _meterIso.asStateFlow()
+    private val _meterShutter = MutableStateFlow("1/125")
+    val meterShutter: StateFlow<String> = _meterShutter.asStateFlow()
+    private val _meterMetering = MutableStateFlow(Constants.METERING_TYPES[0])
+    val meterMetering: StateFlow<String> = _meterMetering.asStateFlow()
 
     init {
+        viewModelScope.launch(Dispatchers.IO) { migratePhotosFromCache() }
         viewModelScope.launch {
             _owmKey.value   = repo.getSetting("owm_key") ?: ""
             _currency.value = repo.getSetting("currency") ?: "€"
             _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
+            _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
+            _meterCalibThirds.value = repo.getSetting("meter_calib_thirds")?.toIntOrNull() ?: 0
+            _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
+            _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
+            _meterMetering.value = repo.getSetting("meter_metering") ?: Constants.METERING_TYPES[0]
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
             // Seed default zoom levels if empty
@@ -64,6 +101,54 @@ class MainViewModel @Inject constructor(
     }
     fun saveMetric(m: Boolean) = viewModelScope.launch {
         _isMetric.value = m; repo.setSetting("is_metric", m.toString())
+    }
+    fun saveHighRefresh(on: Boolean) = viewModelScope.launch {
+        _highRefresh.value = on; repo.setSetting("high_refresh", on.toString())
+    }
+    fun saveMeterCalibThirds(thirds: Int) = viewModelScope.launch {
+        _meterCalibThirds.value = thirds; repo.setSetting("meter_calib_thirds", thirds.toString())
+    }
+    fun saveMeterIso(iso: Int) = viewModelScope.launch {
+        _meterIso.value = iso; repo.setSetting("meter_iso", iso.toString())
+    }
+    fun saveMeterShutter(s: String) = viewModelScope.launch {
+        _meterShutter.value = s; repo.setSetting("meter_shutter", s)
+    }
+    fun saveMeterMetering(m: String) = viewModelScope.launch {
+        _meterMetering.value = m; repo.setSetting("meter_metering", m)
+    }
+
+    /**
+     * One-time migration: builds ≤ 0.4.0 stored shot photos in cacheDir, which
+     * the OS may purge under storage pressure (silent photo loss). Move them to
+     * filesDir and rewrite the stored paths.
+     */
+    private suspend fun migratePhotosFromCache() {
+        try {
+            val legacy = legacyPhotoCacheDir(appContext)
+            val files = legacy.listFiles() ?: return
+            if (files.isEmpty()) { legacy.delete(); return }
+            val dest = photoDir(appContext)
+            val moved = mutableMapOf<String, String>() // old abs path → new abs path
+            for (f in files) {
+                val target = File(dest, f.name)
+                val ok = f.renameTo(target) ||
+                    runCatching { f.copyTo(target, overwrite = true); f.delete() }.isSuccess
+                if (ok) moved[f.absolutePath] = target.absolutePath
+            }
+            if (moved.isNotEmpty()) {
+                repo.rolls.first().forEach { roll ->
+                    var changed = false
+                    val newShots = roll.shots.map { s ->
+                        moved[s.photoThumbPath]?.let { changed = true; s.copy(photoThumbPath = it) } ?: s
+                    }
+                    if (changed) repo.upsertRoll(roll.copy(shots = newShots))
+                }
+            }
+            legacy.delete()
+        } catch (_: Exception) {
+            // never block startup over a housekeeping move; retried next launch
+        }
     }
     fun addCustomIso(iso: Int) = viewModelScope.launch {
         val updated = (_customIsos.value + iso).distinct().sorted()
@@ -170,6 +255,103 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    // ─── Darkroom timer ──────────────────────────────────────────────────────
+    // Hoisted here so a running development timer survives tab navigation, and
+    // computed from the wall clock (elapsedRealtime end-time) so it can neither
+    // drift nor stall while the device sleeps — delay()-tick loops do both.
+
+    private val _timerState = MutableStateFlow<DarkroomTimerState?>(null)
+    val timerState: StateFlow<DarkroomTimerState?> = _timerState.asStateFlow()
+    private var timerJob: Job? = null
+    private var timerEndElapsedMs = 0L
+
+    fun startTimer(timer: DevTimer) {
+        timerJob?.cancel()
+        _timerState.value = DarkroomTimerState(
+            timer = timer, currentStep = 0,
+            secondsLeft = timer.steps.firstOrNull()?.durationSec ?: 0
+        )
+    }
+
+    fun stopTimer() {
+        timerJob?.cancel()
+        _timerState.value = null
+    }
+
+    fun toggleTimerRunning() {
+        val s = _timerState.value ?: return
+        if (s.finished) return
+        if (s.running) {
+            timerJob?.cancel()
+            _timerState.value = s.copy(running = false, secondsLeft = timerRemainingSeconds())
+        } else {
+            timerEndElapsedMs = SystemClock.elapsedRealtime() + s.secondsLeft * 1000L
+            _timerState.value = s.copy(running = true)
+            startTimerTick()
+        }
+    }
+
+    fun resetTimerStep() {
+        val s = _timerState.value ?: return
+        timerJob?.cancel()
+        _timerState.value = s.copy(
+            secondsLeft = s.timer.steps[s.currentStep].durationSec,
+            running = false, finished = false
+        )
+    }
+
+    fun skipTimerStep() {
+        val s = _timerState.value ?: return
+        if (s.currentStep >= s.timer.steps.lastIndex) return
+        timerJob?.cancel()
+        val next = s.currentStep + 1
+        _timerState.value = s.copy(
+            currentStep = next, secondsLeft = s.timer.steps[next].durationSec, running = false
+        )
+    }
+
+    private fun timerRemainingSeconds(): Int =
+        (((timerEndElapsedMs - SystemClock.elapsedRealtime()) + 999) / 1000).toInt().coerceAtLeast(0)
+
+    private fun startTimerTick() {
+        timerJob?.cancel()
+        timerJob = viewModelScope.launch {
+            while (isActive) {
+                val s = _timerState.value ?: return@launch
+                if (!s.running) return@launch
+                val left = timerRemainingSeconds()
+                if (left <= 0) { onTimerStepFinished(); return@launch }
+                if (left != s.secondsLeft) _timerState.value = s.copy(secondsLeft = left)
+                delay(200)
+            }
+        }
+    }
+
+    private fun onTimerStepFinished() {
+        val s = _timerState.value ?: return
+        vibrateStepDone()
+        if (s.currentStep < s.timer.steps.lastIndex) {
+            val next = s.currentStep + 1
+            // Auto-pause between steps so the user sees the transition
+            _timerState.value = s.copy(
+                currentStep = next, secondsLeft = s.timer.steps[next].durationSec, running = false
+            )
+        } else {
+            _timerState.value = s.copy(secondsLeft = 0, running = false, finished = true)
+        }
+    }
+
+    private fun vibrateStepDone() {
+        try {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                (appContext.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+            else
+                @Suppress("DEPRECATION")
+                appContext.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
+        } catch (_: Exception) { /* no vibrator — timer still advances */ }
+    }
+
     // ─── Stats ───────────────────────────────────────────────────────────────
     val stats: StateFlow<Stats> = combine(rolls, films, cameras, bulkRolls) { r, f, c, b ->
         val totalShots = r.sumOf { it.shots.size }
@@ -227,6 +409,14 @@ class MainViewModel @Inject constructor(
 }
 
 fun uid() = UUID.randomUUID().toString()
+
+data class DarkroomTimerState(
+    val timer: DevTimer,
+    val currentStep: Int = 0,
+    val secondsLeft: Int = 0,
+    val running: Boolean = false,
+    val finished: Boolean = false
+)
 
 data class RollCostSummary(
     val rollId: String,
