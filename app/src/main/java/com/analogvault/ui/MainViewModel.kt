@@ -8,11 +8,18 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.analogvault.data.export.ExportResult
+import com.analogvault.data.export.RollExporter
 import com.analogvault.data.model.*
 import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
 import com.analogvault.ui.screens.DevTimer
+import com.analogvault.ui.screens.MeterReading
+import com.analogvault.ui.screens.formatLatLon
+import com.analogvault.ui.screens.formatWeatherString
+import com.analogvault.ui.screens.getCurrentLatLon
 import com.analogvault.util.Constants
+import com.analogvault.util.Exposure
 import com.analogvault.util.legacyPhotoCacheDir
 import com.analogvault.util.photoDir
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,7 +38,8 @@ import javax.inject.Inject
 class MainViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repo: VaultRepository,
-    private val weatherApi: WeatherApi
+    private val weatherApi: WeatherApi,
+    private val rollExporter: RollExporter
 ) : ViewModel() {
 
     val films       = repo.films.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -66,6 +74,50 @@ class MainViewModel @Inject constructor(
     val meterShutter: StateFlow<String> = _meterShutter.asStateFlow()
     private val _meterMetering = MutableStateFlow(Constants.METERING_TYPES[0])
     val meterMetering: StateFlow<String> = _meterMetering.asStateFlow()
+    /** "shutter" (fix shutter → solve aperture), "aperture" (fix aperture → solve shutter), "table" */
+    private val _meterMode = MutableStateFlow("shutter")
+    val meterMode: StateFlow<String> = _meterMode.asStateFlow()
+    private val _meterAperture = MutableStateFlow(8.0)
+    val meterAperture: StateFlow<Double> = _meterAperture.asStateFlow()
+    private val _recipFilm = MutableStateFlow("Other B&W (generic)")
+    val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
+
+    // ── Meter live state — hoisted here so readings, EV lock and zone marks
+    //    survive tab navigation (previously reset on every visit) ────────────
+    private val _meterReading = MutableStateFlow<MeterReading?>(null)
+    val meterReading: StateFlow<MeterReading?> = _meterReading.asStateFlow()
+    private val _meterEvLocked = MutableStateFlow(false)
+    val meterEvLocked: StateFlow<Boolean> = _meterEvLocked.asStateFlow()
+    private val _meterManualEv = MutableStateFlow(12.0)
+    val meterManualEv: StateFlow<Double> = _meterManualEv.asStateFlow()
+    private val _meterZoneEnabled = MutableStateFlow(false)
+    val meterZoneEnabled: StateFlow<Boolean> = _meterZoneEnabled.asStateFlow()
+    private val _meterZone = MutableStateFlow(5)
+    val meterZone: StateFlow<Int> = _meterZone.asStateFlow()
+    private val _meterShadowEv = MutableStateFlow<Double?>(null)
+    val meterShadowEv: StateFlow<Double?> = _meterShadowEv.asStateFlow()
+    private val _meterHighlightEv = MutableStateFlow<Double?>(null)
+    val meterHighlightEv: StateFlow<Double?> = _meterHighlightEv.asStateFlow()
+
+    /** Called from the Camera2 capture callback (already throttled there). */
+    fun onMeterReading(iso: Int, shutterSec: Double, aperture: Double) {
+        if (_meterEvLocked.value) return
+        _meterReading.value = MeterReading(
+            sceneEV = Exposure.evFromSensor(iso, shutterSec, aperture).coerceIn(-6.0, 24.0),
+            sensorIso = iso, sensorShutterSec = shutterSec, sensorAperture = aperture
+        )
+    }
+    fun clearMeterReading() { _meterReading.value = null }
+    fun setMeterManualEv(ev: Double) { _meterManualEv.value = ev }
+    fun setMeterLock(locked: Boolean, evAtLock: Double? = null) {
+        _meterEvLocked.value = locked
+        if (locked && evAtLock != null) _meterManualEv.value = evAtLock
+    }
+    fun setMeterZoneEnabled(on: Boolean) { _meterZoneEnabled.value = on }
+    fun setMeterZone(zone: Int) { _meterZone.value = zone }
+    fun markMeterShadow(ev: Double) { _meterShadowEv.value = ev }
+    fun markMeterHighlight(ev: Double) { _meterHighlightEv.value = ev }
+    fun clearMeterMarks() { _meterShadowEv.value = null; _meterHighlightEv.value = null }
 
     init {
         viewModelScope.launch(Dispatchers.IO) { migratePhotosFromCache() }
@@ -74,10 +126,20 @@ class MainViewModel @Inject constructor(
             _currency.value = repo.getSetting("currency") ?: "€"
             _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
             _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
+            _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
+            _remindersEnabled.value   = repo.getSetting("reminders_enabled") == "true"
+            _remindExpiry.value       = (repo.getSetting("remind_expiry") ?: "true") == "true"
+            _remindUndeveloped.value  = (repo.getSetting("remind_undeveloped") ?: "true") == "true"
+            _remindChemicals.value    = (repo.getSetting("remind_chemicals") ?: "true") == "true"
+            // Idempotent (KEEP policy) — re-ensures the periodic work exists
+            if (_remindersEnabled.value) com.analogvault.work.Reminders.schedule(appContext)
             _meterCalibThirds.value = repo.getSetting("meter_calib_thirds")?.toIntOrNull() ?: 0
             _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
             _meterMetering.value = repo.getSetting("meter_metering") ?: Constants.METERING_TYPES[0]
+            _meterMode.value     = repo.getSetting("meter_mode") ?: "shutter"
+            _meterAperture.value = repo.getSetting("meter_aperture")?.toDoubleOrNull() ?: 8.0
+            _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
             // Seed default zoom levels if empty
@@ -116,6 +178,15 @@ class MainViewModel @Inject constructor(
     }
     fun saveMeterMetering(m: String) = viewModelScope.launch {
         _meterMetering.value = m; repo.setSetting("meter_metering", m)
+    }
+    fun saveMeterMode(m: String) = viewModelScope.launch {
+        _meterMode.value = m; repo.setSetting("meter_mode", m)
+    }
+    fun saveMeterAperture(a: Double) = viewModelScope.launch {
+        _meterAperture.value = a; repo.setSetting("meter_aperture", a.toString())
+    }
+    fun saveRecipFilm(name: String) = viewModelScope.launch {
+        _recipFilm.value = name; repo.setSetting("recip_film", name)
     }
 
     /**
@@ -201,6 +272,49 @@ class MainViewModel @Inject constructor(
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
         repo.upsertRoll(roll.copy(shots = roll.shots.filter { it.id != shotId }))
     }
+
+    /**
+     * One-tap frame log: adds a shot immediately with sensible defaults (last
+     * shot's exposure, now, cached weather) so the frame counter keeps up with
+     * shooting; GPS is filled in asynchronously afterwards if permission is
+     * already granted (never prompts). Details can be edited later.
+     */
+    fun quickLogShot(rollId: String) = viewModelScope.launch {
+        val roll = repo.rolls.first().find { it.id == rollId } ?: return@launch
+        if (roll.finished || roll.developed) return@launch
+        val last = roll.shots.lastOrNull()
+        val film = films.value.find { it.id == roll.filmId }
+        val shot = Shot(
+            id       = uid(),
+            shutter  = last?.shutter ?: "",
+            aperture = last?.aperture ?: "",
+            iso      = last?.iso ?: roll.pushIso.ifBlank { film?.iso?.toString() ?: "" },
+            lens     = last?.lens ?: lenses.value.find { it.id == roll.cameraLensId }?.name.orEmpty(),
+            weather  = (weatherState.value as? WeatherState.Success)?.data
+                ?.let { formatWeatherString(it, isMetric.value) } ?: "",
+            date     = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+                .format(java.util.Date())
+        )
+        repo.upsertRoll(roll.copy(shots = roll.shots + shot))
+
+        if (hasLocationPermission()) {
+            getCurrentLatLon(appContext)?.let { (lat, lon) ->
+                // Re-read: the roll may have changed while waiting for the fix
+                val fresh = repo.rolls.first().find { it.id == rollId } ?: return@launch
+                repo.upsertRoll(fresh.copy(shots = fresh.shots.map {
+                    if (it.id == shot.id) it.copy(location = formatLatLon(lat, lon)) else it
+                }))
+            }
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            appContext, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            appContext, android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     fun markFinished(rollId: String, finished: Boolean) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
         repo.upsertRoll(roll.copy(finished = finished))
@@ -255,6 +369,25 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    // ─── Roll exports ────────────────────────────────────────────────────────
+
+    fun exportRollCsv(uri: android.net.Uri, roll: Roll) = viewModelScope.launch {
+        val film = films.value.find { it.id == roll.filmId }
+        val cam  = cameras.value.find { it.id == roll.cameraId }
+        toastExport(rollExporter.writeCsv(appContext, uri, roll, film, cam))
+    }
+
+    fun exportRollPdf(uri: android.net.Uri, roll: Roll) = viewModelScope.launch {
+        val film = films.value.find { it.id == roll.filmId }
+        val cam  = cameras.value.find { it.id == roll.cameraId }
+        toastExport(rollExporter.writePdf(appContext, uri, roll, film, cam))
+    }
+
+    private fun toastExport(res: ExportResult) {
+        val msg = when (res) { is ExportResult.Success -> res.message; is ExportResult.Error -> res.message }
+        android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_LONG).show()
+    }
+
     // ─── Darkroom timer ──────────────────────────────────────────────────────
     // Hoisted here so a running development timer survives tab navigation, and
     // computed from the wall clock (elapsedRealtime end-time) so it can neither
@@ -264,9 +397,44 @@ class MainViewModel @Inject constructor(
     val timerState: StateFlow<DarkroomTimerState?> = _timerState.asStateFlow()
     private var timerJob: Job? = null
     private var timerEndElapsedMs = 0L
+    private var lastAgitationCueSec = -1
+
+    // Classic agitation rhythm: initial agitation, then ~10 s at each minute mark
+    private val _agitationCues = MutableStateFlow(true)
+    val agitationCues: StateFlow<Boolean> = _agitationCues.asStateFlow()
+    fun saveAgitationCues(on: Boolean) = viewModelScope.launch {
+        _agitationCues.value = on; repo.setSetting("agitation_cues", on.toString())
+    }
+
+    // ─── Reminders (daily WorkManager check) ─────────────────────────────────
+    private val _remindersEnabled = MutableStateFlow(false)
+    val remindersEnabled: StateFlow<Boolean> = _remindersEnabled.asStateFlow()
+    private val _remindExpiry = MutableStateFlow(true)
+    val remindExpiry: StateFlow<Boolean> = _remindExpiry.asStateFlow()
+    private val _remindUndeveloped = MutableStateFlow(true)
+    val remindUndeveloped: StateFlow<Boolean> = _remindUndeveloped.asStateFlow()
+    private val _remindChemicals = MutableStateFlow(true)
+    val remindChemicals: StateFlow<Boolean> = _remindChemicals.asStateFlow()
+
+    fun saveRemindersEnabled(on: Boolean) = viewModelScope.launch {
+        _remindersEnabled.value = on
+        repo.setSetting("reminders_enabled", on.toString())
+        if (on) com.analogvault.work.Reminders.schedule(appContext)
+        else com.analogvault.work.Reminders.cancel(appContext)
+    }
+    fun saveRemindExpiry(on: Boolean) = viewModelScope.launch {
+        _remindExpiry.value = on; repo.setSetting("remind_expiry", on.toString())
+    }
+    fun saveRemindUndeveloped(on: Boolean) = viewModelScope.launch {
+        _remindUndeveloped.value = on; repo.setSetting("remind_undeveloped", on.toString())
+    }
+    fun saveRemindChemicals(on: Boolean) = viewModelScope.launch {
+        _remindChemicals.value = on; repo.setSetting("remind_chemicals", on.toString())
+    }
 
     fun startTimer(timer: DevTimer) {
         timerJob?.cancel()
+        lastAgitationCueSec = -1
         _timerState.value = DarkroomTimerState(
             timer = timer, currentStep = 0,
             secondsLeft = timer.steps.firstOrNull()?.durationSec ?: 0
@@ -294,6 +462,7 @@ class MainViewModel @Inject constructor(
     fun resetTimerStep() {
         val s = _timerState.value ?: return
         timerJob?.cancel()
+        lastAgitationCueSec = -1
         _timerState.value = s.copy(
             secondsLeft = s.timer.steps[s.currentStep].durationSec,
             running = false, finished = false
@@ -304,6 +473,7 @@ class MainViewModel @Inject constructor(
         val s = _timerState.value ?: return
         if (s.currentStep >= s.timer.steps.lastIndex) return
         timerJob?.cancel()
+        lastAgitationCueSec = -1
         val next = s.currentStep + 1
         _timerState.value = s.copy(
             currentStep = next, secondsLeft = s.timer.steps[next].durationSec, running = false
@@ -321,6 +491,15 @@ class MainViewModel @Inject constructor(
                 if (!s.running) return@launch
                 val left = timerRemainingSeconds()
                 if (left <= 0) { onTimerStepFinished(); return@launch }
+                // Agitation cue at each whole minute of elapsed step time
+                // (skip when the step is about to finish — that gets its own alert)
+                val elapsed = s.timer.steps[s.currentStep].durationSec - left
+                if (_agitationCues.value && elapsed > 0 && elapsed % 60 == 0 &&
+                    lastAgitationCueSec != elapsed && left > 5
+                ) {
+                    lastAgitationCueSec = elapsed
+                    vibrateAgitation()
+                }
                 if (left != s.secondsLeft) _timerState.value = s.copy(secondsLeft = left)
                 delay(200)
             }
@@ -330,6 +509,7 @@ class MainViewModel @Inject constructor(
     private fun onTimerStepFinished() {
         val s = _timerState.value ?: return
         vibrateStepDone()
+        lastAgitationCueSec = -1
         if (s.currentStep < s.timer.steps.lastIndex) {
             val next = s.currentStep + 1
             // Auto-pause between steps so the user sees the transition
@@ -341,14 +521,19 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun vibrateStepDone() {
+    private fun vibrateStepDone() = vibratePattern(longArrayOf(0, 300, 150, 300))
+
+    /** Shorter, distinct pulse for agitation cues. */
+    private fun vibrateAgitation() = vibratePattern(longArrayOf(0, 120, 80, 120))
+
+    private fun vibratePattern(pattern: LongArray) {
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 (appContext.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
             else
                 @Suppress("DEPRECATION")
                 appContext.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
+            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
         } catch (_: Exception) { /* no vibrator — timer still advances */ }
     }
 

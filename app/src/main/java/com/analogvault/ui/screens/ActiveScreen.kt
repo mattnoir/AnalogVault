@@ -258,7 +258,9 @@ fun ActiveScreen(
                 RollListCard(
                     roll = roll, film = film, cam = cam,
                     total = total, pct = pct,
-                    onOpen = { selectedRollId = roll.id }
+                    onOpen = { selectedRollId = roll.id },
+                    // Quick-log only makes sense for rolls still in the camera
+                    onQuickLog = if (page == 0) ({ vm.quickLogShot(roll.id) }) else null
                 )
             }
 
@@ -300,10 +302,12 @@ fun ActiveScreen(
 private fun RollListCard(
     roll: Roll, film: FilmStock?, cam: VaultCamera?,
     total: Int, pct: Float,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    onQuickLog: (() -> Unit)? = null
 ) {
     VaultCard(onClick = onOpen) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(film?.name ?: "Unknown Film", color = TextPrimary, fontSize = 15.sp)
                 Text(cam?.name ?: "Unknown Camera", color = TextSecondary, fontSize = 12.sp)
@@ -315,6 +319,14 @@ private fun RollListCard(
                 else           -> "Shooting"  to BlueInfo
             }
             VaultTag(tagLabel, textColor = tagColor)
+            if (onQuickLog != null) {
+                Spacer(Modifier.width(6.dp))
+                // One-tap frame log — defaults from the last shot, edit later
+                IconButton(onClick = onQuickLog, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.PlusOne, "Quick-log frame",
+                        tint = Amber, modifier = Modifier.size(20.dp))
+                }
+            }
         }
         if (roll.startDate.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
@@ -542,6 +554,19 @@ fun RollDetailScreen(
     var confirmMsg     by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var lightboxPath   by remember { mutableStateOf<String?>(null) }
     var showMap        by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+
+    // Shot-log exports (SAF)
+    val exportBaseName = remember(film, roll.startDate) {
+        val name = (film?.name ?: "roll").replace(Regex("[^A-Za-z0-9 _-]"), "").trim().replace(' ', '_')
+        "${name}_${roll.startDate.ifBlank { "undated" }}"
+    }
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> uri?.let { vm.exportRollCsv(it, roll) } }
+    val pdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri -> uri?.let { vm.exportRollPdf(it, roll) } }
 
     // System back returns to the roll list before leaving the Loaded tab.
     BackHandler { onBack() }
@@ -650,12 +675,18 @@ fun RollDetailScreen(
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("Shot Log", color = Amber, fontSize = 16.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (roll.shots.isNotEmpty()) {
+                        VaultButton("⇪ Export", small = true, ghost = true,
+                            onClick = { showExportDialog = true })
+                    }
                     val hasGps = roll.shots.any { it.location.contains(",") }
                     if (hasGps) {
                         VaultButton(text = if (showMap) "📋 List" else "🗺 Map", small = true, ghost = true,
                             onClick = { showMap = !showMap })
                     }
                     if (!roll.finished) {
+                        VaultButton("+1", small = true, ghost = true,
+                            onClick = { vm.quickLogShot(roll.id) })
                         VaultButton("+ Shot", small = true,
                             onClick = {
                                 editingShot = null
@@ -762,6 +793,32 @@ fun RollDetailScreen(
         ConfirmDialog(msg, confirmLabel = "Confirm",
             onConfirm = { action(); confirmMsg = null },
             onDismiss = { confirmMsg = null })
+    }
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            containerColor = Bg3,
+            title = { Text("Export shot log", color = AmberBright) },
+            text = {
+                Text("CSV for spreadsheets, or a printable PDF contact sheet to archive with your negatives.",
+                    color = TextSecondary, fontSize = 13.sp)
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VaultButton("CSV", small = true, ghost = true, onClick = {
+                        showExportDialog = false
+                        csvLauncher.launch("$exportBaseName.csv")
+                    })
+                    VaultButton("PDF contact sheet", small = true, onClick = {
+                        showExportDialog = false
+                        pdfLauncher.launch("$exportBaseName.pdf")
+                    })
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportDialog = false }) { Text("Cancel", color = TextSecondary) }
+            }
+        )
     }
     lightboxPath?.let { path ->
         Dialog(onDismissRequest = { lightboxPath = null },
@@ -1209,8 +1266,9 @@ private fun savePickedPhoto(context: Context, uri: Uri): String {
     return file.absolutePath
 }
 
-/** Current (lat, lon) via a fresh high-accuracy fix, falling back to last known location. */
-private suspend fun getCurrentLatLon(context: Context): Pair<Double, Double>? =
+/** Current (lat, lon) via a fresh high-accuracy fix, falling back to last known location.
+ *  Non-private: also used by MainViewModel.quickLogShot. */
+suspend fun getCurrentLatLon(context: Context): Pair<Double, Double>? =
     suspendCancellableCoroutine { cont ->
         val client = LocationServices.getFusedLocationProviderClient(context)
         val cts    = CancellationTokenSource()
@@ -1236,14 +1294,15 @@ private suspend fun getCurrentLatLon(context: Context): Pair<Double, Double>? =
  * comma-decimal locales would produce "40,416775, -3,703790", which
  * parseLatLon (and therefore the shot map) cannot read back.
  */
-private fun formatLatLon(lat: Double, lon: Double): String =
+fun formatLatLon(lat: Double, lon: Double): String =
     String.format(Locale.US, "%.6f, %.6f", lat, lon)
 
 private suspend fun getGpsLocationString(context: Context): String? =
     getCurrentLatLon(context)?.let { (lat, lon) -> formatLatLon(lat, lon) }
 
-/** Formats a [WeatherResponse] into the compact string stored on a [Shot]. */
-private fun formatWeatherString(data: WeatherResponse, isMetric: Boolean): String {
+/** Formats a [WeatherResponse] into the compact string stored on a [Shot].
+ *  Non-private: also used by MainViewModel.quickLogShot. */
+fun formatWeatherString(data: WeatherResponse, isMetric: Boolean): String {
     val unit = if (isMetric) "°C" else "°F"
     val temp = if (isMetric) data.main.temp else data.main.temp * 9.0 / 5.0 + 32.0
     // API always returns m/s (fetch uses units=metric) — convert for mph display

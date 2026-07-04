@@ -12,6 +12,20 @@ import kotlin.math.pow
  */
 fun String.toDecimalOrNull(): Double? = trim().replace(',', '.').toDoubleOrNull()
 
+/**
+ * Days from today until [raw] ("yyyy-MM-dd", or "yyyy-MM" = first of that month).
+ * Negative = already past. Null when unparseable.
+ */
+fun daysUntilDate(raw: String): Int? {
+    if (raw.isBlank()) return null
+    val dateStr = if (raw.length == 7) "$raw-01" else raw
+    return try {
+        val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .parse(dateStr) ?: return null
+        ((date.time - java.util.Date().time) / 86_400_000L).toInt()
+    } catch (_: Exception) { null }
+}
+
 object Constants {
     val STORAGE_TYPES = listOf("Shelf","Fridge","Freezer","Cool Dark Place","Custom")
     val FILM_TYPES = listOf("Color Negative (C-41)","Black & White","Slide (E-6)","Infrared","Instant")
@@ -470,6 +484,41 @@ object Constants {
     /** Nearest standard third-stop f-number (what a classic lens ring can actually be set to). */
     fun nearestStandardAperture(ap: Double): Double =
         APERTURES.minByOrNull { abs(log2(it) - log2(ap.coerceAtLeast(0.5))) } ?: ap
+
+    // ── Reciprocity failure (Schwarzschild exponents, t' = t^p for t > 1s) ──
+    // Approximate values from datasheets and community testing; the two
+    // "generic" entries are the fallback for unlisted stocks.
+    val RECIPROCITY: List<Pair<String, Double>> = listOf(
+        "Ilford HP5 Plus"   to 1.31,
+        "Ilford FP4 Plus"   to 1.26,
+        "Ilford Delta 100"  to 1.26,
+        "Ilford Delta 400"  to 1.41,
+        "Ilford Delta 3200" to 1.33,
+        "Ilford Pan F Plus" to 1.33,
+        "Ilford XP2 Super"  to 1.31,
+        "Kodak Tri-X"       to 1.31,
+        "Kodak T-Max 100"   to 1.11,
+        "Kodak T-Max 400"   to 1.24,
+        "Kodak Portra"      to 1.05,
+        "Kodak Ektar"       to 1.05,
+        "Fujifilm Acros"    to 1.02,
+        "Fomapan"           to 1.60,
+        "Kentmere"          to 1.30,
+        "CineStill"         to 1.10,
+        "Other B&W (generic)"   to 1.30,
+        "Other color (generic)" to 1.10
+    )
+
+    // ── Zone System placements (Zone V = middle gray) ────────────────────────
+    val ZONES: List<Pair<Int, String>> = listOf(
+        2 to "II · deep shadow, first hint of detail",
+        3 to "III · dark shadow with full detail",
+        4 to "IV · dark foliage, shadowed skin",
+        5 to "V · middle gray (18%)",
+        6 to "VI · light skin, bright stone",
+        7 to "VII · bright highlight with texture",
+        8 to "VIII · last textured white"
+    )
 
     /** Format a count of third-stops camera-style: 4 → "+1⅓", -2 → "-⅔", 0 → "0". */
     fun formatThirds(thirds: Int): String {

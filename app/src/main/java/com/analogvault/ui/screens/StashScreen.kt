@@ -887,6 +887,7 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
     var showSheet     by remember { mutableStateOf(false) }
     var editing       by remember { mutableStateOf<Lens?>(null) }
     var confirmDelete by remember { mutableStateOf<Lens?>(null) }
+    var dofLens       by remember { mutableStateOf<Lens?>(null) }
     var sortBy        by remember { mutableStateOf("Name") }
     var filterMount   by remember { mutableStateOf("All") }
     var showFilter    by remember { mutableStateOf(false) }
@@ -936,6 +937,7 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
                         }
                     }
                     Row {
+                        IconButton(onClick = { dofLens = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.CenterFocusStrong, "DOF calculator", modifier = Modifier.size(16.dp), tint = Amber) }
                         IconButton(onClick = { editing = lens; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary) }
                         IconButton(onClick = { confirmDelete = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f)) }
                     }
@@ -946,6 +948,73 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
     }
     if (showSheet) LensSheet(editing, onDismiss = { showSheet = false; editing = null }) { vm.upsertLens(it); showSheet = false; editing = null }
     confirmDelete?.let { ConfirmDialog("Delete \"${it.name}\"?", onConfirm = { vm.deleteLens(it); confirmDelete = null }, onDismiss = { confirmDelete = null }) }
+    dofLens?.let { DofDialog(it, onDismiss = { dofLens = null }) }
+}
+
+// ─── DOF / hyperfocal calculator ─────────────────────────────────────────────
+
+@Composable
+fun DofDialog(lens: Lens, onDismiss: () -> Unit) {
+    val focal = lens.focalLength.toDoubleOrNull() ?: 50.0
+    val maxAp = lens.maxAperture.toDoubleOrNull()
+    val apertureOptions = remember(maxAp) {
+        Constants.APERTURES.filter { maxAp == null || it >= maxAp - 0.01 }
+    }
+    fun apLabel(a: Double) = if (a == a.toLong().toDouble()) "f/${a.toLong()}" else "f/$a"
+    fun m(v: Double) = "${((v * 100).toInt() / 100.0)} m"   // Double.toString → '.' on all locales
+
+    var aperture  by remember { mutableStateOf(apertureOptions.firstOrNull { it >= 8.0 } ?: apertureOptions.last()) }
+    var format    by remember { mutableStateOf("35mm") }
+    var distanceM by remember { mutableStateOf(3.0f) }
+
+    val coc = com.analogvault.util.Exposure.cocForFormat(format)
+    val hyperM = com.analogvault.util.Exposure.hyperfocalMm(focal, aperture, coc) / 1000.0
+    val (near, far) = com.analogvault.util.Exposure.dofNearFar(focal, aperture, distanceM.toDouble(), coc)
+
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Bg3,
+        title = { Text("DOF · ${lens.name.ifBlank { "${focal.toInt()}mm" }}", color = AmberBright, fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    VaultDropdown("Aperture", apLabel(aperture), apertureOptions.map { apLabel(it) },
+                        { sel -> sel.removePrefix("f/").toDoubleOrNull()?.let { aperture = it } },
+                        modifier = Modifier.weight(1f))
+                    VaultDropdown("Format", format, com.analogvault.util.Exposure.DOF_FORMATS,
+                        { format = it }, modifier = Modifier.weight(1f))
+                }
+                Column {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Focus distance", color = TextSecondary, fontSize = 12.sp)
+                        Text(m(distanceM.toDouble()), color = Amber, fontSize = 12.sp)
+                    }
+                    Slider(
+                        value = distanceM,
+                        onValueChange = { distanceM = ((it * 10).toInt() / 10f) },
+                        valueRange = 0.5f..30f,
+                        colors = SliderDefaults.colors(thumbColor = Amber, activeTrackColor = Amber, inactiveTrackColor = Border)
+                    )
+                }
+                HorizontalDivider(color = Border)
+                DofRow("In focus", if (far == null) "${m(near)} → ∞" else "${m(near)} → ${m(far)}")
+                DofRow("Total DOF", if (far == null) "∞" else m(far - near))
+                DofRow("Hyperfocal", "${m(hyperM)} (focus here → ${m(hyperM / 2)} to ∞)")
+                Text(
+                    "${focal.toInt()}mm on $format · CoC ${coc}mm",
+                    color = TextTertiary, fontSize = 10.sp
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = Amber) } }
+    )
+}
+
+@Composable
+private fun DofRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = TextTertiary, fontSize = 12.sp)
+        Text(value, color = TextPrimary, fontSize = 12.sp)
+    }
 }
 
 // ─── Accessory Stash ──────────────────────────────────────────────────────────

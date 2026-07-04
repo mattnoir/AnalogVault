@@ -1,6 +1,10 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.analogvault.ui.screens
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +29,16 @@ fun SettingsScreen(vm: MainViewModel) {
     val isMetric  by vm.isMetric.collectAsState()
     val customIsos by vm.customIsos.collectAsState()
     val highRefresh by vm.highRefresh.collectAsState()
+    val remindersEnabled  by vm.remindersEnabled.collectAsState()
+    val remindExpiry      by vm.remindExpiry.collectAsState()
+    val remindUndeveloped by vm.remindUndeveloped.collectAsState()
+    val remindChemicals   by vm.remindChemicals.collectAsState()
+
+    // Enabling reminders needs POST_NOTIFICATIONS on API 33+; the worker also
+    // re-checks before posting, so a denied permission just means silence.
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { vm.saveRemindersEnabled(true) }
 
     var owmDraft      by remember(owmKey)   { mutableStateOf(owmKey) }
     var currencyDraft by remember(currency) { mutableStateOf(currency) }
@@ -103,6 +117,37 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
+        // ── Reminders ────────────────────────────────────────────────────────
+        SectionCard("Reminders") {
+            Text(
+                "A daily check that notifies you about film nearing expiry, finished " +
+                "rolls sitting undeveloped, and ageing mixed chemistry.",
+                color = TextSecondary, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Enable reminders", color = TextSecondary, fontSize = 13.sp,
+                    modifier = Modifier.weight(1f))
+                Switch(
+                    checked = remindersEnabled,
+                    onCheckedChange = { on ->
+                        if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            vm.saveRemindersEnabled(on)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark)
+                )
+            }
+            if (remindersEnabled) {
+                ReminderToggle("Film expiry (60-day warning)", remindExpiry) { vm.saveRemindExpiry(it) }
+                ReminderToggle("Undeveloped rolls (3+ weeks)", remindUndeveloped) { vm.saveRemindUndeveloped(it) }
+                ReminderToggle("Chemistry age (60+ days mixed)", remindChemicals) { vm.saveRemindChemicals(it) }
+            }
+        }
+
         // ── Custom ISOs ──────────────────────────────────────────────────────
         SectionCard("Custom ISO Values") {
             Text(
@@ -156,5 +201,20 @@ fun SettingsScreen(vm: MainViewModel) {
                 color = TextSecondary, fontSize = 12.sp
             )
         }
+    }
+}
+
+@Composable
+private fun ReminderToggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(label, color = TextTertiary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark),
+            modifier = Modifier.height(24.dp)
+        )
     }
 }

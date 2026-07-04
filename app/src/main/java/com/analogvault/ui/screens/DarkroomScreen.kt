@@ -406,6 +406,18 @@ fun ActiveTimerScreen(state: DarkroomTimerState, vm: MainViewModel) {
             VaultButton("Done", modifier = Modifier.fillMaxWidth(), onClick = { vm.stopTimer() })
         } else {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Agitation cues — short vibration at each minute mark of the step
+                val agitationCues by vm.agitationCues.collectAsState()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Agitation cues (10 s each minute)", color = TextSecondary, fontSize = 12.sp)
+                    Switch(
+                        checked = agitationCues,
+                        onCheckedChange = { vm.saveAgitationCues(it) },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark),
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
                 // Next step preview
                 timer.steps.getOrNull(currentStep + 1)?.let { next ->
                     Box(

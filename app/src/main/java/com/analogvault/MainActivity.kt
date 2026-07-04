@@ -38,7 +38,13 @@ import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
-class AnalogVaultApp : Application() {
+class AnalogVaultApp : Application(), androidx.work.Configuration.Provider {
+    @javax.inject.Inject lateinit var workerFactory: androidx.hilt.work.HiltWorkerFactory
+
+    // WorkManager on-demand init with Hilt-injected workers (ReminderWorker)
+    override val workManagerConfiguration: androidx.work.Configuration
+        get() = androidx.work.Configuration.Builder().setWorkerFactory(workerFactory).build()
+
     override fun onCreate() {
         super.onCreate()
         // Init osmdroid tile cache before any MapView is created

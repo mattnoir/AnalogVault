@@ -48,6 +48,10 @@ fun BackupScreen() {
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.import(context, it) } }
 
+    val allCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> uri?.let { vm.exportAllCsv(context, it) } }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -120,6 +124,27 @@ fun BackupScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 ghost = true,
                 onClick = { importLauncher.launch(arrayOf("application/zip", "application/json", "*/*")) }
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Shot-log export (analysis in a spreadsheet; per-roll exports live on each roll)
+        SectionCard(title = "Shot Log Export") {
+            Text(
+                "Every shot from every roll as one CSV — film, camera, exposure, " +
+                "location, notes. Per-roll CSV/PDF exports are on each roll's detail screen.",
+                color = TextSecondary, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            VaultButton(
+                text = "📄  Export All Shot Logs (CSV)",
+                modifier = Modifier.fillMaxWidth(),
+                ghost = true,
+                onClick = {
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                    allCsvLauncher.launch("analogvault_shotlogs_$timestamp.csv")
+                }
             )
         }
 

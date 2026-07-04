@@ -1,3 +1,29 @@
+[v0.5.0] - 2026-07-02
+-
+**Light meter overhaul**
+- **Priority modes**: shutter-priority (fix shutter → solve aperture, as before), new **aperture-priority** (fix aperture → solve shutter, snapped to the standard scale with the exact time as footnote), and a full **EV table** mode listing every equivalent shutter/aperture pair — tap a row to select it.
+- **Tap-to-meter**: in Spot / Center-Weighted mode, tap the viewfinder to place the AE metering region on the subject; double-tap to recenter. The reticle follows the tap.
+- **Zone System placement**: in Spot mode, place the metered area on Zones II–VIII (e.g. Zone III shadow → −2 stops exposure). Mark shadow + highlight readings to see the scene contrast range in stops with an N/N±1 development hint.
+- **Reciprocity failure correction**: when the shutter goes to 1 s or longer, a corrected exposure time is shown for a selectable film (Schwarzschild exponents for HP5+, Tri-X, T-Max, Delta, Fomapan, Acros, Portra and more, plus generic fallbacks).
+- **Low-light honesty**: below the phone sensor's reliable range the meter now says so instead of showing confident nonsense.
+- Meter readings, EV lock and zone marks now survive tab switches (state hoisted to the ViewModel); the exposure math moved into a pure, testable `Exposure` utility.
+
+**Shooting quality-of-life**
+- **Quick-log (+1)**: a one-tap frame counter on roll cards and the roll detail screen — logs a shot instantly with the last shot's exposure, current time, cached weather, and fills GPS asynchronously (if permission is already granted). Edit the details later.
+- **DOF / hyperfocal calculator** on every lens card: aperture, focus distance and format in → near/far limits, total depth of field and hyperfocal distance out (format-correct circles of confusion, 35mm through 4×5).
+- **Agitation cues**: while a darkroom timer runs, a short vibration marks each minute (classic "agitate 10 s per minute" rhythm). Toggle on the timer screen.
+
+**Roll exports**
+- **Per-roll CSV** (film/camera/dev header + one row per frame) and a **printable PDF contact sheet** (thumbnails + exposure data, A4, paginated) — from the Export button on each roll's shot log. Archive it with your negatives.
+- **All-rolls CSV** export from the Backup screen for spreadsheet analysis.
+
+**Reminders (opt-in, Settings)**
+- Daily check with notifications for: film expiring within 60 days (or expired), finished rolls sitting undeveloped for 3+ weeks (latent image fades), and chemistry mixed 60+ days ago.
+- Per-category toggles; per-item anti-nag (re-notified at most every 2 weeks); requests the notification permission on Android 13+.
+- New dependencies: WorkManager + Hilt work integration.
+
+
+
 [v0.4.1] - 2026-07-02
 -
 **Bug fixes**

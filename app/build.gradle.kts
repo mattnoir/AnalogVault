@@ -14,8 +14,8 @@ android {
         applicationId = "com.analogvault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 41
-        versionName = "0.4.1"
+        versionCode = 50
+        versionName = "0.5.0"
     }
 
     signingConfigs {
@@ -91,6 +91,11 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+
+    // Reminders (expiry / undeveloped rolls / chemical age)
+    implementation(libs.work.runtime)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.androidx.compiler)
 
     implementation(libs.coil.compose)
     implementation(libs.coroutines.android)
