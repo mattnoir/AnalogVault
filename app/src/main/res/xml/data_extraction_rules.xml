@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup/transfer rules for API 31+. Mirrors backup_rules.xml: keep user data
+     (Room DB, shot photos in files/), skip device-specific osmdroid prefs. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="osmdroid.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="osmdroid.xml" />
+    </device-transfer>
+</data-extraction-rules>

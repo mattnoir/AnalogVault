@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto-backup rules for API < 31. The Room DB and files/camera_photos hold all
+     user data and are included by default; only device-specific osmdroid prefs
+     are excluded. Note the OWM API key travels with the DB (documented in-app). -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="osmdroid.xml" />
+</full-backup-content>

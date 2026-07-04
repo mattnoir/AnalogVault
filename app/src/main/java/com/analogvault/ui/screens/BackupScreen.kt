@@ -48,6 +48,10 @@ fun BackupScreen() {
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { vm.import(context, it) } }
 
+    val allCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> uri?.let { vm.exportAllCsv(context, it) } }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -60,8 +64,8 @@ fun BackupScreen() {
         InfoCard(
             icon = Icons.Default.Info,
             text = "Backup saves all your film stocks, cameras, lenses, rolls, shot logs, " +
-                    "chemicals, and settings to a single JSON file you can store anywhere. " +
-                    "Photo thumbnails are not included (they stay on-device).",
+                    "chemicals, and settings to a single .avault file you can store anywhere. " +
+                    "Shot photos are included when the toggle below is on.",
             color = BlueInfo
         )
 
@@ -123,6 +127,27 @@ fun BackupScreen() {
             )
         }
 
+        Spacer(Modifier.height(16.dp))
+
+        // Shot-log export (analysis in a spreadsheet; per-roll exports live on each roll)
+        SectionCard(title = "Shot Log Export") {
+            Text(
+                "Every shot from every roll as one CSV — film, camera, exposure, " +
+                "location, notes. Per-roll CSV/PDF exports are on each roll's detail screen.",
+                color = TextSecondary, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            VaultButton(
+                text = "📄  Export All Shot Logs (CSV)",
+                modifier = Modifier.fillMaxWidth(),
+                ghost = true,
+                onClick = {
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                    allCsvLauncher.launch("analogvault_shotlogs_$timestamp.csv")
+                }
+            )
+        }
+
         // Result banner
         result?.let { res ->
             Spacer(Modifier.height(20.dp))
@@ -133,8 +158,9 @@ fun BackupScreen() {
 
         // Notes
         SectionCard(title = "Notes") {
-            NoteRow("File format", "JSON — human-readable, version-tagged")
-            NoteRow("Photo thumbs", "Not included — stored as local file paths")
+            NoteRow("File format", ".avault — ZIP with version-tagged JSON + photos")
+            NoteRow("Shot photos", "Included when the export toggle is on")
+            NoteRow("Older backups", "Plain .json exports import fine too")
             NoteRow("Merge behaviour", "Import is additive; same ID = overwrite")
             NoteRow("OWM API key", "Included in backup")
             NoteRow("Restore to new device", "Install the app, import the file, done")

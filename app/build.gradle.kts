@@ -14,8 +14,8 @@ android {
         applicationId = "com.analogvault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40
-        versionName = "0.4.0"
+        versionCode = 50
+        versionName = "0.5.0"
     }
 
     signingConfigs {
@@ -52,6 +52,12 @@ android {
     buildFeatures { compose = true; buildConfig = true }
 }
 
+// Export Room schemas (committed under app/schemas) so future migrations can be
+// written and tested against the exact historical table definitions.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)          // needed for Theme.AppCompat
@@ -59,8 +65,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.compose)  // For LocalLifecycleOwner (moved here in newer versions)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.exifinterface)   // EXIF rotation when downscaling photo thumbnails
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -86,6 +91,11 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+
+    // Reminders (expiry / undeveloped rolls / chemical age)
+    implementation(libs.work.runtime)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.androidx.compiler)
 
     implementation(libs.coil.compose)
     implementation(libs.coroutines.android)

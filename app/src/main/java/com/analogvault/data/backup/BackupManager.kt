@@ -4,13 +4,17 @@ import android.content.Context
 import android.net.Uri
 import com.analogvault.data.model.*
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.util.photoDir
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -38,6 +42,48 @@ sealed class BackupResult {
     data class Success(val message: String) : BackupResult()
     data class Error(val message: String) : BackupResult()
 }
+
+/**
+ * Gson instantiates via Unsafe and never runs the constructor, so fields missing
+ * from the JSON end up null even though the Kotlin types say non-null — touching
+ * them mid-restore then crashes after some data has already been written.
+ * The elvis operators look useless to the compiler but are load-bearing at runtime.
+ */
+@Suppress("USELESS_ELVIS", "SENSELESS_COMPARISON")
+private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
+    version     = version,
+    exportedAt  = exportedAt ?: "",
+    // records without a primary key are corrupt — drop them rather than crash Room
+    films       = (films ?: emptyList()).filter { it.id != null },
+    cameras     = (cameras ?: emptyList()).filter { it.id != null },
+    lenses      = (lenses ?: emptyList()).filter { it.id != null },
+    accessories = (accessories ?: emptyList()).filter { it.id != null },
+    rolls       = (rolls ?: emptyList()).filter { it.id != null }.map { roll ->
+        roll.copy(
+            shots = (roll.shots ?: emptyList()).map { s ->
+                Shot(
+                    id = s.id ?: "", shutter = s.shutter ?: "", aperture = s.aperture ?: "",
+                    iso = s.iso ?: "", lens = s.lens ?: "", location = s.location ?: "",
+                    notes = s.notes ?: "", weather = s.weather ?: "", date = s.date ?: "",
+                    photoThumbPath = s.photoThumbPath ?: ""
+                )
+            },
+            devLog = roll.devLog?.let { d ->
+                DevLog(process = d.process ?: "", developer = d.developer ?: "",
+                    dilution = d.dilution ?: "", temp = d.temp ?: "",
+                    devTime = d.devTime ?: "", notes = d.notes ?: "")
+            },
+            scanLog = roll.scanLog?.let { s ->
+                ScanLog(method = s.method ?: "", dpi = s.dpi ?: "",
+                    software = s.software ?: "", notes = s.notes ?: "")
+            }
+        )
+    },
+    bulkRolls   = (bulkRolls ?: emptyList()).filter { it.id != null },
+    chemicals   = (chemicals ?: emptyList()).filter { it.id != null },
+    zoomLevels  = (zoomLevels ?: emptyList()).filter { it.id != null },
+    owmKey      = owmKey ?: ""
+)
 
 // ── Key remapping for obfuscated v2 backups (R8 renamed VaultBackup fields) ──
 
@@ -78,8 +124,10 @@ class BackupManager @Inject constructor(
 
     // ── Export ──────────────────────────────────────────────────────────────
 
-    suspend fun export(context: Context, uri: Uri, includePhotos: Boolean = true): BackupResult {
-        return try {
+    // File I/O runs on Dispatchers.IO — these are called from viewModelScope (Main),
+    // and a photo-heavy backup would otherwise freeze the UI / ANR.
+    suspend fun export(context: Context, uri: Uri, includePhotos: Boolean = true): BackupResult = withContext(Dispatchers.IO) {
+        try {
             val rolls = repo.rolls.first()
 
             val backup = VaultBackup(
@@ -129,12 +177,12 @@ class BackupManager @Inject constructor(
                     }
 
                     val photoNote = if (includePhotos && photoCount > 0) ", $photoCount photos" else ""
-                    return BackupResult.Success(
+                    return@withContext BackupResult.Success(
                         "Exported: ${backup.rolls.size} rolls, ${backup.bulkRolls.size} bulk rolls, " +
                         "${backup.films.size} films, ${backup.cameras.size} cameras$photoNote"
                     )
                 }
-            } ?: return BackupResult.Error("Could not open output stream")
+            } ?: return@withContext BackupResult.Error("Could not open output stream")
 
         } catch (e: Exception) {
             BackupResult.Error("Export failed: ${e.message}")
@@ -143,26 +191,21 @@ class BackupManager @Inject constructor(
 
     // ── Import ──────────────────────────────────────────────────────────────
 
-    suspend fun import(context: Context, uri: Uri): BackupResult {
-        return try {
+    suspend fun import(context: Context, uri: Uri): BackupResult = withContext(Dispatchers.IO) {
+        try {
             val inputStream = context.contentResolver.openInputStream(uri)
-                ?: return BackupResult.Error("Could not read file")
+                ?: return@withContext BackupResult.Error("Could not read file")
 
-            // Peek at the first two bytes to detect ZIP vs JSON without loading the whole file
-            val buffered = inputStream.buffered()
-            buffered.mark(4)
-            val magic = ByteArray(2)
-            buffered.read(magic)
-            buffered.reset()
-            val isZip = magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte()
+            inputStream.buffered().use { buffered ->
+                // Peek at the first two bytes to detect ZIP vs JSON without loading the whole file
+                buffered.mark(4)
+                val magic = ByteArray(2)
+                val read = buffered.read(magic)
+                buffered.reset()
+                val isZip = read == 2 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte()
 
-            if (isZip) {
-                val bytes = buffered.readBytes()
-                buffered.close()
-                importZip(context, bytes)
-            } else {
-                // Stream the JSON directly — never read it all into a byte array
-                importLegacyJson(context, buffered.reader(Charsets.UTF_8).readText().also { buffered.close() })
+                if (isZip) importZip(context, buffered)
+                else importLegacyJson(context, buffered.reader(Charsets.UTF_8).readText())
             }
         } catch (e: Exception) {
             BackupResult.Error("Import failed: ${e.message}")
@@ -170,35 +213,38 @@ class BackupManager @Inject constructor(
     }
 
     // ── ZIP import (v3+) ────────────────────────────────────────────────────
+    // Streams entries straight off the (content-resolver) input stream — the
+    // archive is never held in memory, so photo-heavy backups can't OOM.
 
-    private suspend fun importZip(context: Context, bytes: ByteArray): BackupResult {
+    private suspend fun importZip(context: Context, input: InputStream): BackupResult {
         var jsonText: String? = null
-        val photoDir = File(context.cacheDir, "camera_photos").also { it.mkdirs() }
+        val photoDir = photoDir(context)
         val restoredPaths = mutableMapOf<String, String>() // filename → absolute path
         var photosRestored = 0
 
-        ZipInputStream(bytes.inputStream()).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                when {
-                    entry.name == "backup.json" -> {
-                        jsonText = zis.readBytes().toString(Charsets.UTF_8)
-                    }
-                    entry.name.startsWith("photos/") && !entry.isDirectory -> {
-                        val name = File(entry.name).name
-                        val dest = File(photoDir, name)
-                        dest.outputStream().use { zis.copyTo(it) }
-                        restoredPaths[name] = dest.absolutePath
-                        photosRestored++
-                    }
+        val zis = ZipInputStream(input) // not .use{} — the caller owns and closes the stream
+        var entry = zis.nextEntry
+        while (entry != null) {
+            when {
+                entry.name == "backup.json" -> {
+                    jsonText = zis.readBytes().toString(Charsets.UTF_8)
                 }
-                zis.closeEntry()
-                entry = zis.nextEntry
+                entry.name.startsWith("photos/") && !entry.isDirectory -> {
+                    // File(...).name strips any path segments — zip-slip safe
+                    val name = File(entry.name).name
+                    val dest = File(photoDir, name)
+                    dest.outputStream().use { zis.copyTo(it) }
+                    restoredPaths[name] = dest.absolutePath
+                    photosRestored++
+                }
             }
+            zis.closeEntry()
+            entry = zis.nextEntry
         }
 
         val json = jsonText ?: return BackupResult.Error("backup.json not found in archive")
-        val backup = gson.fromJson(json, VaultBackup::class.java)
+        // Gson can leave non-null Kotlin fields null on malformed/foreign JSON — sanitize
+        val backup = gson.fromJson(json, VaultBackup::class.java)?.sanitized()
             ?: return BackupResult.Error("Invalid backup.json")
 
         val remappedRolls = backup.rolls.map { roll ->
@@ -231,7 +277,7 @@ class BackupManager @Inject constructor(
 
     private suspend fun importLegacyJson(context: Context, raw: String): BackupResult {
         val obfuscated = isObfuscated(raw)
-        val photoDir = File(context.cacheDir, "camera_photos").also { it.mkdirs() }
+        val photoDir = photoDir(context)
         val pathMap = mutableMapOf<String, String>()  // oldPath → newAbsPath
         var photosRestored = 0
 
@@ -279,12 +325,13 @@ class BackupManager @Inject constructor(
         }
 
         val backup = try {
-            gson.fromJson(envelope, VaultBackup::class.java)
+            gson.fromJson(envelope, VaultBackup::class.java)?.sanitized()
         } catch (e: Exception) {
             return BackupResult.Error("Invalid backup file: ${e.message}")
         } ?: return BackupResult.Error("Invalid backup file")
 
-        if (backup.version != 0 && backup.version !in 1..3) {
+        // version 0 = field absent (very old exports where Gson left the default) — treat as v1
+        if (backup.version !in 0..3) {
             return BackupResult.Error("Unsupported backup version ${backup.version}")
         }
 

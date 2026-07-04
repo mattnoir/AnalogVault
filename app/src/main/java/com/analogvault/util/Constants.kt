@@ -1,7 +1,30 @@
 package com.analogvault.util
 
+import kotlin.math.abs
+import kotlin.math.log2
 import kotlin.math.sqrt
 import kotlin.math.pow
+
+/**
+ * Parse a user-typed decimal that may use a comma separator ("12,50").
+ * Decimal keyboards produce ',' in many locales; a plain toDoubleOrNull()
+ * would fail and silently drop the value.
+ */
+fun String.toDecimalOrNull(): Double? = trim().replace(',', '.').toDoubleOrNull()
+
+/**
+ * Days from today until [raw] ("yyyy-MM-dd", or "yyyy-MM" = first of that month).
+ * Negative = already past. Null when unparseable.
+ */
+fun daysUntilDate(raw: String): Int? {
+    if (raw.isBlank()) return null
+    val dateStr = if (raw.length == 7) "$raw-01" else raw
+    return try {
+        val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .parse(dateStr) ?: return null
+        ((date.time - java.util.Date().time) / 86_400_000L).toInt()
+    } catch (_: Exception) { null }
+}
 
 object Constants {
     val STORAGE_TYPES = listOf("Shelf","Fridge","Freezer","Cool Dark Place","Custom")
@@ -161,8 +184,8 @@ object Constants {
         "Graflex Speed Graphic","Graflex Crown Graphic","Toyo 810G",
         // Rangefinders / compact
         "Canonet QL17 GIII","Yashica Electro 35 GSN","Konica Auto S2","Minox GT-E",
-        "Nikon 35Ti","Nikon 28Ti","Leica Minilux","Contax T3","Ricoh GR1v","Ricoh GR1s",
-        "Fujifilm Klasse W","Fujifilm Natura S","Mju-II","Konica Big Mini","Nikon L35AF",
+        "Ricoh GR1v","Ricoh GR1s",
+        "Fujifilm Klasse W","Fujifilm Natura S","Mju-II","Konica Big Mini",
         // Toy / Lomography
         "Lomo LC-A","Lomo LC-A+","Lomo LC-Wide","Lomography Sprocket Rocket",
         "Holga 120N","Holga 120SF","Diana F+","Diana Mini",
@@ -385,7 +408,6 @@ object Constants {
         "Fujifilm Klasse W" to Pair("Fujifilm","35mm"), "Fujifilm Natura S" to Pair("Fujifilm","35mm"),
         "Konica Auto S2" to Pair("Konica","35mm"), "Konica Big Mini" to Pair("Konica","35mm"),
         "Yashica Electro 35 GSN" to Pair("Yashica","35mm"), "Yashica FX-3 Super" to Pair("Yashica","35mm"),
-        "Yashica Electro 35 GSN" to Pair("Yashica","35mm"),
         // Lomo / toy
         "Lomo LC-A" to Pair("Lomography","35mm"), "Lomo LC-A+" to Pair("Lomography","35mm"),
         "Lomo LC-Wide" to Pair("Lomography","35mm"),
@@ -457,6 +479,58 @@ object Constants {
         val t = evalShutter(shutter)
         val a2 = t * 2.0.pow(targetEV) * (iso / 100.0)
         return sqrt(maxOf(a2, 1.0))
+    }
+
+    /** Nearest standard third-stop f-number (what a classic lens ring can actually be set to). */
+    fun nearestStandardAperture(ap: Double): Double =
+        APERTURES.minByOrNull { abs(log2(it) - log2(ap.coerceAtLeast(0.5))) } ?: ap
+
+    // ── Reciprocity failure (Schwarzschild exponents, t' = t^p for t > 1s) ──
+    // Approximate values from datasheets and community testing; the two
+    // "generic" entries are the fallback for unlisted stocks.
+    val RECIPROCITY: List<Pair<String, Double>> = listOf(
+        "Ilford HP5 Plus"   to 1.31,
+        "Ilford FP4 Plus"   to 1.26,
+        "Ilford Delta 100"  to 1.26,
+        "Ilford Delta 400"  to 1.41,
+        "Ilford Delta 3200" to 1.33,
+        "Ilford Pan F Plus" to 1.33,
+        "Ilford XP2 Super"  to 1.31,
+        "Kodak Tri-X"       to 1.31,
+        "Kodak T-Max 100"   to 1.11,
+        "Kodak T-Max 400"   to 1.24,
+        "Kodak Portra"      to 1.05,
+        "Kodak Ektar"       to 1.05,
+        "Fujifilm Acros"    to 1.02,
+        "Fomapan"           to 1.60,
+        "Kentmere"          to 1.30,
+        "CineStill"         to 1.10,
+        "Other B&W (generic)"   to 1.30,
+        "Other color (generic)" to 1.10
+    )
+
+    // ── Zone System placements (Zone V = middle gray) ────────────────────────
+    val ZONES: List<Pair<Int, String>> = listOf(
+        2 to "II · deep shadow, first hint of detail",
+        3 to "III · dark shadow with full detail",
+        4 to "IV · dark foliage, shadowed skin",
+        5 to "V · middle gray (18%)",
+        6 to "VI · light skin, bright stone",
+        7 to "VII · bright highlight with texture",
+        8 to "VIII · last textured white"
+    )
+
+    /** Format a count of third-stops camera-style: 4 → "+1⅓", -2 → "-⅔", 0 → "0". */
+    fun formatThirds(thirds: Int): String {
+        if (thirds == 0) return "0"
+        val sign = if (thirds > 0) "+" else "-"
+        val whole = abs(thirds) / 3
+        val frac = when (abs(thirds) % 3) { 1 -> "⅓"; 2 -> "⅔"; else -> "" }
+        return sign + when {
+            whole == 0 -> frac
+            frac.isEmpty() -> "$whole"
+            else -> "$whole$frac"
+        }
     }
     // Film metadata: name -> Triple(brand, iso, type)
     val FILM_METADATA: Map<String, Triple<String, Int, String>> = mapOf(

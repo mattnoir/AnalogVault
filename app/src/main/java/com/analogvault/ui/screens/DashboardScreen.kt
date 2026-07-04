@@ -54,6 +54,7 @@ fun DashboardScreen(
     val chemicals    by vm.chemicals.collectAsState()
     val weatherState by vm.weatherState.collectAsState()
     val stats        by vm.stats.collectAsState()
+    val isMetric     by vm.isMetric.collectAsState()
 
     val tip = remember { tips.random() }
 
@@ -166,12 +167,14 @@ fun DashboardScreen(
         // ── Weather snapshot ──────────────────────────────────────────────────
         if (weatherState is WeatherState.Success) {
             val data = (weatherState as WeatherState.Success).data
+            val temp = if (isMetric) data.main.temp else data.main.temp * 9.0 / 5.0 + 32.0
+            val tempUnit = if (isMetric) "°C" else "°F"
             item {
                 DashCard(onClick = { onNavigate(TAB_WEATHER, 0, null) }) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically) {
                         Column {
-                            Text("${"%.0f".format(data.main.temp)}°C · ${data.weather.firstOrNull()?.description?.replaceFirstChar { it.uppercase() } ?: ""}",
+                            Text("${"%.0f".format(temp)}$tempUnit · ${data.weather.firstOrNull()?.description?.replaceFirstChar { it.uppercase() } ?: ""}",
                                 color = TextPrimary, fontSize = 14.sp)
                             Text(data.name, color = TextSecondary, fontSize = 11.sp)
                         }

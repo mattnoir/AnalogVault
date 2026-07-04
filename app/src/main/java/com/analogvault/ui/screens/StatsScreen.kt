@@ -96,9 +96,8 @@ fun StatsNumbers(stats: Stats, currency: String = "€") {
             item { MonthBarChart(stats) }
         }
 
-        // Cost breakdown — only shown if any cost has been recorded
+        // Cost breakdown — shown whenever there are rolls
         val totalCost = stats.totalFilmCost + stats.totalDevCost + stats.totalScanCost
-        val rollsWithAnyCost = stats.totalRolls  // always show section if we have rolls
         if (stats.totalRolls > 0) {
             item { SectionTitle("Cost Breakdown") }
             item {

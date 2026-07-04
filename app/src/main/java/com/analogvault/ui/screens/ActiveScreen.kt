@@ -50,6 +50,9 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
+import com.analogvault.util.downscalePhotoInPlace
+import com.analogvault.util.photoDir
+import com.analogvault.util.toDecimalOrNull
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -255,7 +258,9 @@ fun ActiveScreen(
                 RollListCard(
                     roll = roll, film = film, cam = cam,
                     total = total, pct = pct,
-                    onOpen = { selectedRollId = roll.id }
+                    onOpen = { selectedRollId = roll.id },
+                    // Quick-log only makes sense for rolls still in the camera
+                    onQuickLog = if (page == 0) ({ vm.quickLogShot(roll.id) }) else null
                 )
             }
 
@@ -297,10 +302,12 @@ fun ActiveScreen(
 private fun RollListCard(
     roll: Roll, film: FilmStock?, cam: VaultCamera?,
     total: Int, pct: Float,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    onQuickLog: (() -> Unit)? = null
 ) {
     VaultCard(onClick = onOpen) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(film?.name ?: "Unknown Film", color = TextPrimary, fontSize = 15.sp)
                 Text(cam?.name ?: "Unknown Camera", color = TextSecondary, fontSize = 12.sp)
@@ -312,6 +319,14 @@ private fun RollListCard(
                 else           -> "Shooting"  to BlueInfo
             }
             VaultTag(tagLabel, textColor = tagColor)
+            if (onQuickLog != null) {
+                Spacer(Modifier.width(6.dp))
+                // One-tap frame log — defaults from the last shot, edit later
+                IconButton(onClick = onQuickLog, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.PlusOne, "Quick-log frame",
+                        tint = Amber, modifier = Modifier.size(20.dp))
+                }
+            }
         }
         if (roll.startDate.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
@@ -468,8 +483,9 @@ fun LoadRollSheet(
             VaultButton("+", small = true, ghost = true, onClick = { showAddIsoDialog = true })
         }
         if (pushIso.isNotBlank() && selFilm != null) {
-            val stops = kotlin.math.log2((selFilm.iso.toDouble()) / pushIso.toDouble())
-            val direction = if (stops > 0) "push +${"%.0f".format(stops)}" else "pull ${"%.0f".format(stops)}"
+            // Rating film above box speed = push (e.g. 400 film @ EI 800 → push +1)
+            val stops = kotlin.math.log2(pushIso.toDouble() / selFilm.iso.toDouble())
+            val direction = if (stops > 0) "push +${"%.0f".format(stops)}" else "pull −${"%.0f".format(kotlin.math.abs(stops))}"
             Spacer(Modifier.height(4.dp))
             Text("$direction stop${if (kotlin.math.abs(stops) != 1.0) "s" else ""}",
                 color = if (stops > 0) OrangeWarn else BlueInfo, fontSize = 11.sp)
@@ -538,6 +554,19 @@ fun RollDetailScreen(
     var confirmMsg     by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var lightboxPath   by remember { mutableStateOf<String?>(null) }
     var showMap        by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+
+    // Shot-log exports (SAF)
+    val exportBaseName = remember(film, roll.startDate) {
+        val name = (film?.name ?: "roll").replace(Regex("[^A-Za-z0-9 _-]"), "").trim().replace(' ', '_')
+        "${name}_${roll.startDate.ifBlank { "undated" }}"
+    }
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> uri?.let { vm.exportRollCsv(it, roll) } }
+    val pdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri -> uri?.let { vm.exportRollPdf(it, roll) } }
 
     // System back returns to the roll list before leaving the Loaded tab.
     BackHandler { onBack() }
@@ -565,8 +594,9 @@ fun RollDetailScreen(
                     VaultTag("Loaded ${formatDate(roll.startDate)}", textColor = BlueInfo)
                     film?.type?.split(" ")?.firstOrNull()?.let { VaultTag(it) }
                     if (roll.pushIso.isNotBlank() && film != null) {
-                        val stops = kotlin.math.log2(film.iso.toDouble() / roll.pushIso.toDouble())
-                        val label = if (stops > 0) "Push +${"%.0f".format(stops)}" else "Pull ${"%.0f".format(kotlin.math.abs(stops))}"
+                        // Rating film above box speed = push
+                        val stops = kotlin.math.log2(roll.pushIso.toDouble() / film.iso.toDouble())
+                        val label = if (stops > 0) "Push +${"%.0f".format(stops)}" else "Pull −${"%.0f".format(kotlin.math.abs(stops))}"
                         VaultTag("$label @ ISO ${roll.pushIso}", textColor = OrangeWarn)
                     }
                     if (roll.finished)  VaultTag("Finished",  textColor = Amber)
@@ -645,12 +675,18 @@ fun RollDetailScreen(
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("Shot Log", color = Amber, fontSize = 16.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (roll.shots.isNotEmpty()) {
+                        VaultButton("⇪ Export", small = true, ghost = true,
+                            onClick = { showExportDialog = true })
+                    }
                     val hasGps = roll.shots.any { it.location.contains(",") }
                     if (hasGps) {
                         VaultButton(text = if (showMap) "📋 List" else "🗺 Map", small = true, ghost = true,
                             onClick = { showMap = !showMap })
                     }
                     if (!roll.finished) {
+                        VaultButton("+1", small = true, ghost = true,
+                            onClick = { vm.quickLogShot(roll.id) })
                         VaultButton("+ Shot", small = true,
                             onClick = {
                                 editingShot = null
@@ -758,6 +794,32 @@ fun RollDetailScreen(
             onConfirm = { action(); confirmMsg = null },
             onDismiss = { confirmMsg = null })
     }
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            containerColor = Bg3,
+            title = { Text("Export shot log", color = AmberBright) },
+            text = {
+                Text("CSV for spreadsheets, or a printable PDF contact sheet to archive with your negatives.",
+                    color = TextSecondary, fontSize = 13.sp)
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VaultButton("CSV", small = true, ghost = true, onClick = {
+                        showExportDialog = false
+                        csvLauncher.launch("$exportBaseName.csv")
+                    })
+                    VaultButton("PDF contact sheet", small = true, onClick = {
+                        showExportDialog = false
+                        pdfLauncher.launch("$exportBaseName.pdf")
+                    })
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportDialog = false }) { Text("Cancel", color = TextSecondary) }
+            }
+        )
+    }
     lightboxPath?.let { path ->
         Dialog(onDismissRequest = { lightboxPath = null },
             properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -839,7 +901,7 @@ fun ShotSheet(
         // Auto-fetch location for new shots if toggled on
         if (ed == null && autoLocation && location.isBlank()) {
             gpsLoading = true
-            location = getGpsHighAccuracy(context) ?: ""
+            location = getGpsLocationString(context) ?: ""
             gpsLoading = false
         }
     }
@@ -847,12 +909,19 @@ fun ShotSheet(
     LaunchedEffect(lensName) {
         val maxAp = selectedLens?.maxAperture?.toDoubleOrNull()
         val curAp = aperture.toDoubleOrNull()
+        // toString (not %.1f) keeps a '.' decimal separator on comma-locales
         if (maxAp != null && curAp != null && curAp < maxAp - 0.01)
-            aperture = "%.1f".format(maxAp).trimEnd('0').trimEnd('.')
+            aperture = maxAp.toString().trimEnd('0').trimEnd('.')
     }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { thumbPath = saveUriToCache(context, it) }
+        uri?.let {
+            scope.launch {
+                thumbPath = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    savePickedPhoto(context, it)
+                }
+            }
+        }
     }
     val cameraPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) showCamera = true
@@ -862,7 +931,7 @@ fun ShotSheet(
     ) { perms ->
         if (perms.values.any { it }) {
             gpsLoading = true
-            scope.launch { location = getGpsHighAccuracy(context) ?: location; gpsLoading = false }
+            scope.launch { location = getGpsLocationString(context) ?: location; gpsLoading = false }
         }
     }
 
@@ -972,7 +1041,7 @@ fun ShotSheet(
                         weather = formatWeatherString(loaded, isMetric)
                     } else {
                         // No weather loaded yet — fetch now using GPS, then await result
-                        val coords = getGpsLatLon(context)
+                        val coords = getCurrentLatLon(context)
                         if (coords != null) {
                             vm.fetchWeather(coords.first, coords.second)
                             // Suspend until the fetch completes (Success or Error) — no arbitrary delay
@@ -1039,6 +1108,13 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope          = rememberCoroutineScope()
     var imageCapture   by remember { mutableStateOf<ImageCapture?>(null) }
+    var providerRef    by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
+    // The camera is bound to the Activity lifecycle, so it would keep running
+    // (privacy indicator on, battery draining) after the dialog closes.
+    DisposableEffect(Unit) {
+        onDispose { providerRef?.unbindAll() }
+    }
 
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -1051,6 +1127,7 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
                     val capture  = ImageCapture.Builder()
                         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
                     imageCapture = capture
+                    providerRef  = provider
                     try {
                         provider.unbindAll()
                         provider.bindToLifecycle(lifecycleOwner,
@@ -1068,8 +1145,17 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
                         .clickable {
                             val ic = imageCapture ?: return@clickable
                             scope.launch {
-                                val path = capturePhoto(context, ic, ContextCompat.getMainExecutor(context))
-                                if (path != null) onCapture(path)
+                                // capturePhoto resumes with ImageCaptureException on failure —
+                                // uncaught it would crash the app
+                                val path = try {
+                                    capturePhoto(context, ic, ContextCompat.getMainExecutor(context))
+                                } catch (e: Exception) { null }
+                                if (path != null) {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        downscalePhotoInPlace(File(path))
+                                    }
+                                    onCapture(path)
+                                }
                             }
                         }, contentAlignment = Alignment.Center) {
                         Icon(imageVector = Icons.Default.Camera, contentDescription = "Capture", tint = Bg, modifier = Modifier.size(32.dp))
@@ -1124,7 +1210,7 @@ fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog, Double, Boolean) -> Unit) {
         VaultButton("Save Dev Log", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(DevLog(process = process, developer = developer, dilution = dilution,
                 temp = temp, devTime = devTime, notes = notes),
-                devCost.toDoubleOrNull() ?: 0.0, isSelfDev)
+                devCost.toDecimalOrNull() ?: 0.0, isSelfDev)
         })
     }
 }
@@ -1153,7 +1239,7 @@ fun ScanSheet(onDismiss: () -> Unit, onSave: (ScanLog, Double) -> Unit) {
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Scan Log", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(ScanLog(method = method, dpi = dpi, software = software, notes = notes),
-                scanCost.toDoubleOrNull() ?: 0.0)
+                scanCost.toDecimalOrNull() ?: 0.0)
         })
     }
 }
@@ -1162,8 +1248,7 @@ fun ScanSheet(onDismiss: () -> Unit, onSave: (ScanLog, Double) -> Unit) {
 
 private suspend fun capturePhoto(context: Context, imageCapture: ImageCapture, executor: Executor): String? =
     suspendCancellableCoroutine { cont ->
-        val dir  = File(context.cacheDir, "camera_photos").also { it.mkdirs() }
-        val file = File(dir, "shot_${System.currentTimeMillis()}.jpg")
+        val file = File(photoDir(context), "shot_${System.currentTimeMillis()}.jpg")
         imageCapture.takePicture(
             ImageCapture.OutputFileOptions.Builder(file).build(), executor,
             object : ImageCapture.OnImageSavedCallback {
@@ -1172,15 +1257,18 @@ private suspend fun capturePhoto(context: Context, imageCapture: ImageCapture, e
             })
     }
 
-private fun saveUriToCache(context: Context, uri: Uri): String {
-    val dir  = File(context.cacheDir, "camera_photos").also { it.mkdirs() }
-    val file = File(dir, "pick_${System.currentTimeMillis()}.jpg")
-    context.contentResolver.openInputStream(uri)?.use { it.copyTo(file.outputStream()) }
+private fun savePickedPhoto(context: Context, uri: Uri): String {
+    val file = File(photoDir(context), "pick_${System.currentTimeMillis()}.jpg")
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        file.outputStream().use { input.copyTo(it) }
+    }
+    downscalePhotoInPlace(file)
     return file.absolutePath
 }
 
-/** Returns raw (lat, lon) pair for use with fetchWeather, or null if unavailable */
-private suspend fun getGpsLatLon(context: Context): Pair<Double, Double>? =
+/** Current (lat, lon) via a fresh high-accuracy fix, falling back to last known location.
+ *  Non-private: also used by MainViewModel.quickLogShot. */
+suspend fun getCurrentLatLon(context: Context): Pair<Double, Double>? =
     suspendCancellableCoroutine { cont ->
         val client = LocationServices.getFusedLocationProviderClient(context)
         val cts    = CancellationTokenSource()
@@ -1201,39 +1289,28 @@ private suspend fun getGpsLatLon(context: Context): Pair<Double, Double>? =
         cont.invokeOnCancellation { cts.cancel() }
     }
 
-private suspend fun getGpsHighAccuracy(context: Context): String? =
-    suspendCancellableCoroutine { cont ->
-        val client = LocationServices.getFusedLocationProviderClient(context)
-        val cts    = CancellationTokenSource()
-        try {
-            // Use HIGH_ACCURACY — waits for GPS satellite fix, much more precise
-            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
-                .addOnSuccessListener { loc ->
-                    if (loc != null) {
-                        // Format to 6 decimal places (~1m precision)
-                        cont.resume("%.6f, %.6f".format(loc.latitude, loc.longitude))
-                    } else {
-                        // Fallback to last known location
-                        try {
-                            client.lastLocation.addOnSuccessListener { last ->
-                                cont.resume(if (last != null) "%.6f, %.6f".format(last.latitude, last.longitude) else null)
-                            }.addOnFailureListener { cont.resume(null) }
-                        } catch (e: SecurityException) { cont.resume(null) }
-                    }
-                }
-                .addOnFailureListener { cont.resume(null) }
-        } catch (e: SecurityException) { cont.resume(null) }
-        cont.invokeOnCancellation { cts.cancel() }
-    }
+/**
+ * Locale-invariant "lat, lon" string (~1 m precision). Locale.US is required:
+ * comma-decimal locales would produce "40,416775, -3,703790", which
+ * parseLatLon (and therefore the shot map) cannot read back.
+ */
+fun formatLatLon(lat: Double, lon: Double): String =
+    String.format(Locale.US, "%.6f, %.6f", lat, lon)
 
-/** Formats a [WeatherResponse] into the compact string stored on a [Shot]. */
-private fun formatWeatherString(data: WeatherResponse, isMetric: Boolean): String {
+private suspend fun getGpsLocationString(context: Context): String? =
+    getCurrentLatLon(context)?.let { (lat, lon) -> formatLatLon(lat, lon) }
+
+/** Formats a [WeatherResponse] into the compact string stored on a [Shot].
+ *  Non-private: also used by MainViewModel.quickLogShot. */
+fun formatWeatherString(data: WeatherResponse, isMetric: Boolean): String {
     val unit = if (isMetric) "°C" else "°F"
     val temp = if (isMetric) data.main.temp else data.main.temp * 9.0 / 5.0 + 32.0
+    // API always returns m/s (fetch uses units=metric) — convert for mph display
+    val wind = if (isMetric) data.wind.speed else data.wind.speed * 2.237
     return buildString {
         append("${"%.0f".format(temp)}$unit")
         data.weather.firstOrNull()?.description?.let { append(", $it") }
         append(", ${data.clouds.all}% cloud")
-        if (data.wind.speed > 0) append(", wind ${"%.1f".format(data.wind.speed)}${if (isMetric) "m/s" else "mph"}")
+        if (data.wind.speed > 0) append(", wind ${"%.1f".format(wind)}${if (isMetric) "m/s" else "mph"}")
     }
 }

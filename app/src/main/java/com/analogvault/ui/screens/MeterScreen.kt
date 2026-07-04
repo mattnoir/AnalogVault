@@ -9,6 +9,7 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -24,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -36,6 +38,7 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
+import com.analogvault.util.Exposure
 import kotlin.math.*
 import kotlin.math.roundToInt
 
@@ -50,11 +53,18 @@ fun MeterScreen(
     val displayZooms = remember(zoomLevels) {
         zoomLevels.distinctBy { it.label to it.mm }.sortedBy { it.mm }
     }
-    var hasCamPerm by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var hasCamPerm by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { hasCamPerm = it }
-    LaunchedEffect(Unit) { permLauncher.launch(Manifest.permission.CAMERA) }
+    // Only prompt when not already granted — avoids re-asking on every tab visit
+    LaunchedEffect(Unit) { if (!hasCamPerm) permLauncher.launch(Manifest.permission.CAMERA) }
     MeterContent(vm, displayZooms, hasCamPerm, { permLauncher.launch(Manifest.permission.CAMERA) }, onUseInShot)
 }
 
@@ -87,39 +97,68 @@ fun MeterContent(
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // ── User inputs ───────────────────────────────────────────────────────────
-    var filmIso      by remember { mutableIntStateOf(400) }
-    var shutter      by remember { mutableStateOf("1/125") }
-    var metering     by remember { mutableStateOf(Constants.METERING_TYPES[0]) }
-    var calibOffset  by remember { mutableStateOf(0.0) }   // user EV correction, persists
+    // ── User inputs — persisted via settings so the per-device calibration
+    //    (and last-used ISO/shutter/metering/mode) survive restarts ───────────
+    val filmIso     by vm.meterIso.collectAsState()
+    val shutter     by vm.meterShutter.collectAsState()
+    val metering    by vm.meterMetering.collectAsState()
+    val calibThirds by vm.meterCalibThirds.collectAsState()
+    val meterMode   by vm.meterMode.collectAsState()       // shutter | aperture | table
+    val fixedAperture by vm.meterAperture.collectAsState()
+    val recipFilm   by vm.recipFilm.collectAsState()
+    // Draft tracks the slider while dragging; persisted on release
+    var calibDraft  by remember(calibThirds) { mutableIntStateOf(calibThirds) }
+    val calibOffset = calibDraft / 3.0
+
+    // ── Live meter state — lives in the ViewModel so readings, EV lock and
+    //    zone marks survive tab navigation ────────────────────────────────────
+    val liveReading by vm.meterReading.collectAsState()
+    val evLocked    by vm.meterEvLocked.collectAsState()
+    val manualEV    by vm.meterManualEv.collectAsState()
+    val zoneEnabled by vm.meterZoneEnabled.collectAsState()
+    val zone        by vm.meterZone.collectAsState()
+    val shadowEv    by vm.meterShadowEv.collectAsState()
+    val highlightEv by vm.meterHighlightEv.collectAsState()
 
     // ── Camera ────────────────────────────────────────────────────────────────
     var cameraOn     by remember { mutableStateOf(false) }
     var cameraCtrl   by remember { mutableStateOf<CameraControl?>(null) }
     var cameraInfoObj by remember { mutableStateOf<CameraInfo?>(null) }
     var providerRef  by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var appliedRegionKey by remember { mutableStateOf<String?>(null) }
+    // Tap-to-meter point as a fraction of the preview size; null = center
+    var tapPoint by remember { mutableStateOf<Pair<Float, Float>?>(null) }
 
-    // ── Live metadata reading ─────────────────────────────────────────────────
-    var liveReading  by remember { mutableStateOf<MeterReading?>(null) }
-
-    // ── Manual EV (slider) ────────────────────────────────────────────────────
-    var manualEV     by remember { mutableStateOf(12.0) }
-    var evLocked     by remember { mutableStateOf(false) }
-
-    // Effective EV for exposure calculation
-    val effectiveEV = when {
-        evLocked         -> manualEV
-        liveReading != null -> (liveReading!!.sceneEV + calibOffset).coerceIn(-2.0, 22.0)
-        else             -> manualEV
+    // The camera binds to the Activity lifecycle; without an explicit unbind it
+    // keeps running (privacy indicator on, battery draining) after the user
+    // navigates away from this tab.
+    DisposableEffect(Unit) {
+        onDispose { providerRef?.unbindAll() }
     }
+
+    // Base EV before zone placement: locked → manual, live → calibrated reading
+    val baseEV = when {
+        evLocked            -> manualEV
+        liveReading != null -> (liveReading!!.sceneEV + calibOffset).coerceIn(-2.0, 22.0)
+        else                -> manualEV
+    }
+    val zoneActive  = zoneEnabled && metering == "Spot"
+    val effectiveEV = if (zoneActive) baseEV + Exposure.zoneOffsetEv(zone) else baseEV
 
     // ── Zoom ──────────────────────────────────────────────────────────────────
     var activeZoom   by remember { mutableStateOf<ZoomLevel?>(null) }
     var showZoomEdit by remember { mutableStateOf(false) }
 
-    val solvedAperture = remember(filmIso, shutter, effectiveEV) {
-        "f/${"%.1f".format(Constants.calcAperture(filmIso, shutter, effectiveEV))}"
-    }
+    // ── Solved exposure (mode-dependent) ─────────────────────────────────────
+    // Shutter-priority / table: fix shutter → solve aperture (snapped to third-stops).
+    val apExact   = Constants.calcAperture(filmIso, shutter, effectiveEV)
+    val apSnapped = Constants.nearestStandardAperture(apExact)
+    // Aperture-priority: fix aperture → solve shutter (snapped to the standard scale).
+    val secExact  = Exposure.solveShutterSec(filmIso, fixedAperture, effectiveEV)
+    val shSnapped = Exposure.nearestStandardShutter(secExact)
+
+    // Shutter seconds the reciprocity helper should correct
+    val displaySec = if (meterMode == "aperture") secExact else Constants.evalShutter(shutter)
 
     // ── Layout ───────────────────────────────────────────────────────────────
     // Outer Column is NOT scrollable — AndroidView breaks verticalScroll.
@@ -133,6 +172,18 @@ fun MeterContent(
                     .fillMaxWidth()
                     .height(240.dp)
                     .background(Bg2)
+                    // Tap-to-meter: place the AE region where the user taps
+                    // (Spot / Center-Weighted); double-tap recenters.
+                    .pointerInput(metering) {
+                        detectTapGestures(
+                            onTap = { ofs ->
+                                if (metering == "Spot" || metering == "Center-Weighted") {
+                                    tapPoint = (ofs.x / size.width) to (ofs.y / size.height)
+                                }
+                            },
+                            onDoubleTap = { tapPoint = null }
+                        )
+                    }
             ) {
                 AndroidView(
                     factory = { ctx ->
@@ -146,30 +197,29 @@ fun MeterContent(
                             // Build preview with Camera2Interop to capture metadata
                             val previewBuilder = Preview.Builder()
                             val captureCallback = object : android.hardware.camera2.CameraCaptureSession.CaptureCallback() {
+                                private var lastPostMs = 0L
+                                private var lastEv = Double.NaN
                                 override fun onCaptureCompleted(
                                     session: android.hardware.camera2.CameraCaptureSession,
                                     request: android.hardware.camera2.CaptureRequest,
                                     result: android.hardware.camera2.TotalCaptureResult
                                 ) {
-                                    if (evLocked) return
                                     val isoVal    = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: return
                                     val shutterNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: return
                                     val apertureF = result.get(CaptureResult.LENS_APERTURE) ?: return
 
                                     val shutterSec = shutterNs / 1_000_000_000.0
-                                    // EV = log2(N² / t) − log2(ISO/100)
-                                    // where N=aperture, t=shutter in seconds
-                                    // This gives scene EV at the measured exposure
-                                    val ev = log2((apertureF * apertureF) / shutterSec) - log2(isoVal / 100.0)
+                                    val ev = Exposure.evFromSensor(isoVal, shutterSec, apertureF.toDouble())
 
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                        liveReading = MeterReading(
-                                            sceneEV       = ev.coerceIn(-6.0, 24.0),
-                                            sensorIso     = isoVal,
-                                            sensorShutterSec = shutterSec,
-                                            sensorAperture = apertureF.toDouble()
-                                        )
-                                    }
+                                    // Throttle: a state write per camera frame (~30 Hz) recomposes the
+                                    // screen constantly; ~4 Hz is plenty for a meter readout. Large EV
+                                    // jumps still post immediately so the needle feels responsive.
+                                    val now = android.os.SystemClock.elapsedRealtime()
+                                    if (now - lastPostMs < 250 && abs(ev - lastEv) < 0.05) return
+                                    lastPostMs = now
+                                    lastEv = ev
+
+                                    vm.onMeterReading(isoVal, shutterSec, apertureF.toDouble())
                                 }
                             }
                             Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(captureCallback)
@@ -183,11 +233,12 @@ fun MeterContent(
                                 cameraCtrl    = cam.cameraControl
                                 cameraInfoObj = cam.cameraInfo
                                 providerRef   = provider
+                                appliedRegionKey = null   // re-apply AE region on (re)bind
                             } catch (e: Exception) { e.printStackTrace() }
                         }, ContextCompat.getMainExecutor(ctx))
                         pv
                     },
-                    update = {
+                    update = { pv ->
                         // Apply zoom
                         activeZoom?.mm?.toFloat()?.let { mm ->
                             cameraInfoObj?.zoomState?.value?.let { state ->
@@ -195,12 +246,39 @@ fun MeterContent(
                                 cameraCtrl?.setZoomRatio(ratio)
                             }
                         }
+                        // Apply an AE region for the selected metering mode at the
+                        // tapped point (or center). Best-effort: devices without
+                        // AE-region support keep default full-frame metering.
+                        val ctrl = cameraCtrl
+                        val regionKey = "$metering:${tapPoint?.first}:${tapPoint?.second}"
+                        if (ctrl != null && pv.width > 0 && appliedRegionKey != regionKey) {
+                            appliedRegionKey = regionKey
+                            try {
+                                val regionSize = when (metering) {
+                                    "Spot"            -> 0.15f
+                                    "Center-Weighted" -> 0.6f
+                                    else              -> null
+                                }
+                                if (regionSize != null) {
+                                    val fx = tapPoint?.first ?: 0.5f
+                                    val fy = tapPoint?.second ?: 0.5f
+                                    val pt = pv.meteringPointFactory
+                                        .createPoint(pv.width * fx, pv.height * fy, regionSize)
+                                    ctrl.startFocusAndMetering(
+                                        FocusMeteringAction.Builder(pt, FocusMeteringAction.FLAG_AE)
+                                            .disableAutoCancel().build()
+                                    )
+                                } else {
+                                    ctrl.cancelFocusAndMetering()
+                                }
+                            } catch (_: Exception) { /* fall back to full-frame AE */ }
+                        }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
-                // Metering overlay
+                // Metering overlay (reticle follows the tap point)
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawMeteringOverlay(metering)
+                    drawMeteringOverlay(metering, tapPoint)
                 }
                 // EV status chip
                 Box(
@@ -230,6 +308,17 @@ fun MeterContent(
                         )
                     }
                 }
+                // Tap hint chip
+                if (metering == "Spot" || metering == "Center-Weighted") {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).padding(8.dp)
+                            .clip(RoundedCornerShape(4.dp)).background(Bg.copy(alpha = 0.65f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(if (tapPoint == null) "tap to meter" else "2×tap to recenter",
+                            color = TextTertiary, fontSize = 9.sp)
+                    }
+                }
             }
         }
 
@@ -242,14 +331,66 @@ fun MeterContent(
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
 
-            // EV result card
-            EVCard(
-                effectiveEV    = effectiveEV,
-                solvedAperture = solvedAperture,
-                filmIso        = filmIso,
-                shutter        = shutter,
-                isLive         = !evLocked && liveReading != null
-            )
+            // EV result card — big value depends on the priority mode
+            if (meterMode == "aperture") {
+                EVCard(
+                    effectiveEV = effectiveEV,
+                    resultLabel = "USE SHUTTER",
+                    resultValue = shSnapped,
+                    resultFootnote = "exact ${formatSeconds(secExact)}",
+                    subline = "ISO $filmIso · ${formatAperture(fixedAperture)}",
+                    isLive = !evLocked && liveReading != null
+                )
+            } else {
+                EVCard(
+                    effectiveEV = effectiveEV,
+                    resultLabel = "USE APERTURE",
+                    resultValue = formatAperture(apSnapped),
+                    resultFootnote = "exact f/${"%.1f".format(apExact)}",
+                    subline = "ISO $filmIso · $shutter",
+                    isLive = !evLocked && liveReading != null
+                )
+            }
+
+            // Zone placement indicator + low-light warning
+            if (zoneActive && zone != 5) {
+                Spacer(Modifier.height(6.dp))
+                val off = Exposure.zoneOffsetEv(zone)
+                Text(
+                    "Zone ${romanZone(zone)} placement → ${if (off > 0) "−" else "+"}${abs(off)} stop${if (abs(off) != 1) "s" else ""} exposure",
+                    color = OrangeWarn, fontSize = 11.sp
+                )
+            }
+            liveReading?.let { r ->
+                if (!evLocked && r.sceneEV < 1.0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "⚠ Below the phone sensor's reliable range — switch to Manual EV and apply reciprocity",
+                        color = OrangeWarn, fontSize = 11.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // Priority mode selector
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    "shutter" to "Shutter-pri",
+                    "aperture" to "Aperture-pri",
+                    "table" to "EV Table"
+                ).forEach { (key, label) ->
+                    val sel = meterMode == key
+                    Box(
+                        Modifier.weight(1f).clip(RoundedCornerShape(6.dp))
+                            .background(if (sel) AmberDark else Bg3)
+                            .border(1.dp, if (sel) Amber else Border, RoundedCornerShape(6.dp))
+                            .clickable { vm.saveMeterMode(key) }
+                            .padding(vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) { Text(label, color = if (sel) AmberBright else TextSecondary, fontSize = 11.sp) }
+                }
+            }
 
             Spacer(Modifier.height(10.dp))
 
@@ -259,17 +400,15 @@ fun MeterContent(
                     VaultButton(
                         text = if (evLocked) "🔒 EV Locked" else "🔓 Lock EV",
                         modifier = Modifier.weight(1f), ghost = true, small = true,
-                        onClick = {
-                            evLocked = !evLocked
-                            if (evLocked) manualEV = effectiveEV
-                        }
+                        onClick = { vm.setMeterLock(!evLocked, evAtLock = baseEV) }
                     )
                     VaultButton("✕ Camera", ghost = true, small = true,
                         onClick = {
                             providerRef?.unbindAll()
                             providerRef = null
-                            cameraCtrl = null; cameraInfoObj = null
-                            cameraOn = false; liveReading = null; evLocked = false
+                            cameraCtrl = null; cameraInfoObj = null; appliedRegionKey = null
+                            cameraOn = false
+                            vm.clearMeterReading(); vm.setMeterLock(false)
                         })
                 }
                 Spacer(Modifier.height(8.dp))
@@ -280,21 +419,23 @@ fun MeterContent(
                     Text("Cal offset", color = TextSecondary, fontSize = 12.sp)
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("${if (calibOffset >= 0) "+" else ""}${"%.1f".format(calibOffset)}",
-                            color = if (calibOffset == 0.0) TextTertiary else OrangeWarn,
+                        Text("${Constants.formatThirds(calibDraft)} EV",
+                            color = if (calibDraft == 0) TextTertiary else OrangeWarn,
                             fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        if (calibOffset != 0.0) {
-                            TextButton(onClick = { calibOffset = 0.0 },
+                        if (calibDraft != 0) {
+                            TextButton(onClick = { calibDraft = 0; vm.saveMeterCalibThirds(0) },
                                 contentPadding = PaddingValues(0.dp)) {
                                 Text("reset", color = TextTertiary, fontSize = 10.sp)
                             }
                         }
                     }
                 }
+                // 1/3-stop increments (classic camera EV steps), ±5 EV; persisted on release
                 Slider(
-                    value = calibOffset.toFloat(),
-                    onValueChange = { calibOffset = it.toDouble() },
-                    valueRange = -5f..5f, steps = 49,
+                    value = calibDraft.toFloat(),
+                    onValueChange = { calibDraft = it.roundToInt() },
+                    onValueChangeFinished = { vm.saveMeterCalibThirds(calibDraft) },
+                    valueRange = -15f..15f, steps = 29,
                     colors = SliderDefaults.colors(thumbColor = OrangeWarn, activeTrackColor = OrangeWarn, inactiveTrackColor = Border)
                 )
             } else {
@@ -302,19 +443,90 @@ fun MeterContent(
                 VaultButton(
                     text = if (hasCamPerm) "📷 Live Meter" else "📷 Enable Camera",
                     modifier = Modifier.fillMaxWidth(), ghost = true,
-                    onClick = { if (hasCamPerm) { cameraOn = true; evLocked = false } else onRequestPerm() }
+                    onClick = { if (hasCamPerm) { cameraOn = true; vm.setMeterLock(false) } else onRequestPerm() }
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Manual EV", color = TextSecondary, fontSize = 12.sp)
                     Text("%.1f".format(manualEV), color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
+                // 1/3-stop increments to match camera EV convention
                 Slider(
                     value = manualEV.toFloat(),
-                    onValueChange = { manualEV = it.toDouble() },
-                    valueRange = -2f..22f, steps = 95,
+                    onValueChange = { vm.setMeterManualEv((it * 3).roundToInt() / 3.0) },
+                    valueRange = -2f..22f, steps = 71,
                     colors = SliderDefaults.colors(thumbColor = Amber, activeTrackColor = Amber, inactiveTrackColor = Border)
                 )
+            }
+
+            // ── Zone System placement (spot metering) ─────────────────────────
+            if (metering == "Spot") {
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Zone placement", color = TextSecondary, fontSize = 12.sp)
+                    Switch(
+                        checked = zoneEnabled,
+                        onCheckedChange = { vm.setMeterZoneEnabled(it) },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark),
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
+                if (zoneEnabled) {
+                    Spacer(Modifier.height(6.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(Constants.ZONES) { (z, _) ->
+                            val sel = zone == z
+                            Box(
+                                Modifier.clip(RoundedCornerShape(6.dp))
+                                    .background(if (sel) AmberDark else Bg3)
+                                    .border(1.dp, if (sel) Amber else Border, RoundedCornerShape(6.dp))
+                                    .clickable { vm.setMeterZone(z) }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(romanZone(z), color = if (sel) AmberBright else TextSecondary,
+                                    fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(Constants.ZONES.firstOrNull { it.first == zone }?.second ?: "",
+                        color = TextTertiary, fontSize = 10.sp)
+
+                    // Shadow / highlight marks → scene contrast range
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        VaultButton("▼ Mark shadow", small = true, ghost = true,
+                            onClick = { vm.markMeterShadow(baseEV) })
+                        VaultButton("▲ Mark highlight", small = true, ghost = true,
+                            onClick = { vm.markMeterHighlight(baseEV) })
+                        if (shadowEv != null || highlightEv != null) {
+                            VaultButton("✕", small = true, ghost = true,
+                                onClick = { vm.clearMeterMarks() })
+                        }
+                    }
+                    if (shadowEv != null || highlightEv != null) {
+                        Spacer(Modifier.height(4.dp))
+                        val s = shadowEv; val h = highlightEv
+                        val text = buildString {
+                            if (s != null) append("▼ ${"%.1f".format(s)}")
+                            if (s != null && h != null) append("   ")
+                            if (h != null) append("▲ ${"%.1f".format(h)}")
+                            if (s != null && h != null) {
+                                val range = h - s
+                                append("   Δ ${"%.1f".format(range)} stops · ")
+                                append(when {
+                                    range <= 5.0 -> "flat scene — N+1 dev?"
+                                    range <= 7.0 -> "normal — N dev"
+                                    else         -> "contrasty — N−1 dev / compensate"
+                                })
+                            }
+                        }
+                        Text(text, color = TextSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -351,33 +563,71 @@ fun MeterContent(
                 Spacer(Modifier.height(10.dp))
             }
 
-            // Metering + ISO + Shutter in one compact row — below zoom
+            // Metering + ISO + fixed input (shutter or aperture, by mode)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 VaultDropdown("Metering", metering, Constants.METERING_TYPES,
-                    { metering = it }, modifier = Modifier.weight(1.4f))
+                    { vm.saveMeterMetering(it) }, modifier = Modifier.weight(1.4f))
                 VaultDropdown("ISO", filmIso.toString(), Constants.ISOS.map { it.toString() },
-                    { filmIso = it.toIntOrNull() ?: 400 }, modifier = Modifier.weight(1f))
-                VaultDropdown("Shutter", shutter, Constants.SHUTTER_SPEEDS,
-                    { shutter = it }, modifier = Modifier.weight(1f))
+                    { vm.saveMeterIso(it.toIntOrNull() ?: 400) }, modifier = Modifier.weight(1f))
+                if (meterMode == "aperture") {
+                    VaultDropdown("Aperture", formatAperture(fixedAperture),
+                        Constants.APERTURES.map { formatAperture(it) },
+                        { sel -> sel.removePrefix("f/").toDoubleOrNull()?.let { vm.saveMeterAperture(it) } },
+                        modifier = Modifier.weight(1f))
+                } else {
+                    VaultDropdown("Shutter", shutter, Constants.SHUTTER_SPEEDS,
+                        { vm.saveMeterShutter(it) }, modifier = Modifier.weight(1f))
+                }
+            }
+
+            // ── Reciprocity failure correction (long exposures) ───────────────
+            if (displaySec >= 1.0) {
+                Spacer(Modifier.height(10.dp))
+                val factor = Constants.RECIPROCITY.firstOrNull { it.first == recipFilm }?.second ?: 1.30
+                val corrected = Exposure.reciprocityCorrect(displaySec, factor)
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg3)
+                        .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp)
+                ) {
+                    Text("RECIPROCITY FAILURE", color = TextTertiary, fontSize = 9.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "metered ${formatSeconds(displaySec)} → expose ≈ ${formatSeconds(corrected)}",
+                        color = AmberBright, fontSize = 14.sp, fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    VaultDropdown("Film", recipFilm, Constants.RECIPROCITY.map { it.first },
+                        { vm.saveRecipFilm(it) })
+                }
             }
 
             Spacer(Modifier.height(10.dp))
 
-            // Nearby combinations table
-            NearbyTable(filmIso, shutter, effectiveEV)
+            // Equivalent exposures: full table in table mode, ±2 stops otherwise
+            if (meterMode == "table") {
+                FullExposureTable(filmIso, shutter, effectiveEV, onSelect = { vm.saveMeterShutter(it) })
+            } else if (meterMode == "shutter") {
+                NearbyTable(filmIso, shutter, effectiveEV)
+            }
 
             // Use in Shot button
             if (onUseInShot != null) {
                 Spacer(Modifier.height(12.dp))
-                // Normalise to match the ShotSheet aperture options ("f/8", "f/5.6")
-                // and stored convention — whole stops drop the trailing ".0".
-                val apRaw = Constants.calcAperture(filmIso, shutter, effectiveEV)
-                val apNum = if (apRaw == apRaw.toLong().toDouble()) apRaw.toLong().toString()
-                            else "%.1f".format(apRaw)
+                // Snapped to standard scales so the values match the ShotSheet
+                // options exactly; toString keeps '.' decimals on comma-locales.
+                val useShutter: String
+                val useApertureNum: String
+                if (meterMode == "aperture") {
+                    useShutter = shSnapped
+                    useApertureNum = apertureNumString(fixedAperture)
+                } else {
+                    useShutter = shutter
+                    useApertureNum = apertureNumString(apSnapped)
+                }
                 VaultButton(
-                    text = "📋 Use in Shot  $shutter · f/$apNum · ISO $filmIso",
+                    text = "📋 Use in Shot  $useShutter · f/$useApertureNum · ISO $filmIso",
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onUseInShot(shutter, apNum, filmIso.toString()) }
+                    onClick = { onUseInShot(useShutter, useApertureNum, filmIso.toString()) }
                 )
             }
 
@@ -388,11 +638,33 @@ fun MeterContent(
     if (showZoomEdit) ZoomEditSheet(zoomLevels, vm) { showZoomEdit = false }
 }
 
+/** "f/8" for whole stops, "f/5.6" otherwise — matches the APERTURES scale and stays '.'-decimal on all locales. */
+private fun formatAperture(a: Double): String =
+    if (a == a.toLong().toDouble()) "f/${a.toLong()}" else "f/$a"
+
+/** Bare aperture number as stored on shots ("8", "5.6"). */
+private fun apertureNumString(a: Double): String =
+    if (a == a.toLong().toDouble()) a.toLong().toString() else a.toString()
+
+/** "1/125" below one second, "2.5s"/"45s" above. Double.toString keeps '.' on all locales. */
+private fun formatSeconds(sec: Double): String = when {
+    sec < 1.0   -> "1/${(1.0 / sec).roundToInt()}"
+    sec < 10.0  -> "${((sec * 10).roundToInt() / 10.0).toString().trimEnd('0').trimEnd('.')}s"
+    else        -> "${sec.roundToInt()}s"
+}
+
+private fun romanZone(zone: Int): String =
+    listOf("0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X").getOrElse(zone) { "$zone" }
+
 // ─── Canvas metering overlay ──────────────────────────────────────────────────
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay(metering: String) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay(
+    metering: String,
+    tapPoint: Pair<Float, Float>? = null
+) {
     val w = size.width; val h = size.height
-    val cx = w / 2f; val cy = h / 2f
+    val cx = w * (tapPoint?.first ?: 0.5f)
+    val cy = h * (tapPoint?.second ?: 0.5f)
     val stroke = Stroke(2.dp.toPx())
     val color = Color(0xCCD4935A.toInt())
 
@@ -430,8 +702,9 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay
 
 @Composable
 private fun EVCard(
-    effectiveEV: Double, solvedAperture: String,
-    filmIso: Int, shutter: String, isLive: Boolean
+    effectiveEV: Double,
+    resultLabel: String, resultValue: String, resultFootnote: String,
+    subline: String, isLive: Boolean
 ) {
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg3)
@@ -451,9 +724,10 @@ private fun EVCard(
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("USE APERTURE", color = TextTertiary, fontSize = 9.sp)
-                Text(solvedAperture, color = AmberBright, fontSize = 36.sp, fontFamily = FontFamily.Monospace)
-                Text("ISO $filmIso · $shutter", color = TextSecondary, fontSize = 10.sp)
+                Text(resultLabel, color = TextTertiary, fontSize = 9.sp)
+                Text(resultValue, color = AmberBright, fontSize = 36.sp, fontFamily = FontFamily.Monospace)
+                Text(resultFootnote, color = TextTertiary, fontSize = 9.sp)
+                Text(subline, color = TextSecondary, fontSize = 10.sp)
             }
         }
     }
@@ -473,7 +747,7 @@ private fun NearbyTable(filmIso: Int, shutter: String, effectiveEV: Double) {
             val idx = (Constants.SHUTTER_SPEEDS.indexOf(shutter) + offset)
                 .coerceIn(0, Constants.SHUTTER_SPEEDS.lastIndex)
             val sh  = Constants.SHUTTER_SPEEDS[idx]
-            val ap  = "f/${"%.1f".format(Constants.calcAperture(filmIso, sh, effectiveEV))}"
+            val ap  = formatAperture(Constants.nearestStandardAperture(Constants.calcAperture(filmIso, sh, effectiveEV)))
             val hl  = offset == 0
             Row(
                 Modifier.fillMaxWidth()
@@ -483,6 +757,41 @@ private fun NearbyTable(filmIso: Int, shutter: String, effectiveEV: Double) {
             ) {
                 Text(sh, color = if (hl) AmberBright else TextSecondary, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                 Text(ap, color = if (hl) AmberBright else TextSecondary, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+    }
+}
+
+/** Full shutter → aperture table for the current EV; tapping a row selects that shutter. */
+@Composable
+private fun FullExposureTable(
+    filmIso: Int, shutter: String, effectiveEV: Double,
+    onSelect: (String) -> Unit
+) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg3)
+            .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp)
+    ) {
+        Text("EV ${"%.1f".format(effectiveEV)} · ALL EQUIVALENT EXPOSURES", color = TextTertiary, fontSize = 9.sp)
+        Spacer(Modifier.height(6.dp))
+        HorizontalDivider(color = Border)
+        Spacer(Modifier.height(4.dp))
+        Constants.SHUTTER_SPEEDS.filter { it != "B" }.forEach { sh ->
+            val ap = Constants.nearestStandardAperture(Constants.calcAperture(filmIso, sh, effectiveEV))
+            // Skip rows outside any real lens range to keep the table useful
+            if (ap >= 0.95 && ap <= 32.0) {
+                val hl = sh == shutter
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (hl) AmberDark.copy(0.15f) else Color.Transparent)
+                        .clickable { onSelect(sh) }
+                        .padding(vertical = 4.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(sh, color = if (hl) AmberBright else TextSecondary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text(formatAperture(ap), color = if (hl) AmberBright else TextSecondary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                }
             }
         }
     }
@@ -557,4 +866,3 @@ fun ZoomEditSheet(zoomLevels: List<ZoomLevel>, vm: MainViewModel, onDismiss: () 
         })
     }
 }
-
