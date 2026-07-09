@@ -567,6 +567,10 @@ fun RollDetailScreen(
     val pdfLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri -> uri?.let { vm.exportRollPdf(it, roll) } }
+    var tagScanUris by remember { mutableStateOf<List<Uri>?>(null) }
+    val tagScansLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> if (uris.isNotEmpty()) tagScanUris = uris }
 
     // System back returns to the roll list before leaving the Loaded tab.
     BackHandler { onBack() }
@@ -780,7 +784,12 @@ fun RollDetailScreen(
         }
     }
     if (showDevSheet) {
-        DevSheet(onDismiss = { showDevSheet = false }) { devLog, cost, selfDev ->
+        val recipes by vm.recipes.collectAsState()
+        DevSheet(
+            recipes = recipes,
+            suggestedFilm = film?.name ?: "",
+            onDismiss = { showDevSheet = false }
+        ) { devLog, cost, selfDev ->
             vm.markDeveloped(roll.id, devLog, cost, selfDev); showDevSheet = false
         }
     }
@@ -800,7 +809,8 @@ fun RollDetailScreen(
             containerColor = Bg3,
             title = { Text("Export shot log", color = AmberBright) },
             text = {
-                Text("CSV for spreadsheets, or a printable PDF contact sheet to archive with your negatives.",
+                Text("CSV for spreadsheets, a printable PDF contact sheet to archive with " +
+                     "your negatives, or write the shot data as EXIF into your scanned JPEGs.",
                     color = TextSecondary, fontSize = 13.sp)
             },
             confirmButton = {
@@ -809,9 +819,13 @@ fun RollDetailScreen(
                         showExportDialog = false
                         csvLauncher.launch("$exportBaseName.csv")
                     })
-                    VaultButton("PDF contact sheet", small = true, onClick = {
+                    VaultButton("PDF sheet", small = true, onClick = {
                         showExportDialog = false
                         pdfLauncher.launch("$exportBaseName.pdf")
+                    })
+                    VaultButton("Tag scans", small = true, ghost = true, onClick = {
+                        showExportDialog = false
+                        tagScansLauncher.launch(arrayOf("image/jpeg"))
                     })
                 }
             },
@@ -830,6 +844,71 @@ fun RollDetailScreen(
             }
         }
     }
+    tagScanUris?.let { uris ->
+        TagScansDialog(
+            uris = uris, roll = roll,
+            onWrite = { offset -> vm.tagScans(uris, roll, offset); tagScanUris = null },
+            onDismiss = { tagScanUris = null }
+        )
+    }
+}
+
+// ─── Scan EXIF tagging dialog ─────────────────────────────────────────────────
+
+@Composable
+private fun TagScansDialog(
+    uris: List<Uri>, roll: Roll,
+    onWrite: (offset: Int) -> Unit, onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var offset by remember { mutableIntStateOf(0) }
+    val names by produceState(initialValue = emptyList<String>(), uris) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            uris.map { com.analogvault.data.export.scanDisplayName(context, it) }.sorted()
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Bg3,
+        title = { Text("Tag ${uris.size} scan${if (uris.size != 1) "s" else ""} with EXIF",
+            color = AmberBright, fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Files are matched to frames in filename order; each gets the shot's " +
+                     "exposure, camera, lens, date, GPS and film written as EXIF. JPEG only.",
+                    color = TextSecondary, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (offset >= 0) "First file → frame ${offset + 1}"
+                        else "Skipping ${-offset} leading file${if (offset < -1) "s" else ""}",
+                        color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { if (offset > 1 - uris.size) offset-- }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Remove, "Shift down", tint = Amber, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = { if (offset < roll.shots.size - 1) offset++ }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Add, "Shift up", tint = Amber, modifier = Modifier.size(16.dp))
+                    }
+                }
+                names.take(4).forEachIndexed { i, n ->
+                    val shot = roll.shots.getOrNull(i + offset)
+                    val target = if (shot != null) {
+                        val exp = listOfNotNull(
+                            shot.shutter.ifBlank { null },
+                            shot.aperture.ifBlank { null }?.let { "f/$it" }
+                        ).joinToString(" ")
+                        "#${i + offset + 1}${if (exp.isNotBlank()) "  $exp" else ""}"
+                    } else "(no frame)"
+                    Text("$n → $target", color = TextTertiary, fontSize = 11.sp,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                if (names.size > 4)
+                    Text("… ${names.size - 4} more", color = TextTertiary, fontSize = 11.sp)
+            }
+        },
+        confirmButton = { VaultButton("Write EXIF", small = true, onClick = { onWrite(offset) }) },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+    )
 }
 
 // ─── Shot Sheet ───────────────────────────────────────────────────────────────
@@ -1170,7 +1249,12 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
 // ─── Dev / Scan sheets ────────────────────────────────────────────────────────
 
 @Composable
-fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog, Double, Boolean) -> Unit) {
+fun DevSheet(
+    recipes: List<DevRecipe> = emptyList(),
+    suggestedFilm: String = "",
+    onDismiss: () -> Unit,
+    onSave: (DevLog, Double, Boolean) -> Unit
+) {
     var process   by remember { mutableStateOf(Constants.DEVELOP_PROCESSES[0]) }
     var developer by remember { mutableStateOf("") }
     var dilution  by remember { mutableStateOf("") }
@@ -1179,8 +1263,35 @@ fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog, Double, Boolean) -> Unit) {
     var notes     by remember { mutableStateOf("") }
     var isSelfDev by remember { mutableStateOf(true) }
     var devCost   by remember { mutableStateOf("") }
+    var recipeName by remember { mutableStateOf("— none —") }
+
+    // Recipes matching this roll's film float to the top of the picker
+    val orderedRecipes = remember(recipes, suggestedFilm) {
+        if (suggestedFilm.isBlank()) recipes
+        else recipes.sortedByDescending { r ->
+            r.filmName.isNotBlank() &&
+                (suggestedFilm.contains(r.filmName, ignoreCase = true) ||
+                 r.filmName.contains(suggestedFilm, ignoreCase = true))
+        }
+    }
 
     VaultSheet("Develop Roll", onDismiss) {
+        if (recipes.isNotEmpty()) {
+            VaultDropdown("Recipe", recipeName,
+                listOf("— none —") + orderedRecipes.map { it.name },
+                { sel ->
+                    recipeName = sel
+                    orderedRecipes.find { it.name == sel }?.let { r ->
+                        process = r.process; developer = r.developer; dilution = r.dilution
+                        temp = r.tempC; devTime = r.devTimeMin
+                        if (r.agitation.isNotBlank()) {
+                            notes = "Agitation: ${r.agitation}" +
+                                if (notes.isNotBlank()) "\n$notes" else ""
+                        }
+                    }
+                })
+            Spacer(Modifier.height(10.dp))
+        }
         VaultDropdown("Process", process, Constants.DEVELOP_PROCESSES, { process = it })
         Spacer(Modifier.height(10.dp))
         AutoCompleteField(developer, { developer = it }, "Developer", Constants.DEV_DB)

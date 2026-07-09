@@ -1154,10 +1154,9 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     VaultSheet(if (ed != null) "Edit Film" else "Add Film", onDismiss) {
         AutoCompleteField(name, { onFilmSelected(it) }, "Film Stock", Constants.FILM_DB, placeholder = "e.g. Kodak Portra 400")
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             VaultTextField(brand, { brand = it }, "Brand", modifier = Modifier.weight(1f))
-            VaultTextField(quantity, { quantity = it }, "Qty", modifier = Modifier.weight(0.4f),
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            QuantityStepper(quantity, { quantity = it }, "Qty", modifier = Modifier.weight(0.9f))
         }
         Spacer(Modifier.height(10.dp))
         VaultDropdown("Type", type, Constants.FILM_TYPES, { type = it })

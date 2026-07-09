@@ -1,3 +1,27 @@
+[v0.6.0] - 2026-07-09
+-
+**Development recipes** (new Darkroom tab)
+- Reusable recipes: film, process, developer, dilution, time @ temperature, push level, agitation scheme and notes. Seeded with common starting points (Tri-X/D-76, HP5+/ID-11/DD-X incl. @1600 push, FP4+, Fomapan/Rodinal, Delta 3200, Rodinal stand, C-41) — clearly labelled as starting points to verify.
+- **One-tap timer from a recipe**: builds the full step sequence (develop + stop/fix/wash, or blix/wash/stabiliser for C-41) and jumps to the Timers tab.
+- **Dev log auto-fill**: the Develop sheet gets a Recipe picker (recipes matching the roll's film float to the top) that fills process, developer, dilution, temp and time.
+- Recipes are included in backups. Database schema v7 → v8 (additive table only).
+
+**Scan EXIF tagger**
+- From a roll's Export dialog: pick your scanned JPEGs and the app writes each frame's shot data as real EXIF — camera make/model, lens, f-number, exposure time, ISO, capture date, GPS and film name — directly into the files. Scans then behave like digital captures in Lightroom, Google Photos, etc.
+- Files are matched to frames in filename order with a frame-offset stepper for misaligned scan batches. JPEG only (EXIF writing limitation).
+
+**Film library & photo wall** (new Stats tabs)
+- **Films**: every stock you've shot, aggregated — roll/shot counts, total spend, date range, thumbnail strip, expandable per-roll history.
+- **Photos**: a 3-column wall of every shot photo, newest first, with a full-screen viewer.
+
+**Small wins**
+- **Global search** from the Dashboard: rolls, shot notes/locations, films, cameras, lenses and accessories; tap a result to jump there.
+- **Exposure habit histograms** in Stats: most-used shutter speeds and apertures across all logged shots.
+- **Home-screen widget**: active roll's frame counter with a one-tap +1 button (instant, no permissions — edit details later in the app).
+- **Stash quantity stepper**: film quantity now adjusts with −/+ arrows around the (still editable) number field.
+
+
+
 [v0.5.0] - 2026-07-02
 -
 **Light meter overhaul**

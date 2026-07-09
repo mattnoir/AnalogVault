@@ -16,7 +16,8 @@ class VaultRepository @Inject constructor(
     private val chemicalDao: ChemicalDao,
     private val zoomLevelDao: ZoomLevelDao,
     private val settingDao: SettingDao,
-    private val bulkRollDao: BulkRollDao
+    private val bulkRollDao: BulkRollDao,
+    private val recipeDao: RecipeDao
 ) {
     // Films
     val films: Flow<List<FilmStock>> = filmDao.getAll()
@@ -56,6 +57,11 @@ class VaultRepository @Inject constructor(
     // Settings
     suspend fun getSetting(key: String): String? = settingDao.get(key)?.value
     suspend fun setSetting(key: String, value: String) = settingDao.upsert(Setting(key, value))
+
+    // Development recipes
+    val recipes: Flow<List<DevRecipe>> = recipeDao.getAll()
+    suspend fun upsertRecipe(r: DevRecipe) = recipeDao.upsert(r)
+    suspend fun deleteRecipe(r: DevRecipe) = recipeDao.delete(r)
 
     // Bulk rolls
     val bulkRolls: Flow<List<BulkRoll>> = bulkRollDao.getAll()

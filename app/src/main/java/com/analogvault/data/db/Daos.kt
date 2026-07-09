@@ -63,6 +63,14 @@ interface BulkRollDao {
 }
 
 @Dao
+interface RecipeDao {
+    @Query("SELECT * FROM recipes ORDER BY name ASC")
+    fun getAll(): Flow<List<DevRecipe>>
+    @Upsert suspend fun upsert(r: DevRecipe)
+    @Delete suspend fun delete(r: DevRecipe)
+}
+
+@Dao
 interface ZoomLevelDao {
     @Query("SELECT * FROM zoom_levels ORDER BY mm ASC")
     fun getAll(): Flow<List<ZoomLevel>>

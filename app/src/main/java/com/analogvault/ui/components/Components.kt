@@ -421,6 +421,42 @@ fun VaultTextField(
     )
 }
 
+// ─── Quantity stepper ─────────────────────────────────────────────────────────
+// Numeric field with −/+ arrows; the field itself stays directly editable.
+
+@Composable
+fun QuantityStepper(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+            onClick = {
+                val v = (value.toIntOrNull() ?: 0) - 1
+                if (v >= 0) onValueChange(v.toString())
+            },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(Icons.Default.Remove, "Decrease", tint = Amber, modifier = Modifier.size(18.dp))
+        }
+        VaultTextField(
+            value = value,
+            onValueChange = { onValueChange(it.filter(Char::isDigit)) },
+            label = label,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(
+            onClick = { onValueChange(((value.toIntOrNull() ?: 0) + 1).toString()) },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(Icons.Default.Add, "Increase", tint = Amber, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
 // ─── Dropdown ─────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)

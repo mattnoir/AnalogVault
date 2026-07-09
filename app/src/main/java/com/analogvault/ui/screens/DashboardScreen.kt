@@ -57,6 +57,7 @@ fun DashboardScreen(
     val isMetric     by vm.isMetric.collectAsState()
 
     val tip = remember { tips.random() }
+    var showSearch by remember { mutableStateOf(false) }
 
     val shooting  = rolls.filter { !it.finished && !it.developed }
     val awaitDev  = rolls.filter { it.finished && !it.developed }
@@ -73,12 +74,19 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Good to see you.", color = AmberBright, fontSize = 24.sp)
-            Text(
-                "${rolls.size} roll${if (rolls.size != 1) "s" else ""} logged" +
-                if (stats.totalShots > 0) " · ${stats.totalShots} shots" else "",
-                color = TextTertiary, fontSize = 12.sp
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Good to see you.", color = AmberBright, fontSize = 24.sp)
+                    Text(
+                        "${rolls.size} roll${if (rolls.size != 1) "s" else ""} logged" +
+                        if (stats.totalShots > 0) " · ${stats.totalShots} shots" else "",
+                        color = TextTertiary, fontSize = 12.sp
+                    )
+                }
+                IconButton(onClick = { showSearch = true }) {
+                    Icon(Icons.Default.Search, "Search everything", tint = TextSecondary)
+                }
+            }
         }
 
         // ── Stat row — each taps into the right subtab ────────────────────────
@@ -217,6 +225,135 @@ fun DashboardScreen(
 
         item { Spacer(Modifier.height(8.dp)) }
     }
+
+    if (showSearch) {
+        GlobalSearchDialog(
+            vm = vm,
+            onOpenRoll  = { id -> showSearch = false; onNavigate(TAB_ACTIVE, 0, id) },
+            onOpenStash = { showSearch = false; onNavigate(TAB_STASH, 0, null) },
+            onDismiss   = { showSearch = false }
+        )
+    }
+}
+
+// ─── Global search ────────────────────────────────────────────────────────────
+
+private data class RollHit(val rollId: String, val title: String, val subtitle: String)
+
+@Composable
+private fun GlobalSearchDialog(
+    vm: MainViewModel,
+    onOpenRoll: (String) -> Unit,
+    onOpenStash: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val rolls       by vm.rolls.collectAsState()
+    val films       by vm.films.collectAsState()
+    val cameras     by vm.cameras.collectAsState()
+    val lenses      by vm.lenses.collectAsState()
+    val accessories by vm.accessories.collectAsState()
+    var query by remember { mutableStateOf("") }
+    val q = query.trim()
+
+    val rollHits = remember(q, rolls, films, cameras) {
+        if (q.length < 2) emptyList() else rolls.mapNotNull { roll ->
+            val filmName = films.find { it.id == roll.filmId }?.name ?: ""
+            val camName  = cameras.find { it.id == roll.cameraId }?.name ?: ""
+            val shotHit = roll.shots.firstOrNull { s ->
+                s.notes.contains(q, true) || s.location.contains(q, true) ||
+                s.lens.contains(q, true) || s.weather.contains(q, true)
+            }
+            when {
+                filmName.contains(q, true) || camName.contains(q, true) ->
+                    RollHit(roll.id, filmName.ifBlank { "Unknown film" },
+                        "$camName · ${roll.shots.size} shots · ${formatDate(roll.startDate)}")
+                shotHit != null ->
+                    RollHit(roll.id, filmName.ifBlank { "Unknown film" },
+                        "shot: ${shotHit.notes.ifBlank { shotHit.location }.take(60)}")
+                else -> null
+            }
+        }.take(10)
+    }
+
+    val gearHits = remember(q, films, cameras, lenses, accessories) {
+        if (q.length < 2) emptyList() else buildList {
+            films.filter { it.name.contains(q, true) || it.brand.contains(q, true) || it.notes.contains(q, true) }
+                .take(4).forEach { add("🎞 ${it.name}" to "film · ×${it.quantity} in stash") }
+            cameras.filter { it.name.contains(q, true) || it.brand.contains(q, true) || it.notes.contains(q, true) }
+                .take(4).forEach { add("📷 ${it.name}" to "camera · ${it.format}") }
+            lenses.filter { it.name.contains(q, true) || it.brand.contains(q, true) }
+                .take(4).forEach { add("🔍 ${it.name}" to "lens · ${it.focalLength}mm f/${it.maxAperture}") }
+            accessories.filter { it.name.contains(q, true) || it.brand.contains(q, true) || it.notes.contains(q, true) }
+                .take(4).forEach { add("🧰 ${it.name}" to "accessory · ${it.type}") }
+        }.take(12)
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            Modifier.fillMaxSize()
+                .drawBehind { drawRect(color = Bg) }
+                .padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.analogvault.ui.components.VaultTextField(
+                    value = query, onValueChange = { query = it },
+                    label = "Search rolls, shots, gear…",
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, "Close", tint = TextSecondary)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (q.length < 2) {
+                    item { Text("Type at least 2 characters", color = TextTertiary, fontSize = 12.sp) }
+                }
+                if (rollHits.isNotEmpty()) {
+                    item { Text("ROLLS", color = TextTertiary, fontSize = 10.sp) }
+                    items(rollHits.size) { i ->
+                        val hit = rollHits[i]
+                        DashCardRowLike(onClick = { onOpenRoll(hit.rollId) }) {
+                            Text(hit.title, color = TextPrimary, fontSize = 14.sp)
+                            Text(hit.subtitle, color = TextTertiary, fontSize = 11.sp)
+                        }
+                    }
+                }
+                if (gearHits.isNotEmpty()) {
+                    item { Spacer(Modifier.height(4.dp)); Text("STASH", color = TextTertiary, fontSize = 10.sp) }
+                    items(gearHits.size) { i ->
+                        val (title, subtitle) = gearHits[i]
+                        DashCardRowLike(onClick = onOpenStash) {
+                            Text(title, color = TextPrimary, fontSize = 14.sp)
+                            Text(subtitle, color = TextTertiary, fontSize = 11.sp)
+                        }
+                    }
+                }
+                if (q.length >= 2 && rollHits.isEmpty() && gearHits.isEmpty()) {
+                    item { Text("No matches for \"$q\"", color = TextTertiary, fontSize = 12.sp) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashCardRowLike(onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx()))
+            }
+            .border(1.dp, Border, RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(10.dp),
+        content = content
+    )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

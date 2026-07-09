@@ -23,18 +23,20 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.analogvault.data.model.Chemical
+import com.analogvault.data.model.DevRecipe
 import com.analogvault.ui.DarkroomTimerState
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
+import com.analogvault.util.toDecimalOrNull
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
 @Composable
 fun DarkroomScreen(vm: MainViewModel) {
-    val tabs = listOf("Chemistry", "Timers")
+    val tabs = listOf("Chemistry", "Recipes", "Timers")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
@@ -60,7 +62,8 @@ fun DarkroomScreen(vm: MainViewModel) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
                 0 -> ChemistryTab(vm)
-                1 -> TimersTab(vm)
+                1 -> RecipesTab(vm, onTimerStarted = { scope.launch { pagerState.animateScrollToPage(2) } })
+                2 -> TimersTab(vm)
                 else -> ChemistryTab(vm)
             }
         }
@@ -170,6 +173,159 @@ fun ChemistryTab(vm: MainViewModel) {
         SetRollsDialog(chem, vm.rolledCount(chem),
             onConfirm = { count -> vm.setChemicalRolls(chem.id, count); setRollsDialog = null },
             onDismiss = { setRollsDialog = null })
+    }
+}
+
+// ─── Recipes tab ──────────────────────────────────────────────────────────────
+
+/** Develop step from the recipe + standard finishing steps for its process. */
+fun timerFromRecipe(r: DevRecipe): DevTimer {
+    val devSec = ((r.devTimeMin.toDecimalOrNull() ?: 0.0) * 60).toInt().coerceAtLeast(1)
+    val steps = mutableListOf(DevStep(name = "Develop", durationSec = devSec, color = AmberBright))
+    when {
+        r.process.startsWith("C-41") -> {
+            steps += DevStep(name = "Blix",       durationSec = 6 * 60 + 30, color = OrangeWarn)
+            steps += DevStep(name = "Wash",       durationSec = 3 * 60,      color = BlueInfo)
+            steps += DevStep(name = "Stabiliser", durationSec = 60,          color = GreenOk)
+        }
+        else -> { // B&W variants (standard / stand / semi-stand)
+            steps += DevStep(name = "Stop Bath",  durationSec = 60,          color = OrangeWarn)
+            steps += DevStep(name = "Fixer",      durationSec = 5 * 60,      color = BlueInfo)
+            steps += DevStep(name = "Wash",       durationSec = 10 * 60,     color = BlueInfo)
+        }
+    }
+    return DevTimer(name = r.name.ifBlank { "${r.developer} ${r.dilution}".trim() }, steps = steps)
+}
+
+@Composable
+fun RecipesTab(vm: MainViewModel, onTimerStarted: () -> Unit) {
+    val recipes by vm.recipes.collectAsState()
+    var showSheet     by remember { mutableStateOf(false) }
+    var editing       by remember { mutableStateOf<DevRecipe?>(null) }
+    var confirmDelete by remember { mutableStateOf<DevRecipe?>(null) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item { SectionTitle("Dev Recipes", "${recipes.size} recipes") }
+        item {
+            Text("Built-in times are published starting points — always verify against " +
+                 "your film batch, developer age and workflow.",
+                color = TextTertiary, fontSize = 11.sp)
+        }
+        if (recipes.isEmpty()) item { EmptyState("No recipes yet") }
+        items(recipes, key = { it.id }) { r ->
+            VaultCard {
+                Text(r.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp)
+                Text("${r.developer}${if (r.dilution.isNotBlank()) " · ${r.dilution}" else ""}",
+                    color = TextSecondary, fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
+                TagRow() {
+                    if (r.filmName.isNotBlank()) VaultTag(r.filmName)
+                    VaultTag("${r.devTimeMin} min @ ${r.tempC}°C", textColor = AmberBright)
+                    if (r.pushStops != 0)
+                        VaultTag(if (r.pushStops > 0) "push +${r.pushStops}" else "pull ${r.pushStops}",
+                            textColor = OrangeWarn)
+                    if (r.isBuiltIn) VaultTag("built-in", textColor = TextTertiary)
+                }
+                if (r.agitation.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("Agitation: ${r.agitation}", color = TextTertiary, fontSize = 10.sp)
+                }
+                if (r.notes.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(r.notes, color = TextTertiary, fontSize = 11.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VaultButton("▶ Start Timer", small = true, onClick = {
+                        vm.startTimer(timerFromRecipe(r)); onTimerStarted()
+                    })
+                    VaultButton("Edit", small = true, ghost = true,
+                        onClick = { editing = r; showSheet = true })
+                    VaultButton("Delete", small = true, danger = true,
+                        onClick = { confirmDelete = r })
+                }
+            }
+        }
+        item {
+            VaultButton("+ Add Recipe", modifier = Modifier.fillMaxWidth(),
+                onClick = { editing = null; showSheet = true })
+        }
+    }
+
+    if (showSheet) {
+        RecipeSheet(editing, onDismiss = { showSheet = false; editing = null }) {
+            vm.upsertRecipe(it); showSheet = false; editing = null
+        }
+    }
+    confirmDelete?.let { r ->
+        ConfirmDialog("Delete recipe \"${r.name}\"?",
+            onConfirm = { vm.deleteRecipe(r); confirmDelete = null },
+            onDismiss = { confirmDelete = null })
+    }
+}
+
+@Composable
+fun RecipeSheet(ed: DevRecipe?, onDismiss: () -> Unit, onSave: (DevRecipe) -> Unit) {
+    var name       by remember { mutableStateOf(ed?.name ?: "") }
+    var filmName   by remember { mutableStateOf(ed?.filmName ?: "") }
+    var process    by remember { mutableStateOf(ed?.process ?: "B&W (Standard)") }
+    var developer  by remember { mutableStateOf(ed?.developer ?: "") }
+    var dilution   by remember { mutableStateOf(ed?.dilution ?: "") }
+    var tempC      by remember { mutableStateOf(ed?.tempC ?: "20") }
+    var devTimeMin by remember { mutableStateOf(ed?.devTimeMin ?: "") }
+    var pushStops  by remember { mutableIntStateOf(ed?.pushStops ?: 0) }
+    var agitation  by remember { mutableStateOf(ed?.agitation ?: "30s initial, then 10s/min") }
+    var notes      by remember { mutableStateOf(ed?.notes ?: "") }
+
+    VaultSheet(if (ed != null) "Edit Recipe" else "Add Recipe", onDismiss) {
+        VaultTextField(name, { name = it }, "Recipe name", placeholder = "HP5+ in DD-X 1+4")
+        Spacer(Modifier.height(10.dp))
+        AutoCompleteField(filmName, { filmName = it }, "Film (optional)", Constants.FILM_DB)
+        Spacer(Modifier.height(10.dp))
+        VaultDropdown("Process", process, Constants.DEVELOP_PROCESSES, { process = it })
+        Spacer(Modifier.height(10.dp))
+        AutoCompleteField(developer, { developer = it }, "Developer", Constants.DEV_DB)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            VaultTextField(dilution, { dilution = it }, "Dilution", modifier = Modifier.weight(1f), placeholder = "1+4")
+            VaultTextField(tempC, { tempC = it }, "Temp (°C)", modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            VaultTextField(devTimeMin, { devTimeMin = it }, "Dev time (min)", modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal, placeholder = "9.5")
+            Column {
+                Text("Push/pull", color = TextTertiary, fontSize = 11.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { if (pushStops > -3) pushStops-- }, Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Remove, null, tint = Amber, modifier = Modifier.size(16.dp))
+                    }
+                    Text(if (pushStops > 0) "+$pushStops" else "$pushStops",
+                        color = if (pushStops == 0) TextSecondary else OrangeWarn, fontSize = 14.sp)
+                    IconButton(onClick = { if (pushStops < 3) pushStops++ }, Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Add, null, tint = Amber, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        VaultTextField(agitation, { agitation = it }, "Agitation")
+        Spacer(Modifier.height(10.dp))
+        VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
+        Spacer(Modifier.height(16.dp))
+        VaultButton("Save Recipe", modifier = Modifier.fillMaxWidth(), onClick = {
+            onSave(DevRecipe(
+                id = ed?.id ?: uid(), name = name, filmName = filmName, process = process,
+                developer = developer, dilution = dilution, tempC = tempC,
+                devTimeMin = devTimeMin, pushStops = pushStops, agitation = agitation,
+                notes = notes, isBuiltIn = ed?.isBuiltIn ?: false
+            ))
+        })
     }
 }
 

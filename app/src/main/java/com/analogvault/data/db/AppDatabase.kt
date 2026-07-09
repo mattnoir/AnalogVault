@@ -107,13 +107,37 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/** Add recipes table (v7 → v8) */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `recipes` (
+                `id` TEXT NOT NULL,
+                `name` TEXT NOT NULL DEFAULT '',
+                `filmName` TEXT NOT NULL DEFAULT '',
+                `process` TEXT NOT NULL DEFAULT 'B&W (Standard)',
+                `developer` TEXT NOT NULL DEFAULT '',
+                `dilution` TEXT NOT NULL DEFAULT '',
+                `tempC` TEXT NOT NULL DEFAULT '20',
+                `devTimeMin` TEXT NOT NULL DEFAULT '',
+                `pushStops` INTEGER NOT NULL DEFAULT 0,
+                `agitation` TEXT NOT NULL DEFAULT '30s initial, then 10s/min',
+                `notes` TEXT NOT NULL DEFAULT '',
+                `isBuiltIn` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`id`)
+            )
+        """.trimIndent())
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
-        ZoomLevel::class, Setting::class, BulkRoll::class
+        ZoomLevel::class, Setting::class, BulkRoll::class,
+        DevRecipe::class
     ],
-    version = 7,
+    version = 8,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true
@@ -134,4 +158,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun zoomLevelDao(): ZoomLevelDao
     abstract fun settingDao(): SettingDao
     abstract fun bulkRollDao(): BulkRollDao
+    abstract fun recipeDao(): RecipeDao
 }

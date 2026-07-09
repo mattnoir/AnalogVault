@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import com.analogvault.util.Constants
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -33,7 +34,7 @@ fun StatsScreen(vm: MainViewModel) {
     val films    by vm.films.collectAsState()
     val currency by vm.currency.collectAsState()
 
-    val tabs = listOf("Numbers", "Map")
+    val tabs = listOf("Numbers", "Films", "Map", "Photos")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
@@ -61,7 +62,9 @@ fun StatsScreen(vm: MainViewModel) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
                 0    -> StatsNumbers(stats, currency)
-                else -> StatsMap(vm)
+                1    -> StatsFilms(vm, currency)
+                2    -> StatsMap(vm)
+                else -> StatsPhotos(vm)
             }
         }
     }
@@ -221,6 +224,34 @@ fun StatsNumbers(stats: Stats, currency: String = "€") {
             }
         }
 
+        // Exposure habits — which settings actually get used
+        if (stats.byShutter.isNotEmpty()) {
+            item { SectionTitle("Most-Used Shutter Speeds") }
+            item {
+                Column(Modifier.fillMaxWidth().drawBehind {
+                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    stats.byShutter.forEach { (name, count) ->
+                        RankRow(name, count, stats.byShutter.maxOfOrNull { it.value } ?: 1, AmberBright)
+                    }
+                }
+            }
+        }
+        if (stats.byAperture.isNotEmpty()) {
+            item { SectionTitle("Most-Used Apertures") }
+            item {
+                Column(Modifier.fillMaxWidth().drawBehind {
+                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    stats.byAperture.forEach { (name, count) ->
+                        RankRow("f/$name", count, stats.byAperture.maxOfOrNull { it.value } ?: 1, OrangeWarn)
+                    }
+                }
+            }
+        }
+
         if (stats.byProc.isNotEmpty()) {
             item { SectionTitle("Dev Processes") }
             item {
@@ -237,6 +268,157 @@ fun StatsNumbers(stats: Stats, currency: String = "€") {
 
         if (stats.totalRolls == 0) {
             item { EmptyState("No rolls shot yet") }
+        }
+    }
+}
+
+// ─── Films (library) tab ──────────────────────────────────────────────────────
+
+private data class FilmGroup(val name: String, val rolls: List<com.analogvault.data.model.Roll>)
+
+@Composable
+fun StatsFilms(vm: MainViewModel, currency: String) {
+    val rolls by vm.rolls.collectAsState()
+    val films by vm.films.collectAsState()
+    var expanded by remember { mutableStateOf<String?>(null) }
+
+    val groups = remember(rolls, films) {
+        rolls.groupBy { roll -> films.find { it.id == roll.filmId }?.name ?: "Unknown" }
+            .map { (name, rs) -> FilmGroup(name, rs.sortedByDescending { it.startDate }) }
+            .sortedByDescending { it.rolls.size }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item { SectionTitle("Film Library", "${groups.size} stocks shot") }
+        if (groups.isEmpty()) item { EmptyState("No rolls shot yet") }
+        items(groups, key = { it.name }) { g ->
+            val shots  = g.rolls.sumOf { it.shots.size }
+            val cost   = g.rolls.sumOf { roll ->
+                (films.find { it.id == roll.filmId }?.costPerRoll ?: 0.0) + roll.devCost + roll.scanCost
+            }
+            val thumbs = g.rolls.flatMap { it.shots }
+                .mapNotNull { it.photoThumbPath.ifBlank { null } }.take(6)
+            val dates  = g.rolls.mapNotNull { it.startDate.ifBlank { null } }.sorted()
+            val isOpen = expanded == g.name
+
+            VaultCard(onClick = { expanded = if (isOpen) null else g.name }) {
+                Text(g.name, color = TextPrimary, fontSize = 15.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                TagRow() {
+                    VaultTag("${g.rolls.size} roll${if (g.rolls.size != 1) "s" else ""}", textColor = AmberBright)
+                    VaultTag("$shots shots")
+                    if (cost > 0) VaultTag("${currency}%.2f".format(cost), textColor = GreenOk)
+                }
+                if (dates.isNotEmpty()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text("${formatDate(dates.first())} — ${formatDate(dates.last())}",
+                        color = TextTertiary, fontSize = 10.sp)
+                }
+                if (thumbs.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        thumbs.forEach { path ->
+                            coil.compose.AsyncImage(
+                                model = java.io.File(path), contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+                            )
+                        }
+                    }
+                }
+                if (isOpen) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = Border)
+                    Spacer(Modifier.height(6.dp))
+                    g.rolls.forEach { roll ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatDate(roll.startDate), color = TextSecondary, fontSize = 12.sp)
+                            Text("${roll.shots.size} shots", color = TextTertiary, fontSize = 11.sp)
+                            val (tag, tagColor) = when {
+                                roll.scanned   -> "Scanned"   to GreenOk
+                                roll.developed -> "Developed" to GreenOk
+                                roll.finished  -> "Finished"  to Amber
+                                else           -> "Shooting"  to BlueInfo
+                            }
+                            VaultTag(tag, textColor = tagColor)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Photos (wall) tab ────────────────────────────────────────────────────────
+
+private data class PhotoWallItem(val path: String, val filmName: String, val date: String)
+
+@Composable
+fun StatsPhotos(vm: MainViewModel) {
+    val rolls by vm.rolls.collectAsState()
+    val films by vm.films.collectAsState()
+    var lightbox by remember { mutableStateOf<PhotoWallItem?>(null) }
+
+    val wall = remember(rolls, films) {
+        rolls.flatMap { roll ->
+            val filmName = films.find { it.id == roll.filmId }?.name ?: ""
+            roll.shots.mapNotNull { s ->
+                s.photoThumbPath.ifBlank { null }?.let { PhotoWallItem(it, filmName, s.date) }
+            }
+        }.sortedByDescending { it.date }
+    }
+
+    if (wall.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            EmptyState("No shot photos yet — attach photos when logging shots")
+        }
+    } else {
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(wall.size) { i ->
+                val item = wall[i]
+                coil.compose.AsyncImage(
+                    model = java.io.File(item.path), contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { lightbox = item }
+                )
+            }
+        }
+    }
+
+    lightbox?.let { item ->
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { lightbox = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.95f))
+                .clickable { lightbox = null }, contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    coil.compose.AsyncImage(
+                        model = java.io.File(item.path), contentDescription = null,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp)
+                    )
+                    Text(
+                        listOf(item.filmName, item.date).filter { it.isNotBlank() }.joinToString(" · "),
+                        color = TextSecondary, fontSize = 12.sp
+                    )
+                }
+            }
         }
     }
 }

@@ -34,6 +34,7 @@ data class VaultBackup(
     val bulkRolls: List<BulkRoll> = emptyList(),
     val chemicals: List<Chemical> = emptyList(),
     val zoomLevels: List<ZoomLevel> = emptyList(),
+    val recipes: List<DevRecipe> = emptyList(),   // additive since 0.6.0; absent in older files
     val owmKey: String = ""
     // photos are stored as separate files inside the ZIP — not embedded here
 )
@@ -82,6 +83,7 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
     bulkRolls   = (bulkRolls ?: emptyList()).filter { it.id != null },
     chemicals   = (chemicals ?: emptyList()).filter { it.id != null },
     zoomLevels  = (zoomLevels ?: emptyList()).filter { it.id != null },
+    recipes     = (recipes ?: emptyList()).filter { it.id != null },
     owmKey      = owmKey ?: ""
 )
 
@@ -143,6 +145,7 @@ class BackupManager @Inject constructor(
                 bulkRolls   = repo.bulkRolls.first(),
                 chemicals   = repo.chemicals.first(),
                 zoomLevels  = repo.zoomLevels.first(),
+                recipes     = repo.recipes.first(),
                 owmKey      = repo.getSetting("owm_key") ?: ""
             )
 
@@ -363,6 +366,7 @@ class BackupManager @Inject constructor(
         backup.bulkRolls.forEach   { repo.upsertBulkRoll(it) }
         backup.chemicals.forEach   { repo.upsertChemical(it) }
         backup.zoomLevels.forEach  { repo.upsertZoomLevel(it) }
+        backup.recipes.forEach     { repo.upsertRecipe(it) }
         if (backup.owmKey.isNotBlank()) repo.setSetting("owm_key", backup.owmKey)
     }
 }

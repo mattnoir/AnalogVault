@@ -10,6 +10,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.analogvault.data.export.ExportResult
 import com.analogvault.data.export.RollExporter
+import com.analogvault.data.export.ScanExifTagger
+import com.analogvault.data.export.scanDisplayName
 import com.analogvault.data.model.*
 import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
@@ -22,6 +24,7 @@ import com.analogvault.util.Constants
 import com.analogvault.util.Exposure
 import com.analogvault.util.legacyPhotoCacheDir
 import com.analogvault.util.photoDir
+import androidx.glance.appwidget.updateAll
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +42,8 @@ class MainViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repo: VaultRepository,
     private val weatherApi: WeatherApi,
-    private val rollExporter: RollExporter
+    private val rollExporter: RollExporter,
+    private val scanExifTagger: ScanExifTagger
 ) : ViewModel() {
 
     val films       = repo.films.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -50,6 +54,7 @@ class MainViewModel @Inject constructor(
     val chemicals   = repo.chemicals.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val zoomLevels  = repo.zoomLevels.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val bulkRolls   = repo.bulkRolls.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val recipes     = repo.recipes.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // Settings
     private val _owmKey = MutableStateFlow("")
@@ -151,6 +156,14 @@ class MainViewModel @Inject constructor(
                     ZoomLevel(uid(), "3x", 70),
                     ZoomLevel(uid(), "10x", 230)
                 ).forEach { repo.upsertZoomLevel(it) }
+            }
+            // Seed built-in development recipes once (starting points, user-editable).
+            // Guarded by a setting so deleting them doesn't resurrect on next launch.
+            if (repo.getSetting("recipes_seeded") != "true") {
+                if (repo.recipes.first().isEmpty()) {
+                    seedRecipes().forEach { repo.upsertRecipe(it) }
+                }
+                repo.setSetting("recipes_seeded", "true")
             }
         }
     }
@@ -296,6 +309,7 @@ class MainViewModel @Inject constructor(
                 .format(java.util.Date())
         )
         repo.upsertRoll(roll.copy(shots = roll.shots + shot))
+        refreshWidget()
 
         if (hasLocationPermission()) {
             getCurrentLatLon(appContext)?.let { (lat, lon) ->
@@ -306,6 +320,13 @@ class MainViewModel @Inject constructor(
                 }))
             }
         }
+    }
+
+    /** Keep the home-screen widget's frame counter in sync — never fatal. */
+    private suspend fun refreshWidget() {
+        try {
+            com.analogvault.widget.QuickLogWidget().updateAll(appContext)
+        } catch (_: Exception) { }
     }
 
     private fun hasLocationPermission(): Boolean =
@@ -345,6 +366,25 @@ class MainViewModel @Inject constructor(
     // ─── Zoom levels ─────────────────────────────────────────────────────────
     fun upsertZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.upsertZoomLevel(z) }
     fun deleteZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.deleteZoomLevel(z) }
+
+    // ─── Development recipes ─────────────────────────────────────────────────
+    fun upsertRecipe(r: DevRecipe) = viewModelScope.launch { repo.upsertRecipe(r) }
+    fun deleteRecipe(r: DevRecipe) = viewModelScope.launch { repo.deleteRecipe(r) }
+
+    /** Built-in starting-point recipes (times from common published data — verify for your process). */
+    private fun seedRecipes(): List<DevRecipe> = listOf(
+        DevRecipe(uid(), "Tri-X in D-76 1+1", "Kodak Tri-X 400", "B&W (Standard)", "Kodak D-76", "1+1", "20", "9.75", 0, isBuiltIn = true),
+        DevRecipe(uid(), "HP5+ in ID-11 stock", "Ilford HP5 Plus 400", "B&W (Standard)", "Ilford ID-11", "stock", "20", "6.5", 0, isBuiltIn = true),
+        DevRecipe(uid(), "HP5+ in DD-X 1+4", "Ilford HP5 Plus 400", "B&W (Standard)", "Ilford DD-X", "1+4", "20", "9", 0, isBuiltIn = true),
+        DevRecipe(uid(), "HP5+ @1600 in DD-X 1+4", "Ilford HP5 Plus 400", "B&W (Standard)", "Ilford DD-X", "1+4", "20", "13", 2, isBuiltIn = true),
+        DevRecipe(uid(), "FP4+ in ID-11 1+1", "Ilford FP4 Plus 125", "B&W (Standard)", "Ilford ID-11", "1+1", "20", "11", 0, isBuiltIn = true),
+        DevRecipe(uid(), "Fomapan 400 in Rodinal 1+50", "Fomapan 400", "B&W (Standard)", "Rodinal (R09)", "1+50", "20", "11", 0, isBuiltIn = true),
+        DevRecipe(uid(), "Delta 3200 in DD-X 1+4", "Ilford Delta 3200", "B&W (Standard)", "Ilford DD-X", "1+4", "20", "9.5", 0, isBuiltIn = true),
+        DevRecipe(uid(), "Rodinal stand 1+100", "", "B&W (Stand)", "Rodinal (R09)", "1+100", "20", "60", 0,
+            agitation = "30s initial, then none (stand)", isBuiltIn = true),
+        DevRecipe(uid(), "C-41 colour kit", "", "C-41 (Color)", "Kodak C-41 Kit", "", "38", "3.25", 0,
+            agitation = "10s initial, then 4 inversions/30s", isBuiltIn = true)
+    )
 
     // ─── Bulk Rolls ───────────────────────────────────────────────────────────
     fun upsertBulkRoll(b: BulkRoll) = viewModelScope.launch { repo.upsertBulkRoll(b) }
@@ -386,6 +426,26 @@ class MainViewModel @Inject constructor(
     private fun toastExport(res: ExportResult) {
         val msg = when (res) { is ExportResult.Success -> res.message; is ExportResult.Error -> res.message }
         android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * Write shot-log EXIF into scanned files: files sorted by display name are
+     * matched to frames in order; [offset] shifts alignment (file i → frame i+offset).
+     */
+    fun tagScans(uris: List<android.net.Uri>, roll: Roll, offset: Int) = viewModelScope.launch {
+        val film = films.value.find { it.id == roll.filmId }
+        val cam  = cameras.value.find { it.id == roll.cameraId }
+        val sorted = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            uris.sortedBy { scanDisplayName(appContext, it) }
+        }
+        val pairs = sorted.mapIndexedNotNull { i, uri ->
+            roll.shots.getOrNull(i + offset)?.let { uri to it }
+        }
+        if (pairs.isEmpty()) {
+            toastExport(ExportResult.Error("No frames matched — check the offset"))
+            return@launch
+        }
+        toastExport(scanExifTagger.tag(appContext, pairs, film, cam))
     }
 
     // ─── Darkroom timer ──────────────────────────────────────────────────────
@@ -550,6 +610,12 @@ class MainViewModel @Inject constructor(
         val byProc = r.filter { it.devLog != null }
             .groupBy { it.devLog!!.process.ifBlank { "Unknown" } }
             .mapValues { it.value.size }.entries.sortedByDescending { it.value }
+        // Exposure habit histograms across all logged shots
+        val allShots = r.flatMap { it.shots }
+        val byShutter = allShots.mapNotNull { it.shutter.ifBlank { null } }
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(8)
+        val byAperture = allShots.mapNotNull { it.aperture.ifBlank { null } }
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(8)
         // Film cost = per-roll film cost of shot rolls (stash films + bulk-cut rolls carry an
         // amortised costPerRoll) PLUS the value of bulk film not yet cut into rolls. Counting
         // only the uncut remainder avoids double-counting frames already cut into stash/rolls.
@@ -583,6 +649,8 @@ class MainViewModel @Inject constructor(
             byCam = byCam,
             byMonth = byMonth,
             byProc = byProc,
+            byShutter = byShutter,
+            byAperture = byAperture,
             totalFilmCost = filmRollCost + bulkRemaining,
             totalDevCost  = r.sumOf { it.devCost },
             totalScanCost = r.sumOf { it.scanCost },
@@ -626,6 +694,8 @@ data class Stats(
     val byCam: List<Map.Entry<String, Int>> = emptyList(),
     val byMonth: List<Map.Entry<String, Int>> = emptyList(),
     val byProc: List<Map.Entry<String, Int>> = emptyList(),
+    val byShutter: List<Map.Entry<String, Int>> = emptyList(),
+    val byAperture: List<Map.Entry<String, Int>> = emptyList(),
     // Cost totals
     val totalFilmCost: Double = 0.0,
     val totalDevCost: Double = 0.0,

@@ -14,8 +14,8 @@ android {
         applicationId = "com.analogvault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.5.0"
+        versionCode = 60
+        versionName = "0.6.0"
     }
 
     signingConfigs {
@@ -96,6 +96,9 @@ dependencies {
     implementation(libs.work.runtime)
     implementation(libs.hilt.work)
     ksp(libs.hilt.androidx.compiler)
+
+    // Home-screen quick-log widget
+    implementation(libs.glance.appwidget)
 
     implementation(libs.coil.compose)
     implementation(libs.coroutines.android)

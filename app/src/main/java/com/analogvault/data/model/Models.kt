@@ -192,6 +192,24 @@ data class BulkRoll(
     val totalCost: Double = 0.0      // total price of the bulk canister; 0 = gifted / unknown
 )
 
+// ─── Development Recipe ──────────────────────────────────────────────────────
+
+@Entity(tableName = "recipes")
+data class DevRecipe(
+    @PrimaryKey val id: String,
+    val name: String = "",            // "HP5+ in DD-X 1+4"
+    val filmName: String = "",
+    val process: String = "B&W (Standard)",
+    val developer: String = "",
+    val dilution: String = "",
+    val tempC: String = "20",
+    val devTimeMin: String = "",      // decimal minutes
+    val pushStops: Int = 0,           // intended EI shift (e.g. HP5+ @1600 = +2)
+    val agitation: String = "30s initial, then 10s/min",
+    val notes: String = "",
+    val isBuiltIn: Boolean = false    // seeded starting points — user-editable anyway
+)
+
 // ─── Zoom Level (for light meter) ─────────────────────────────────────────────
 
 @Entity(tableName = "zoom_levels")

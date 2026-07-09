@@ -44,6 +44,19 @@
 
         <!-- No Google Maps API key needed — using OpenStreetMap (osmdroid) -->
 
+        <!-- Home-screen quick-log widget (+1 frame on the active roll) -->
+        <receiver
+            android:name=".widget.QuickLogWidgetReceiver"
+            android:exported="true"
+            android:label="Quick Log">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quicklog_widget_info" />
+        </receiver>
+
         <!-- WorkManager: on-demand init via Configuration.Provider (HiltWorkerFactory),
              so the default startup initializer must be removed -->
         <provider
