@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.analogvault.ui.MainViewModel
+import com.analogvault.ui.film.filmGrain
 import com.analogvault.ui.screens.*
 import com.analogvault.ui.theme.*
 import dagger.hilt.android.AndroidEntryPoint
@@ -58,7 +60,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        // Both bars transparent with light icons, so the void black the root
+        // container paints runs edge to edge. `dark` here means "dark background,
+        // therefore light icons" — it is not a bar colour. Passing a transparent
+        // scrim also suppresses the translucent plate enableEdgeToEdge would
+        // otherwise put behind the gesture bar below API 29.
+        enableEdgeToEdge(
+            statusBarStyle     = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
 
         // Tell the LTPO display to stay at 120 Hz while this window is visible.
         //
@@ -83,7 +94,21 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        setContent { AnalogVaultTheme { VaultApp() } }
+        setContent {
+            FilmTheme {
+                // The grain is applied exactly once, here, on the root container —
+                // one tiled draw for the whole tree. Never per screen and never
+                // per list item; see FilmModifiers.filmGrain.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(FilmTheme.colors.void)
+                        .filmGrain()
+                ) {
+                    VaultApp()
+                }
+            }
+        }
     }
 }
 

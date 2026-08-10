@@ -205,10 +205,13 @@ fun ActiveScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        TabRow(
+        // Scrollable, not fixed: "In Camera (12)" does not fit a quarter of the
+        // screen and a fixed TabRow wraps the label instead of scrolling.
+        ScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = Bg2,
             contentColor = Amber,
+            edgePadding = 0.dp,
             indicator = { positions ->
                 TabRowDefaults.SecondaryIndicator(
                     Modifier.tabIndicatorOffset(positions[pagerState.currentPage]), color = Amber

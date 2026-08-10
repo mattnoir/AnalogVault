@@ -136,7 +136,7 @@ class MainViewModel @Inject constructor(
             _meterCalibThirds.value = repo.getSetting("meter_calib_thirds")?.toIntOrNull() ?: 0
             _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
-            _meterMetering.value = repo.getSetting("meter_metering") ?: Constants.METERING_TYPES[0]
+            _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
             _meterMode.value     = repo.getSetting("meter_mode") ?: "shutter"
             _meterAperture.value = repo.getSetting("meter_aperture")?.toDoubleOrNull() ?: 8.0
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"

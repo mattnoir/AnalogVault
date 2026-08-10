@@ -15,10 +15,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import com.analogvault.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -438,7 +441,15 @@ fun VaultDropdown(
             value = selected,
             onValueChange = {},
             readOnly = true,
-            label = { Text(label, color = TextTertiary, fontSize = 11.sp) },
+            // The field is never taller than one line. Without this a value that
+            // does not fit the column — "1/125" in the meter's shutter dropdown —
+            // wraps mid-token to "1/1 / 25" instead of staying on one row.
+            singleLine = true,
+            // Slightly smaller than body text so the longest values these fields
+            // hold — "135 (35mm)", "Color Negative (C-41)" — fit a half-width
+            // column instead of being clipped by the single-line constraint.
+            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+            label = { Text(label, color = TextTertiary, fontSize = 11.sp, maxLines = 1) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Amber, unfocusedBorderColor = Border,
@@ -508,6 +519,32 @@ fun AutoCompleteField(
 
 // ─── Modal bottom sheet wrapper ───────────────────────────────────────────────
 
+/**
+ * Paint a dialog window's system bars void black with light icons.
+ *
+ * Sheets and dialogs live in their own window. That window inherits neither the
+ * activity's `enableEdgeToEdge` treatment nor the `android:statusBarColor` /
+ * `android:navigationBarColor` declared on the activity theme — it comes up with
+ * the platform defaults instead, which on a light-themed device means a white
+ * plate under the gesture bar and a see-through status bar that a full-height
+ * sheet's content scrolls beneath. Call this from inside the sheet's content,
+ * where the dialog window exists.
+ */
+@Composable
+@Suppress("DEPRECATION") // statusBarColor/navigationBarColor: no replacement below API 35
+private fun VoidSystemBars() {
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+        window.statusBarColor = android.graphics.Color.BLACK
+        window.navigationBarColor = android.graphics.Color.BLACK
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultSheet(
@@ -532,6 +569,7 @@ fun VaultSheet(
         // Remove the default drag handle — we show our own title row with X button
         dragHandle       = null
     ) {
+        VoidSystemBars()
         Column(modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)

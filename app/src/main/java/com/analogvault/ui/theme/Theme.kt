@@ -1,10 +1,13 @@
 package com.analogvault.ui.theme
 
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
+//
+// The amber palette from before the Dye Layer redesign. Still referenced by
+// every screen that has not been converted yet; screens migrate to
+// `FilmTheme.colors` one at a time. The Material colour scheme itself now comes
+// from FilmTheme.kt — see the note on `surfaceTint` there.
 val Bg        = Color(0xFF0E0C0A)
 val Bg2       = Color(0xFF181512)
 val Bg3       = Color(0xFF221E18)
@@ -21,36 +24,3 @@ val BlueInfo  = Color(0xFF6AB0D4)
 val RedErr    = Color(0xFFC45050)
 val OrangeWarn= Color(0xFFE0A952)
 
-private val darkColorScheme = darkColorScheme(
-    primary          = Amber,
-    onPrimary        = Bg,
-    primaryContainer = Bg4,
-    onPrimaryContainer = AmberBright,
-    secondary        = AmberDark,
-    onSecondary      = TextPrimary,
-    secondaryContainer = Bg3,
-    onSecondaryContainer = TextSecondary,
-    background       = Bg,
-    onBackground     = TextPrimary,
-    surface          = Bg2,
-    onSurface        = TextPrimary,
-    surfaceVariant   = Bg3,
-    onSurfaceVariant = TextSecondary,
-    outline          = Border,
-    outlineVariant   = AmberDark,
-    error            = RedErr,
-    onError          = Bg
-)
-
-@Composable
-fun AnalogVaultTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme,
-        typography = Typography(
-            // Use system fonts; in production swap for DM Serif Display / DM Mono via downloadable fonts
-            displayLarge = MaterialTheme.typography.displayLarge,
-            bodyLarge = MaterialTheme.typography.bodyLarge
-        ),
-        content = content
-    )
-}

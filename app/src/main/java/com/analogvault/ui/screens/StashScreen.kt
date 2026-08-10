@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.sp
 import com.analogvault.data.model.*
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
+import com.analogvault.ui.film.FilmChip
+import com.analogvault.ui.film.FilmStockCard
+import com.analogvault.ui.film.rebateLine
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
@@ -51,10 +54,14 @@ fun StashScreen(vm: MainViewModel) {
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
-        TabRow(
+        // Scrollable, not fixed: four equal columns are narrower than the word
+        // "Accessories" at this size, and a fixed TabRow wraps it to "Accessorie / s"
+        // rather than shrinking or scrolling.
+        ScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = Bg2,
             contentColor = Amber,
+            edgePadding = 0.dp,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
                     Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]), color = Amber
@@ -155,6 +162,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("Film Stash", color = Amber, fontSize = 18.sp)
+                Spacer(Modifier.width(6.dp))
                 Text("${displayFilms.size}/${films.size}", color = TextTertiary, fontSize = 10.sp)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
@@ -229,9 +237,9 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         items(displayFilms, key = { it.id }, contentType = { "film" }) { film ->
             // Compute expiry once per item, not every frame
             val expKey = film.expiryDate
-            val (exLabel, exColor, _) = remember(expKey) { expiryStatus(expKey) }
+            val (exLabel, _, exExpired) = remember(expKey) { expiryStatus(expKey) }
             val inCamera = film.id in activeFilmIds
-            FilmCard(film, exLabel, exColor,
+            FilmCard(film, exLabel, exExpired,
                 inCamera = inCamera,
                 onTap = { viewingFilm = film },
                 onEdit = { editing = film; showSheet = true },
@@ -258,28 +266,19 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             }
             if (depletedExpanded) {
                 items(depleted, key = { "out_${it.id}" }, contentType = { "film_out" }) { film ->
-                    VaultCard {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(film.name.ifBlank { "Unnamed" }, color = TextSecondary, fontSize = 14.sp,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.height(3.dp))
-                                TagRow() {
-                                    VaultTag(film.type.split(" ").first())
-                                    VaultTag("ISO ${film.iso}")
-                                    VaultTag("×0", textColor = OrangeWarn)
-                                }
-                            }
-                            Row {
-                                IconButton(onClick = { editing = film; showSheet = true }, Modifier.size(32.dp)) {
-                                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary)
-                                }
-                                IconButton(onClick = { confirmDelete = film }, Modifier.size(32.dp)) {
-                                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f))
-                                }
-                            }
-                        }
+                    // Same card, rendered as unexposed stock: no accent, no fill.
+                    // It still has to be tappable to restock, so it is not hidden.
+                    FilmStockCard(
+                        stockName = film.name.ifBlank { "Unnamed" },
+                        subtitle  = listOf(film.brand, film.type).filter { it.isNotBlank() }
+                            .joinToString(" · "),
+                        rebate    = rebateLine(film.filmFormat, "out of stock"),
+                        dead      = true,
+                        onEdit    = { editing = film; showSheet = true },
+                        onDelete  = { confirmDelete = film },
+                    ) {
+                        FilmChip("ISO ${film.iso}", color = FilmTheme.colors.dead)
+                        FilmChip("×0", color = FilmTheme.colors.dead)
                     }
                 }
             }
@@ -347,51 +346,57 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * A stock in the stash, as a length of film.
+ *
+ * First surface on the Dye Layer language — see [FilmStockCard]. The mapping
+ * from the old amber card is: brand and process move out of the tag row and
+ * into the mono subtitle, storage and format move down onto the rebate as edge
+ * printing, and only the facts that change how you'd act on the roll (quantity,
+ * expiry, whether it's currently loaded) stay as chips.
+ */
 @Composable
 private fun FilmCard(
-    film: FilmStock, exLabel: String, exColor: androidx.compose.ui.graphics.Color,
+    film: FilmStock, exLabel: String, exExpired: Boolean,
     inCamera: Boolean = false,
     onTap: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit
 ) {
-    VaultCard(onClick = onTap) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(film.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (film.brand.isNotBlank()) Text(film.brand, color = TextSecondary, fontSize = 11.sp)
-                Spacer(Modifier.height(4.dp))
-                TagRow() {
-                    VaultTag(film.type.split(" ").first())
-                    VaultTag("ISO ${film.iso}")
-                    if (film.storage.isNotBlank()) {
-                        val storageIcon = when (film.storage) {
-                            "Fridge"         -> "🧊"
-                            "Freezer"        -> "❄️"
-                            "Cool Dark Place" -> "🌑"
-                            "Bulk"           -> "🎞"
-                            else             -> "📦" // Shelf / Custom
-                        }
-                        VaultTag("$storageIcon ${film.storage}", textColor = TextSecondary)
-                    }
-                    if (inCamera) VaultTag("📷 In Camera", textColor = BlueInfo)
-                    if (film.quantity > 1) VaultTag("×${film.quantity}", textColor = AmberBright)
-                    if (exLabel.isNotBlank()) VaultTag(exLabel, textColor = exColor)
-                }
-                if (film.notes.isNotBlank()) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(film.notes, color = TextTertiary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            Row {
-                IconButton(onClick = onEdit, Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary)
-                }
-                IconButton(onClick = onDelete, Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f))
-                }
-            }
-        }
+    val colors = FilmTheme.colors
+    // Cyan means live, mask means decaying. Everything else is plain silver —
+    // if every card had an accent the accent would say nothing.
+    val accent = when {
+        inCamera   -> colors.cyan
+        exExpired  -> colors.mask
+        else       -> colors.halide
+    }
+    val expiryColor = when {
+        exExpired                     -> colors.mask
+        exLabel.startsWith("Exp. in") -> colors.yellow
+        else                          -> colors.dim
+    }
+
+    FilmStockCard(
+        stockName = film.name.ifBlank { "Unnamed" },
+        subtitle  = listOf(film.brand, film.type).filter { it.isNotBlank() }.joinToString(" · "),
+        // Notes are deliberately NOT on the rebate. Edge printing has to be
+        // facts of fixed length, and a note is the one field with no length
+        // limit — on a real stash it was the only segment ever reaching the
+        // ellipsis, and it got cut at exactly the part worth reading
+        // ("PUSH TO 16…"). It gets its own line below instead.
+        rebate    = rebateLine(film.filmFormat, "${film.frameCount} exp", film.storage),
+        notes     = film.notes,
+        accent    = accent,
+        onClick   = onTap,
+        onEdit    = onEdit,
+        onDelete  = onDelete,
+    ) {
+        FilmChip("ISO ${film.iso}")
+        // Quantity is dim, not yellow. Yellow means "attention" in this palette,
+        // and having three rolls of something is not a thing to attend to —
+        // when it was yellow it out-shouted the expiry chip beside it.
+        if (film.quantity > 1) FilmChip("×${film.quantity}")
+        if (exLabel.isNotBlank()) FilmChip(exLabel, color = expiryColor)
+        if (inCamera) FilmChip("In camera", color = colors.cyan, filled = true)
     }
 }
 

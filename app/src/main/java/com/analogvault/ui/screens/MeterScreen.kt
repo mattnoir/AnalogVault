@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -142,7 +143,7 @@ fun MeterContent(
         liveReading != null -> (liveReading!!.sceneEV + calibOffset).coerceIn(-2.0, 22.0)
         else                -> manualEV
     }
-    val zoneActive  = zoneEnabled && metering == "Spot"
+    val zoneActive  = zoneEnabled && metering == Constants.METERING_SPOT
     val effectiveEV = if (zoneActive) baseEV + Exposure.zoneOffsetEv(zone) else baseEV
 
     // ── Zoom ──────────────────────────────────────────────────────────────────
@@ -173,11 +174,13 @@ fun MeterContent(
                     .height(240.dp)
                     .background(Bg2)
                     // Tap-to-meter: place the AE region where the user taps
-                    // (Spot / Center-Weighted); double-tap recenters.
+                    // (SPOT / CENTRE); double-tap recenters.
                     .pointerInput(metering) {
                         detectTapGestures(
                             onTap = { ofs ->
-                                if (metering == "Spot" || metering == "Center-Weighted") {
+                                if (metering == Constants.METERING_SPOT ||
+                                    metering == Constants.METERING_CENTRE
+                                ) {
                                     tapPoint = (ofs.x / size.width) to (ofs.y / size.height)
                                 }
                             },
@@ -255,9 +258,9 @@ fun MeterContent(
                             appliedRegionKey = regionKey
                             try {
                                 val regionSize = when (metering) {
-                                    "Spot"            -> 0.15f
-                                    "Center-Weighted" -> 0.6f
-                                    else              -> null
+                                    Constants.METERING_SPOT   -> 0.15f
+                                    Constants.METERING_CENTRE -> 0.6f
+                                    else                      -> null
                                 }
                                 if (regionSize != null) {
                                     val fx = tapPoint?.first ?: 0.5f
@@ -309,7 +312,9 @@ fun MeterContent(
                     }
                 }
                 // Tap hint chip
-                if (metering == "Spot" || metering == "Center-Weighted") {
+                if (metering == Constants.METERING_SPOT ||
+                    metering == Constants.METERING_CENTRE
+                ) {
                     Box(
                         Modifier.align(Alignment.TopEnd).padding(8.dp)
                             .clip(RoundedCornerShape(4.dp)).background(Bg.copy(alpha = 0.65f))
@@ -460,7 +465,7 @@ fun MeterContent(
             }
 
             // ── Zone System placement (spot metering) ─────────────────────────
-            if (metering == "Spot") {
+            if (metering == Constants.METERING_SPOT) {
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
@@ -565,18 +570,21 @@ fun MeterContent(
 
             // Metering + ISO + fixed input (shutter or aperture, by mode)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Metering no longer needs the extra width now that its labels are
+                // single words; the shutter column needs it, because "1/1000" is
+                // the widest value any of these three ever shows.
                 VaultDropdown("Metering", metering, Constants.METERING_TYPES,
-                    { vm.saveMeterMetering(it) }, modifier = Modifier.weight(1.4f))
+                    { vm.saveMeterMetering(it) }, modifier = Modifier.weight(1.1f))
                 VaultDropdown("ISO", filmIso.toString(), Constants.ISOS.map { it.toString() },
-                    { vm.saveMeterIso(it.toIntOrNull() ?: 400) }, modifier = Modifier.weight(1f))
+                    { vm.saveMeterIso(it.toIntOrNull() ?: 400) }, modifier = Modifier.weight(0.85f))
                 if (meterMode == "aperture") {
                     VaultDropdown("Aperture", formatAperture(fixedAperture),
                         Constants.APERTURES.map { formatAperture(it) },
                         { sel -> sel.removePrefix("f/").toDoubleOrNull()?.let { vm.saveMeterAperture(it) } },
-                        modifier = Modifier.weight(1f))
+                        modifier = Modifier.weight(1.05f))
                 } else {
                     VaultDropdown("Shutter", shutter, Constants.SHUTTER_SPEEDS,
-                        { vm.saveMeterShutter(it) }, modifier = Modifier.weight(1f))
+                        { vm.saveMeterShutter(it) }, modifier = Modifier.weight(1.05f))
                 }
             }
 
@@ -638,9 +646,26 @@ fun MeterContent(
     if (showZoomEdit) ZoomEditSheet(zoomLevels, vm) { showZoomEdit = false }
 }
 
-/** "f/8" for whole stops, "f/5.6" otherwise — matches the APERTURES scale and stays '.'-decimal on all locales. */
-private fun formatAperture(a: Double): String =
-    if (a == a.toLong().toDouble()) "f/${a.toLong()}" else "f/$a"
+/**
+ * "f/8" for whole stops, "f/5.6" otherwise — matches the APERTURES scale and
+ * stays '.'-decimal on all locales.
+ *
+ * Below f/2 the decimal is always printed, so the widest stop reads "f/1.0"
+ * rather than "f/1". Photographic convention writes fast glass with a decimal
+ * (f/1.0, f/1.2, f/1.4) and a bare "f/1" reads like a truncated "f/1.4" — which
+ * is a whole stop of exposure in the wrong direction.
+ */
+private fun formatAperture(a: Double): String {
+    val whole = a == a.toLong().toDouble()
+    // Only whole values need forcing; f/0.95 and f/1.4 already carry a decimal,
+    // and rounding them to one place would collapse 0.95 onto 1.0 and give the
+    // aperture dropdown two entries with the same label.
+    return when {
+        a < 2.0 && whole -> "f/${"%.1f".format(java.util.Locale.US, a)}"
+        whole            -> "f/${a.toLong()}"
+        else             -> "f/$a"
+    }
+}
 
 /** Bare aperture number as stored on shots ("8", "5.6"). */
 private fun apertureNumString(a: Double): String =
@@ -669,7 +694,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay
     val color = Color(0xCCD4935A.toInt())
 
     when (metering) {
-        "Spot" -> {
+        Constants.METERING_SPOT -> {
             val r = minOf(w, h) / 6f
             drawCircle(color, r, Offset(cx, cy), style = stroke)
             val gap = r + 8.dp.toPx(); val len = 16.dp.toPx()
@@ -678,7 +703,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay
             drawLine(color, Offset(cx, cy - gap - len), Offset(cx, cy - gap), stroke.width)
             drawLine(color, Offset(cx, cy + gap),       Offset(cx, cy + gap + len), stroke.width)
         }
-        "Center-Weighted" -> {
+        Constants.METERING_CENTRE -> {
             drawCircle(color, minOf(w, h) / 3f, Offset(cx, cy), style = stroke)
             val m = 20.dp.toPx(); val p = 10.dp.toPx()
             listOf(
@@ -688,10 +713,10 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMeteringOverlay
                 Offset(w-p, h-p) to Offset(w-p-m, h-p), Offset(w-p, h-p) to Offset(w-p, h-p-m),
             ).forEach { (a, b) -> drawLine(color, a, b, stroke.width) }
         }
-        "Highlight-Weighted" -> {
+        Constants.METERING_HIGHLIGHT -> {
             drawRect(color, Offset(0f, 0f), Size(w, h / 4f), style = stroke)
         }
-        else -> { // Evaluative — 3×3 grid
+        else -> { // Matrix — 3×3 grid
             for (c in 1..2) drawLine(color, Offset(w * c / 3f, 0f), Offset(w * c / 3f, h), stroke.width / 2)
             for (r in 1..2) drawLine(color, Offset(0f, h * r / 3f), Offset(w, h * r / 3f), stroke.width / 2)
         }
@@ -710,24 +735,37 @@ private fun EVCard(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg3)
             .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(16.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("SCENE EV", color = TextTertiary, fontSize = 9.sp)
-                Text("%.1f".format(effectiveEV), color = Amber, fontSize = 44.sp, fontFamily = FontFamily.Monospace)
+            Column(Modifier.weight(1f)) {
+                Text("SCENE EV", color = TextTertiary, fontSize = 9.sp, maxLines = 1)
+                Text("%.1f".format(effectiveEV), color = Amber, fontSize = 44.sp,
+                    fontFamily = FontFamily.Monospace, maxLines = 1, softWrap = false)
                 Box(Modifier
                     .clip(RoundedCornerShape(3.dp))
                     .background(if (isLive) GreenOk.copy(0.15f) else Bg4)
                     .padding(horizontal = 5.dp, vertical = 2.dp)) {
                     Text(if (isLive) "LIVE · camera2" else "MANUAL",
-                        color = if (isLive) GreenOk else TextTertiary, fontSize = 9.sp)
+                        color = if (isLive) GreenOk else TextTertiary, fontSize = 9.sp, maxLines = 1)
                 }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(resultLabel, color = TextTertiary, fontSize = 9.sp)
-                Text(resultValue, color = AmberBright, fontSize = 36.sp, fontFamily = FontFamily.Monospace)
-                Text(resultFootnote, color = TextTertiary, fontSize = 9.sp)
-                Text(subline, color = TextSecondary, fontSize = 10.sp)
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                Text(resultLabel, color = TextTertiary, fontSize = 9.sp, maxLines = 1)
+                // The readout must never reflow. Six mono glyphs at 36sp ("1/1000")
+                // do not fit half the card on a 360dp screen, and the default
+                // wrapping turned "f/1.4" into "f/1" over "4" — which reads as a
+                // plausible, wrong aperture. Step the size down instead of wrapping.
+                Text(
+                    resultValue,
+                    color = AmberBright,
+                    fontSize = if (resultValue.length > 5) 28.sp else 36.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Visible,
+                )
+                Text(resultFootnote, color = TextTertiary, fontSize = 9.sp, maxLines = 1)
+                Text(subline, color = TextSecondary, fontSize = 10.sp, maxLines = 1)
             }
         }
     }
