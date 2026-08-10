@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.analogvault.ui.MainViewModel
+import com.analogvault.ui.film.FilmNavBar
+import com.analogvault.ui.film.FilmNavItem
 import com.analogvault.ui.film.filmGrain
 import com.analogvault.ui.screens.*
 import com.analogvault.ui.theme.*
@@ -115,26 +117,33 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val label: String, val icon: ImageVector) {
     DASH    ("Home",     Icons.Default.Home),
     STASH   ("Stash",   Icons.Default.Inventory),
-    ACTIVE  ("Loaded",  Icons.Default.CameraRoll),
-    METER   ("Meter",   Icons.Default.WbSunny),
-    WEATHER ("Weather", Icons.Default.Cloud),
+    ACTIVE  ("Rolls",   Icons.Default.CameraRoll),
     MORE    ("More",    Icons.Default.MoreHoriz),
+    // Reached from the shutter, not from the bar. Full screen, no bottom bar.
+    METER   ("Meter",   Icons.Default.WbSunny),
     // "More" sub-items — not shown in bottom bar directly
     DARK    ("Darkroom",Icons.Default.Science),
     STATS   ("Stats",   Icons.Default.BarChart),
+    WEATHER ("Weather", Icons.Default.Cloud),
     BACKUP  ("Backup",  Icons.Default.CloudDownload),
     SETTINGS("Settings",Icons.Default.Settings)
 }
 
-private val BOTTOM_TABS = listOf(Tab.DASH, Tab.STASH, Tab.ACTIVE, Tab.METER, Tab.WEATHER, Tab.MORE)
-private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.BACKUP, Tab.SETTINGS)
+// Four destinations, two either side of the shutter.
+//
+// Weather is not among them any more. It is an input, not a place you go: it
+// belongs on Home as "light right now" and inside the meter. It lives under
+// More until Home absorbs it, so nothing becomes unreachable in the meantime.
+// The OWM key entry it used to own already exists in Settings.
+private val BOTTOM_TABS = listOf(Tab.DASH, Tab.STASH, Tab.ACTIVE, Tab.MORE)
+private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.WEATHER, Tab.BACKUP, Tab.SETTINGS)
 
 // Left-to-right position of each tab. The screen transition slides toward the side the new
-// tab sits on (e.g. Home→Meter slides in from the right, Meter→Stash slides in from the left).
+// tab sits on (e.g. Home→Rolls slides in from the right, Rolls→Stash slides in from the left).
 private fun tabOrder(tab: Tab): Int = when (tab) {
-    Tab.DASH -> 0; Tab.STASH -> 1; Tab.ACTIVE -> 2; Tab.METER -> 3
-    Tab.WEATHER -> 4; Tab.MORE -> 5
-    Tab.DARK -> 6; Tab.STATS -> 7; Tab.BACKUP -> 8; Tab.SETTINGS -> 9
+    Tab.DASH -> 0; Tab.STASH -> 1; Tab.ACTIVE -> 2; Tab.MORE -> 3
+    Tab.DARK -> 4; Tab.STATS -> 5; Tab.WEATHER -> 6; Tab.BACKUP -> 7; Tab.SETTINGS -> 8
+    Tab.METER -> 9
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,53 +162,49 @@ fun VaultApp() {
     // Hierarchical navigation: Home (DASH) is the root, the bottom tabs sit beneath it, and the
     // "More" sub-screens sit one level deeper. Back always walks up the hierarchy toward Home.
     var currentTab by remember { mutableStateOf(Tab.DASH) }
+    // Where the shutter was pressed from, so closing the meter returns there
+    // rather than dumping the user on Home mid-task.
+    var tabBeforeMeter by remember { mutableStateOf(Tab.DASH) }
 
     fun navigateTo(tab: Tab, subTab: Int = 0) {
         if (tab == Tab.ACTIVE) activeSubTab = subTab
+        if (tab == Tab.METER && currentTab != Tab.METER) tabBeforeMeter = currentTab
         currentTab = tab
     }
 
-    // Back: walk up one level — More sub-screens → More, any other tab → Home, Home → exit.
+    // Back: walk up one level — meter → wherever the shutter was pressed,
+    // More sub-screens → More, any other tab → Home, Home → exit.
     BackHandler(enabled = currentTab != Tab.DASH) {
-        currentTab = if (currentTab in MORE_TABS) Tab.MORE else Tab.DASH
+        currentTab = when {
+            currentTab == Tab.METER -> tabBeforeMeter
+            currentTab in MORE_TABS -> Tab.MORE
+            else                    -> Tab.DASH
+        }
     }
 
     val isMoreSub = currentTab in MORE_TABS
+    // The meter is a full-screen instrument. It takes the bar's space rather
+    // than sitting above it — you are holding a camera in the other hand and
+    // the numbers want every pixel.
+    val showNavBar = currentTab != Tab.METER
 
     Scaffold(
         bottomBar = {
-            NavigationBar(containerColor = Bg2, tonalElevation = 0.dp) {
-                BOTTOM_TABS.forEach { tab ->
-                    val selected = currentTab == tab || (tab == Tab.MORE && isMoreSub)
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = { navigateTo(tab) },
-                        icon = {
-                            // Subtle lift on the selected tab for a livelier bottom bar.
-                            val iconScale by animateFloatAsState(
-                                targetValue = if (selected) 1.18f else 1f,
-                                animationSpec = tween(220), label = "navIconScale"
-                            )
-                            BadgedBox(badge = {
-                                if (tab == Tab.ACTIVE && activeCount > 0)
-                                    Badge(containerColor = Amber) {
-                                        Text(activeCount.toString(), color = Bg, fontSize = 10.sp)
-                                    }
-                            }) {
-                                Icon(tab.icon, tab.label,
-                                    modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale })
-                            }
-                        },
-                        label = { Text(tab.label, fontSize = 10.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Amber,
-                            selectedTextColor = Amber,
-                            unselectedIconColor = TextSecondary,
-                            unselectedTextColor = TextSecondary,
-                            indicatorColor = AmberDark.copy(alpha = 0.3f)
+            if (showNavBar) {
+                FilmNavBar(
+                    items = BOTTOM_TABS.map { tab ->
+                        FilmNavItem(
+                            label = tab.label,
+                            icon = tab.icon,
+                            badge = if (tab == Tab.ACTIVE) activeCount else null,
                         )
-                    )
-                }
+                    },
+                    selectedIndex = BOTTOM_TABS.indexOf(currentTab)
+                        .takeIf { it >= 0 }
+                        ?: BOTTOM_TABS.indexOf(Tab.MORE).takeIf { isMoreSub },
+                    onSelect = { navigateTo(BOTTOM_TABS[it]) },
+                    onShutter = { navigateTo(Tab.METER) },
+                )
             }
         }
     ) { padding ->
@@ -237,10 +242,14 @@ fun VaultApp() {
                     onMeterConsumed      = { meterShutter = ""; meterAperture = ""; meterIso = "" },
                     onNavigateToDarkroom = { navigateTo(Tab.DARK) }
                 )
-                Tab.METER    -> MeterScreen(vm, onUseInShot = { sh, ap, iso ->
-                    meterShutter = sh; meterAperture = ap; meterIso = iso
-                    navigateTo(Tab.ACTIVE, 0)
-                })
+                Tab.METER    -> Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+                    // The meter has no bottom bar, so it needs its own way out.
+                    MeterHeader(onClose = { currentTab = tabBeforeMeter })
+                    MeterScreen(vm, onUseInShot = { sh, ap, iso ->
+                        meterShutter = sh; meterAperture = ap; meterIso = iso
+                        navigateTo(Tab.ACTIVE, 0)
+                    })
+                }
                 Tab.WEATHER  -> WeatherScreen(vm)
                 Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
                 Tab.DARK     -> DarkroomScreen(vm)
@@ -252,11 +261,32 @@ fun VaultApp() {
     }
 }
 
+/** Title row for the meter's full-screen destination. */
+@Composable
+private fun MeterHeader(onClose: () -> Unit) {
+    val colors = FilmTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(colors.void)
+            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("METER", style = FilmTheme.type.eyebrow, color = colors.dim)
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.Close, "Close the meter",
+                tint = colors.dim, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
 @Composable
 private fun MoreScreen(currentSub: Tab?, onNavigate: (Tab) -> Unit) {
     val items = listOf(
         Tab.DARK     to "Darkroom timers, develop logs and scan logs",
         Tab.STATS    to "Roll statistics, cost breakdown, shot map",
+        Tab.WEATHER  to "Forecast and golden hour for planning a shoot",
         Tab.BACKUP   to "Export and import your vault data",
         Tab.SETTINGS to "OWM key, currency, units, custom ISOs"
     )
@@ -280,11 +310,14 @@ private fun MoreScreen(currentSub: Tab?, onNavigate: (Tab) -> Unit) {
             ) {
                 Icon(tab.icon, null, tint = if (currentSub == tab) Amber else TextSecondary,
                     modifier = Modifier.size(28.dp))
-                Column {
+                // weight(1f) on the text, not a Spacer after it. An unweighted
+                // Column takes its full measured width, so a subtitle long
+                // enough to wrap pushed the chevron past the row's edge —
+                // visible on Darkroom before Weather was added, and on both after.
+                Column(Modifier.weight(1f)) {
                     Text(tab.label, color = if (currentSub == tab) Amber else TextPrimary, fontSize = 16.sp)
                     Text(subtitle, color = TextTertiary, fontSize = 12.sp)
                 }
-                Spacer(Modifier.weight(1f))
                 Icon(Icons.Default.ChevronRight, null, tint = TextTertiary, modifier = Modifier.size(20.dp))
             }
         }

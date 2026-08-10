@@ -2,6 +2,7 @@ package com.analogvault.ui.film
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -31,11 +32,13 @@ fun FilmChip(
     modifier: Modifier = Modifier,
     color: Color = FilmTheme.colors.dim,
     filled: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     Box(
         modifier
             .then(if (filled) Modifier.background(color) else Modifier)
             .border(1.dp, color)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 6.dp, vertical = 3.dp)
     ) {
         Text(

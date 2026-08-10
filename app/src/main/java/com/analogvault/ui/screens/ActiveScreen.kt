@@ -47,6 +47,8 @@ import com.analogvault.data.model.*
 import com.analogvault.data.model.Camera as VaultCamera
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
+import com.analogvault.ui.film.FilmChip
+import com.analogvault.ui.film.FilmChipRow
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
@@ -187,51 +189,34 @@ fun ActiveScreen(
         return
     }
 
-    // Filter rolls per tab (defined above)
-    val tabLabels = listOf(
-        "In Camera (${shooting.size})",
-        "Dev (${awaitDev.size})",
-        "Scan (${awaitScan.size})",
-        "Done (${done.size})"
+    // Stage filters, not a second row of tabs.
+    //
+    // A TabRow underneath the bottom bar gave the screen two competing levels of
+    // navigation chrome. These are one property of one list, which is what a
+    // chip is for — and unlike tabs they can wrap, so the counts never truncate.
+    val stages = listOf(
+        "In camera" to shooting,
+        "To dev"    to awaitDev,
+        "To scan"   to awaitScan,
+        "Done"      to done,
     )
-
-    val pagerState = rememberPagerState(initialPage = subTab.coerceIn(0, 3)) { 4 }
-    val scope = rememberCoroutineScope()
-
-    // Sync pagerState back to subTab for external navigation
-    LaunchedEffect(pagerState.currentPage) { subTab = pagerState.currentPage }
-    LaunchedEffect(subTab) {
-        if (pagerState.currentPage != subTab) pagerState.animateScrollToPage(subTab)
-    }
+    val currentRolls = stages[subTab].second
 
     Column(Modifier.fillMaxSize()) {
-        // Scrollable, not fixed: "In Camera (12)" does not fit a quarter of the
-        // screen and a fixed TabRow wraps the label instead of scrolling.
-        ScrollableTabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = Bg2,
-            contentColor = Amber,
-            edgePadding = 0.dp,
-            indicator = { positions ->
-                TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(positions[pagerState.currentPage]), color = Amber
-                )
-            }
+        FilmChipRow(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)
         ) {
-            tabLabels.forEachIndexed { i, label ->
-                Tab(
-                    selected = pagerState.currentPage == i,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
-                    text = { Text(label, fontSize = 11.sp) },
-                    selectedContentColor = Amber,
-                    unselectedContentColor = TextTertiary
+            stages.forEachIndexed { i, (label, rollsInStage) ->
+                val selected = subTab == i
+                FilmChip(
+                    text = "$label ${rollsInStage.size}",
+                    color = if (selected) FilmTheme.colors.cyan else FilmTheme.colors.dim,
+                    filled = selected,
+                    onClick = { subTab = i },
                 )
             }
-        }
-
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-        val currentRolls = when (page) {
-            0 -> shooting; 1 -> awaitDev; 2 -> awaitScan; 3 -> done; else -> emptyList()
         }
 
         LazyColumn(
@@ -242,7 +227,7 @@ fun ActiveScreen(
             if (currentRolls.isEmpty()) {
                 item {
                     val msg = when (subTab) {
-                        0 -> "No rolls in camera"
+                        0 -> "No rolls in camera. Load one."
                         1 -> "No rolls awaiting development"
                         2 -> "No rolls awaiting scanning"
                         3 -> "No completed rolls yet"
@@ -263,18 +248,18 @@ fun ActiveScreen(
                     total = total, pct = pct,
                     onOpen = { selectedRollId = roll.id },
                     // Quick-log only makes sense for rolls still in the camera
-                    onQuickLog = if (page == 0) ({ vm.quickLogShot(roll.id) }) else null
+                    onQuickLog = if (subTab == 0) ({ vm.quickLogShot(roll.id) }) else null
                 )
             }
 
-            if (page == 0) {
+            if (subTab == 0) {
                 item {
                     VaultButton("+ Load Film into Camera",
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { showLoadSheet = true })
                 }
             }
-            if (page == 1 && awaitDev.isNotEmpty()) {
+            if (subTab == 1 && awaitDev.isNotEmpty()) {
                 item {
                     VaultButton("🧪 Open Darkroom / Develop Timers",
                         modifier = Modifier.fillMaxWidth(),
@@ -283,7 +268,6 @@ fun ActiveScreen(
                 }
             }
         }
-        } // HorizontalPager page
     }
 
     if (showLoadSheet) {
