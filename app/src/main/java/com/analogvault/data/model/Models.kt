@@ -53,7 +53,13 @@ data class FilmStock(
     val storage: String = "Shelf",
     val quantity: Int = 1,
     val notes: String = "",
-    val costPerRoll: Double = 0.0  // purchase price per roll; 0 = gifted / unknown
+    val costPerRoll: Double = 0.0,  // purchase price per roll; 0 = gifted / unknown
+    /**
+     * Override for the stock's accent colour, as "#RRGGBB" or "#RRGGBB,#RRGGBB"
+     * for a gradient. Blank means "derive it" — see StockAccent, which knows the
+     * box art of the common stocks and falls back to the process otherwise.
+     */
+    val stockAccent: String = ""
 )
 
 // ─── Camera ──────────────────────────────────────────────────────────────────

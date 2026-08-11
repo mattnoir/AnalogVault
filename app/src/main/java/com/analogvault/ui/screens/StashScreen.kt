@@ -21,9 +21,14 @@ import androidx.compose.ui.unit.sp
 import com.analogvault.data.model.*
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
+import androidx.compose.ui.graphics.Color
 import com.analogvault.ui.film.FilmChip
+import com.analogvault.ui.film.FilmMeter
 import com.analogvault.ui.film.FilmStockCard
+import com.analogvault.ui.film.StockAccent
 import com.analogvault.ui.film.rebateLine
+import com.analogvault.ui.film.rememberStockAccent
+import com.analogvault.ui.film.toStoredValue
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
@@ -362,13 +367,12 @@ private fun FilmCard(
     onTap: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit
 ) {
     val colors = FilmTheme.colors
-    // Cyan means live, mask means decaying. Everything else is plain silver —
-    // if every card had an accent the accent would say nothing.
-    val accent = when {
-        inCamera   -> colors.cyan
-        exExpired  -> colors.mask
-        else       -> colors.halide
-    }
+    val stock = rememberStockAccent(film.name, film.type, film.stockAccent)
+    // The stock's colour always names the stock. Expiry gets a chip in the mask
+    // colour and nothing more: recolouring the title too would say the same
+    // thing twice and cost the accent the one job it has, which is letting you
+    // tell two stocks apart without reading either of them.
+    val accent = stock.solid
     val expiryColor = when {
         exExpired                     -> colors.mask
         exLabel.startsWith("Exp. in") -> colors.yellow
@@ -377,6 +381,7 @@ private fun FilmCard(
 
     FilmStockCard(
         stockName = film.name.ifBlank { "Unnamed" },
+        spine = stock.verticalBrush(),
         subtitle  = listOf(film.brand, film.type).filter { it.isNotBlank() }.joinToString(" · "),
         // Notes are deliberately NOT on the rebate. Edge printing has to be
         // facts of fixed length, and a note is the one field with no length
@@ -400,6 +405,80 @@ private fun FilmCard(
     }
 }
 
+/**
+ * Choose a stock's accent, or leave it derived.
+ *
+ * Swatches rather than a hex field: the point of the accent is that it looks
+ * like the box, and nobody knows Velvia's green as a hex triplet. "Auto" is
+ * first and is the default, because the lookup table already knows most stocks
+ * and the override exists for the long tail it never will.
+ */
+@Composable
+private fun AccentPicker(
+    name: String,
+    type: String,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    val derived = rememberStockAccent(name, type, "")
+    val presets = remember {
+        listOf(
+            StockAccent(Color(0xFF00E07A), Color(0xFF0066FF)), // slide green→blue
+            StockAccent(Color(0xFFFFC26B), Color(0xFFD9342B)), // warm cream→red
+            StockAccent(Color(0xFFFFFFFF), Color(0xFF555555)), // monochrome
+            StockAccent(Color(0xFF2BC7D4), Color(0xFFE01B3C)), // teal + halation
+            StockAccent(Color(0xFFFF6B2C), Color(0xFF8B1A00)), // redscale
+            StockAccent(Color(0xFFB86BFF), Color(0xFF4B0F7A)), // purple shift
+            StockAccent(Color(0xFFFFD36B), Color(0xFFC07A18)), // amber
+            StockAccent(Color(0xFF6FC7D8), Color(0xFF1E3F7A)), // tungsten
+        )
+    }
+
+    Column {
+        Text("Accent", color = TextTertiary, fontSize = 11.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            AccentSwatch(
+                brush = derived.verticalBrush(),
+                selected = selected.isBlank(),
+                label = "AUTO",
+                onClick = { onSelect("") },
+            )
+            presets.forEach { preset ->
+                val value = preset.toStoredValue()
+                AccentSwatch(
+                    brush = preset.verticalBrush(),
+                    selected = selected == value,
+                    onClick = { onSelect(value) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccentSwatch(
+    brush: androidx.compose.ui.graphics.Brush,
+    selected: Boolean,
+    label: String? = null,
+    onClick: () -> Unit,
+) {
+    val colors = FilmTheme.colors
+    Box(
+        Modifier
+            .size(width = if (label != null) 44.dp else 26.dp, height = 26.dp)
+            .background(brush)
+            .border(if (selected) 2.dp else 1.dp, if (selected) colors.halide else colors.edge)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (label != null) {
+            Text(label, style = FilmTheme.type.rebate, color = colors.void)
+        }
+    }
+}
+
 // ─── Bulk Roll card ───────────────────────────────────────────────────────────
 
 @Composable
@@ -410,65 +489,56 @@ fun BulkRollCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val colors = FilmTheme.colors
     val remaining = (bulk.totalFrames - bulk.usedFrames).coerceAtLeast(0)
     // Approx remaining length. 35mm bulk yields ~18×36exp rolls per 100 ft
     // (38 mm frame pitch + per-roll leader/trailer waste) → ≈6.5 usable frames/ft, ≈21/m.
     val perUnit   = if (isMetric) 21.0 else 6.5
     val unitLabel = if (isMetric) "m" else "ft"
-    val pct       = if (bulk.totalFrames > 0) bulk.usedFrames.toFloat() / bulk.totalFrames else 0f
-    val barColor  = when {
-        pct >= 0.9f -> RedErr
-        pct >= 0.65f -> OrangeWarn
-        else        -> GreenOk
-    }
+    val stock = rememberStockAccent(bulk.name, bulk.type, "")
 
-    VaultCard {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f)) {
-                Text(bulk.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (bulk.brand.isNotBlank()) Text(bulk.brand, color = TextSecondary, fontSize = 11.sp)
-                Spacer(Modifier.height(5.dp))
-                TagRow() {
-                    VaultTag(bulk.type.split(" ").first())
-                    VaultTag("ISO ${bulk.iso}")
-                    VaultTag(text = "$remaining frames left", textColor = barColor)
-                    if (remaining > 0) VaultTag("≈ ${(remaining / perUnit).toInt()} $unitLabel", textColor = TextSecondary)
-                }
-                if (bulk.expiryDate.isNotBlank()) {
-                    Spacer(Modifier.height(3.dp))
-                    Text("Exp: ${bulk.expiryDate}", color = TextTertiary, fontSize = 10.sp)
-                }
-                if (bulk.totalFrames > 0) {
-                    Spacer(Modifier.height(6.dp))
-                    VaultProgressBar(pct, color = barColor)
-                    Spacer(Modifier.height(2.dp))
-                    Text("${bulk.usedFrames} / ${bulk.totalFrames} frames used",
-                        color = TextTertiary, fontSize = 10.sp)
-                }
-                if (bulk.notes.isNotBlank()) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(bulk.notes, color = TextTertiary, fontSize = 10.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+    FilmStockCard(
+        stockName = bulk.name.ifBlank { "Unnamed" },
+        subtitle = listOf(bulk.brand, bulk.type).filter { it.isNotBlank() }.joinToString(" · "),
+        rebate = rebateLine(
+            "bulk",
+            "${bulk.totalFrames} frames".takeIf { bulk.totalFrames > 0 },
+            bulk.expiryDate.takeIf { it.isNotBlank() }?.let { "exp $it" },
+        ),
+        notes = bulk.notes,
+        accent = if (remaining == 0) colors.dead else stock.solid,
+        spine = stock.verticalBrush(),
+        dead = remaining == 0,
+        onEdit = onEdit,
+        onDelete = onDelete,
+        footer = {
+            if (bulk.totalFrames > 0) {
+                Spacer(Modifier.height(10.dp))
+                FilmMeter(
+                    remaining = remaining,
+                    total = bulk.totalFrames,
+                    accent = stock.solid,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${bulk.usedFrames} of ${bulk.totalFrames} frames cut".uppercase(),
+                    style = FilmTheme.type.rebate,
+                    color = colors.dim,
+                )
             }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row {
-                    IconButton(onClick = onEdit, Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary)
-                    }
-                    IconButton(onClick = onDelete, Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f))
-                    }
-                }
-                if (remaining > 0) {
-                    VaultButton("⬇ Load Roll", small = true, onClick = onLoad)
-                } else {
-                    VaultTag("Exhausted", textColor = RedErr)
-                }
-            }
-        }
+        },
+    ) {
+        FilmChip("ISO ${bulk.iso}")
+        FilmChip(
+            "$remaining frames left",
+            color = when {
+                remaining == 0 -> colors.dead
+                remaining < 40 -> colors.mask
+                else -> colors.dim
+            },
+        )
+        if (remaining > 0) FilmChip("≈ ${(remaining / perUnit).toInt()} $unitLabel")
+        if (remaining > 0) FilmChip("Load roll", color = colors.cyan, filled = true, onClick = onLoad)
     }
 }
 
@@ -1106,6 +1176,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     // Locale.US — see BulkRollSheet.totalCost
     var costPerRoll by remember { mutableStateOf(if ((ed?.costPerRoll ?: 0.0) > 0.0)
         String.format(java.util.Locale.US, "%.2f", ed!!.costPerRoll) else "") }
+    var stockAccent by remember { mutableStateOf(ed?.stockAccent ?: "") }
     val customIsos by vm.customIsos.collectAsState()
     val allIsos = remember(customIsos) { (Constants.ISOS + customIsos).distinct().sorted() }
     var showAddIsoDialog by remember { mutableStateOf(false) }
@@ -1269,6 +1340,13 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
             keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
         Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
+        Spacer(Modifier.height(14.dp))
+        AccentPicker(
+            name = name,
+            type = type,
+            selected = stockAccent,
+            onSelect = { stockAccent = it },
+        )
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Film", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(FilmStock(
@@ -1285,7 +1363,8 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                 storage     = storage,
                 quantity    = quantity.toIntOrNull() ?: 1,
                 notes       = notes,
-                costPerRoll = costPerRoll.toDecimalOrNull() ?: 0.0
+                costPerRoll = costPerRoll.toDecimalOrNull() ?: 0.0,
+                stockAccent = stockAccent
             ))
         })
     }

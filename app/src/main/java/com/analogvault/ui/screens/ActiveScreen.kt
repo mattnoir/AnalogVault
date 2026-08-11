@@ -48,9 +48,14 @@ import com.analogvault.data.model.Camera as VaultCamera
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.analogvault.ui.film.ChromaticText
 import com.analogvault.ui.film.FilmChip
 import com.analogvault.ui.film.FilmChipRow
+import com.analogvault.ui.film.FilmStripCard
+import com.analogvault.ui.film.rebateLine
+import com.analogvault.ui.film.rememberStockAccent
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
@@ -90,6 +95,7 @@ fun ActiveScreen(
     val lenses  by vm.lenses.collectAsState()
 
     var selectedRollId by remember { mutableStateOf<String?>(null) }
+    var contactSheetRollId by remember { mutableStateOf<String?>(null) }
     var showLoadSheet  by remember { mutableStateOf(false) }
     // Copy meter values into local state once on arrival; parent clears its copy via callback
     var pendingMeterShutter  by remember { mutableStateOf("") }
@@ -170,6 +176,20 @@ fun ActiveScreen(
                 }) { Text("Cancel", color = TextSecondary) }
             }
         )
+    }
+
+    // Contact sheet sits above the list, not above the detail screen: it is a
+    // different way of looking at the same roll, not a step deeper into it.
+    val contactRoll = contactSheetRollId?.let { id -> rolls.find { it.id == id } }
+    if (contactRoll != null) {
+        ContactSheetScreen(
+            roll = contactRoll,
+            film = films.find { it.id == contactRoll.filmId },
+            onBack = { contactSheetRollId = null },
+            onOpenShot = { contactSheetRollId = null; selectedRollId = contactRoll.id },
+        )
+        BackHandler { contactSheetRollId = null }
+        return
     }
 
     if (selectedRoll != null) {
@@ -269,7 +289,8 @@ fun ActiveScreen(
                     total = total, pct = pct,
                     onOpen = { selectedRollId = roll.id },
                     // Quick-log only makes sense for rolls still in the camera
-                    onQuickLog = if (subTab == 0) ({ vm.quickLogShot(roll.id) }) else null
+                    onQuickLog = if (subTab == 0) ({ vm.quickLogShot(roll.id) }) else null,
+                    onContactSheet = { contactSheetRollId = roll.id },
                 )
             }
 
@@ -306,55 +327,101 @@ fun ActiveScreen(
     }
 }
 
+/**
+ * A roll as a length of film, with its provenance printed along the rebate.
+ *
+ * Camera, load date and process go on the edge rather than into chips because
+ * that is where a lab prints them on the real thing, and because they are the
+ * facts you want when scanning a list rather than the ones you act on.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RollListCard(
     roll: Roll, film: FilmStock?, cam: VaultCamera?,
     total: Int, pct: Float,
     onOpen: () -> Unit,
-    onQuickLog: (() -> Unit)? = null
+    onQuickLog: (() -> Unit)? = null,
+    onContactSheet: (() -> Unit)? = null,
 ) {
-    VaultCard(onClick = onOpen) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
+    val colors = FilmTheme.colors
+    val stock = rememberStockAccent(film?.name ?: "", film?.type ?: "", film?.stockAccent ?: "")
+    val haptics = LocalHapticFeedback.current
+    val exposed = roll.shots.size
+
+    val (stageLabel, stageColor) = when {
+        roll.scanned   -> "Archived"  to colors.dead
+        roll.developed -> "To scan"   to colors.violet
+        roll.finished  -> "To dev"    to colors.yellow
+        else           -> "Shooting"  to colors.cyan
+    }
+
+    FilmStripCard(
+        filmColor = colors.film,
+        modifier = Modifier.combinedClickable(
+            onClick = onOpen,
+            // Long-press is the contact sheet, but only once there is something
+            // to contact-print. Offering it on an unshot roll would be a
+            // gesture that silently does nothing.
+            onLongClick = onContactSheet?.takeIf { exposed > 0 }?.let {
+                {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    it()
+                }
+            },
+        ),
+    ) {
+        Row(
+            Modifier
+                .padding(end = 4.dp, top = 10.dp, bottom = 8.dp)
+                .height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(stock.verticalBrush())
+            )
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(film?.name ?: "Unknown Film", color = TextPrimary, fontSize = 15.sp)
-                Text(cam?.name ?: "Unknown Camera", color = TextSecondary, fontSize = 12.sp)
+                Text(
+                    (film?.name ?: "Unknown film").uppercase(),
+                    style = FilmTheme.type.stock,
+                    color = if (roll.scanned) colors.dim else stock.solid,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
+                FilmChipRow {
+                    FilmChip(stageLabel, color = stageColor)
+                    FilmChip("$exposed/$total")
+                    if (roll.pushIso.toIntOrNull()?.takeIf { it > 0 } != null) {
+                        FilmChip("At ISO ${roll.pushIso}", color = colors.magenta)
+                    }
+                }
             }
-            val (tagLabel, tagColor) = when {
-                roll.scanned   -> "Scanned"   to GreenOk
-                roll.developed -> "Developed" to GreenOk
-                roll.finished  -> "Finished"  to Amber
-                else           -> "Shooting"  to BlueInfo
-            }
-            VaultTag(tagLabel, textColor = tagColor)
             if (onQuickLog != null) {
-                Spacer(Modifier.width(6.dp))
                 // One-tap frame log — defaults from the last shot, edit later
-                IconButton(onClick = onQuickLog, modifier = Modifier.size(34.dp)) {
+                IconButton(onClick = onQuickLog, modifier = Modifier.size(38.dp)) {
                     Icon(Icons.Default.PlusOne, "Quick-log frame",
-                        tint = Amber, modifier = Modifier.size(20.dp))
+                        tint = colors.cyan, modifier = Modifier.size(20.dp))
                 }
             }
         }
-        if (roll.startDate.isNotBlank()) {
-            Spacer(Modifier.height(2.dp))
-            Text("Loaded ${formatDate(roll.startDate)}", color = TextTertiary, fontSize = 10.sp)
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${roll.shots.size}/$total", color = TextTertiary, fontSize = 10.sp)
-            Text("${(pct * 100).toInt()}%", color = TextTertiary, fontSize = 10.sp)
-        }
-        Spacer(Modifier.height(4.dp))
-        VaultProgressBar(pct)
-        // Archive badge for done rolls
-        if (roll.scanned && roll.devLog != null) {
-            Spacer(Modifier.height(6.dp))
-            TagRow() {
-                VaultTag(roll.devLog.process.ifBlank { "Developed" }, textColor = GreenOk)
-                if (roll.scanLog != null) VaultTag(roll.scanLog.method.ifBlank { "Scanned" }, textColor = BlueInfo)
-            }
-        }
+
+        Text(
+            rebateLine(
+                cam?.name,
+                roll.startDate.takeIf { it.isNotBlank() }?.let { formatDate(it) },
+                roll.devLog?.process?.takeIf { it.isNotBlank() },
+                roll.scanLog?.method?.takeIf { it.isNotBlank() },
+            ),
+            style = FilmTheme.type.rebate,
+            color = colors.dim,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
+        )
     }
 }
 

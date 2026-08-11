@@ -107,13 +107,26 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/**
+ * Add stockAccent to films (v7 → v8).
+ *
+ * Blank is the meaningful default, not a placeholder: it means "derive the
+ * colour from the stock name and process", so existing rows keep working and
+ * only stocks the user deliberately recolours carry a stored value.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE films ADD COLUMN stockAccent TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 7,
+    version = 8,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true

@@ -1,9 +1,14 @@
 package com.analogvault.ui.film
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -52,10 +58,14 @@ fun FilmStockCard(
     modifier: Modifier = Modifier,
     notes: String = "",
     accent: Color = FilmTheme.colors.halide,
+    /** Two-stop gradient down the left edge — the stock's box art. */
+    spine: Brush? = null,
     dead: Boolean = false,
     onClick: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    /** Rendered inside the strip, below the chips and above the rebate. */
+    footer: @Composable ColumnScope.() -> Unit = {},
     chips: @Composable () -> Unit = {},
 ) {
     val colors = FilmTheme.colors
@@ -68,9 +78,23 @@ fun FilmStockCard(
         onClick = onClick,
     ) {
         Row(
-            Modifier.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 4.dp),
+            Modifier
+                .padding(end = 4.dp, top = 10.dp, bottom = 4.dp)
+                .height(IntrinsicSize.Min),
             verticalAlignment = Alignment.Top,
         ) {
+            // The spine runs the height of the card's body, which is why the row
+            // measures its own intrinsic height: a fillMaxHeight inside a Column
+            // that wraps its content would otherwise collapse to nothing.
+            if (spine != null && !dead) {
+                Box(
+                    Modifier
+                        .width(4.dp)
+                        .fillMaxHeight()
+                        .background(spine)
+                )
+            }
+            Spacer(Modifier.width(if (spine != null && !dead) 10.dp else 14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = stockName.uppercase(),
@@ -121,6 +145,7 @@ fun FilmStockCard(
                 }
             }
         }
+        Column(Modifier.padding(horizontal = 14.dp)) { footer() }
         if (notes.isNotBlank()) {
             Text(
                 text = notes,
