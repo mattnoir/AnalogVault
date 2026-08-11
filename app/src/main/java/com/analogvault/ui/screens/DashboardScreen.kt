@@ -19,8 +19,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.analogvault.data.model.BulkRoll
 import com.analogvault.data.model.Camera
 import com.analogvault.data.model.FilmStock
@@ -70,6 +73,24 @@ fun DashboardScreen(
     val cameras      by vm.cameras.collectAsState()
     val bulkRolls    by vm.bulkRolls.collectAsState()
     val weatherState by vm.weatherState.collectAsState()
+    val owmKey       by vm.owmKey.collectAsState()
+
+    // Fetch our own weather when nothing else has.
+    //
+    // Weather stopped being a destination in Phase 2, so the screens that used
+    // to trigger this are no longer somewhere the user passes through. Guarded
+    // on Idle so it happens once per process, and it never prompts: a location
+    // dialog on the home screen at launch is not a trade worth making for a
+    // card, so a user who has not granted location simply keeps the fallback.
+    val context = LocalContext.current
+    LaunchedEffect(owmKey, weatherState) {
+        if (owmKey.isBlank() || weatherState !is WeatherState.Idle) return@LaunchedEffect
+        val granted = ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) return@LaunchedEffect
+        getWeatherLocation(context)?.let { (lat, lon) -> vm.fetchWeather(lat, lon) }
+    }
 
     val shooting  = rolls.filter { !it.finished && !it.developed }
     val awaitDev  = rolls.filter { it.finished && !it.developed }
@@ -119,6 +140,7 @@ fun DashboardScreen(
         item(key = "light") {
             LightRightNow(
                 sun = sun,
+                hasKey = owmKey.isNotBlank(),
                 evAtIso100 = light?.evEstimate,
                 loadedIso = shooting.firstOrNull()?.let { roll ->
                     roll.pushIso.toIntOrNull()?.takeIf { it > 0 }
@@ -331,6 +353,7 @@ private fun EmptyLoadedHero(onLoad: () -> Unit) {
 @Composable
 private fun LightRightNow(
     sun: SunClock?,
+    hasKey: Boolean,
     evAtIso100: Int?,
     loadedIso: Int,
     onOpenMeter: () -> Unit,
@@ -343,8 +366,11 @@ private fun LightRightNow(
         onClick = if (sun == null) onOpenWeather else onOpenMeter,
     ) {
         if (sun == null) {
+            // Two different dead ends, and telling them apart is the difference
+            // between the user fixing it and the user assuming it is broken.
             Text(
-                "Add an OpenWeatherMap key in Settings to see the sun arc and a suggested exposure.",
+                if (hasKey) "Waiting on a location fix. Tap to fetch the forecast."
+                else "Add an OpenWeatherMap key in Settings to see the sun arc and a suggested exposure.",
                 style = FilmTheme.type.data,
                 color = colors.dim,
             )

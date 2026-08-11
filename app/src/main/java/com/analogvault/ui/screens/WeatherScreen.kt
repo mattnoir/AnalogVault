@@ -519,7 +519,11 @@ private fun recommendFilms(films: List<FilmStock>, light: LightConditions): List
     return recs.sortedByDescending { it.score }.take(3)
 }
 
-private suspend fun getWeatherLocation(context: android.content.Context): Pair<Double, Double>? =
+// Internal so Home can fetch its own weather. Weather is no longer a
+// destination in the navigation bar, so if this screen were the only thing
+// that could ask for a location, Home's "light right now" card would sit empty
+// for anyone who never went looking for the screen that feeds it.
+internal suspend fun getWeatherLocation(context: android.content.Context): Pair<Double, Double>? =
     suspendCancellableCoroutine { cont ->
         val client = LocationServices.getFusedLocationProviderClient(context)
         val cts = CancellationTokenSource()
