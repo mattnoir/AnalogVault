@@ -306,7 +306,10 @@ data class LightConditions(
     val evEstimate: Int       // rough EV at ISO 100
 )
 
-private fun analyzeLightConditions(data: WeatherResponse): LightConditions {
+// Internal rather than private: Home's "light right now" card reuses the same
+// EV estimate and light labels, and two implementations of "what is the light
+// doing" would drift apart the first time either is tuned.
+internal fun analyzeLightConditions(data: WeatherResponse): LightConditions {
     val sunrise = data.sys?.sunrise ?: 0L
     val sunset  = data.sys?.sunset  ?: 0L
     // Use the timestamp from the response (server-side local time already in dt + timezone offset)
