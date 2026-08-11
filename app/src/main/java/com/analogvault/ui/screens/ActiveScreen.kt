@@ -47,8 +47,11 @@ import com.analogvault.data.model.*
 import com.analogvault.data.model.Camera as VaultCamera
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
+import androidx.compose.ui.text.style.TextOverflow
+import com.analogvault.ui.film.ChromaticText
 import com.analogvault.ui.film.FilmChip
 import com.analogvault.ui.film.FilmChipRow
+import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
@@ -203,10 +206,28 @@ fun ActiveScreen(
     val currentRolls = stages[subTab].second
 
     Column(Modifier.fillMaxSize()) {
+        // The screen used to open on a TabRow, which was doing the job of a
+        // title as well as a filter. Removing it in Phase 2 left the list
+        // starting cold against the status bar with nothing naming the screen.
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp)) {
+            ChromaticText("ROLLS")
+            Spacer(Modifier.height(8.dp))
+            Text(
+                buildList {
+                    add("${rolls.size} ROLL${if (rolls.size == 1) "" else "S"}")
+                    val frames = rolls.sumOf { it.shots.size }
+                    if (frames > 0) add("$frames FRAMES LOGGED")
+                }.joinToString(" · "),
+                style = FilmTheme.type.eyebrow,
+                color = FilmTheme.colors.dim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         FilmChipRow(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)
+                .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)
         ) {
             stages.forEachIndexed { i, (label, rollsInStage) ->
                 val selected = subTab == i
