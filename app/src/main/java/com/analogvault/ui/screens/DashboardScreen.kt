@@ -137,6 +137,18 @@ fun DashboardScreen(
             }
         }
 
+        item(key = "pipeline") {
+            Pipeline(
+                counts = listOf(
+                    "Shooting" to shooting.size,
+                    "To dev" to awaitDev.size,
+                    "To scan" to awaitScan.size,
+                    "Archived" to archived.size,
+                ),
+                onStage = { index -> onNavigate(TAB_ACTIVE, index, null) },
+            )
+        }
+
         item(key = "light") {
             LightRightNow(
                 sun = sun,
@@ -148,18 +160,6 @@ fun DashboardScreen(
                 } ?: 100,
                 onOpenMeter = { onNavigate(TAB_METER, 0, null) },
                 onOpenWeather = { onNavigate(TAB_WEATHER, 0, null) },
-            )
-        }
-
-        item(key = "pipeline") {
-            Pipeline(
-                counts = listOf(
-                    "Shooting" to shooting.size,
-                    "To dev" to awaitDev.size,
-                    "To scan" to awaitScan.size,
-                    "Archived" to archived.size,
-                ),
-                onStage = { index -> onNavigate(TAB_ACTIVE, index, null) },
             )
         }
 
