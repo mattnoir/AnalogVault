@@ -85,6 +85,37 @@ fun Modifier.halation(
 }
 
 /**
+ * Diagonal hazard hatching — "this one is not available to you".
+ *
+ * Used on exposure-ladder rungs the mounted gear cannot be set to, and behind
+ * the clamp banner. It is deliberately a texture and not just a dimmer colour:
+ * greyed-out is the same signal the design already spends on dead stock, and a
+ * rung that is unreachable because of your lens is a different fact from one
+ * that is merely unselected.
+ */
+fun Modifier.hazardHatch(
+    color: Color,
+    stripe: Dp = 5.dp,
+    alpha: Float = 1f,
+): Modifier = drawBehind {
+    val w = stripe.toPx()
+    val step = w * 2
+    // Slanted 45°, so each stripe is drawn as a thick line running off both
+    // edges; the clip of the layout bounds does the rest.
+    var x = -size.height
+    while (x < size.width + size.height) {
+        drawLine(
+            color = color,
+            start = Offset(x, size.height),
+            end = Offset(x + size.height, 0f),
+            strokeWidth = w,
+            alpha = alpha,
+        )
+        x += step
+    }
+}
+
+/**
  * Film grain over the whole app.
  *
  * Generated once at runtime rather than shipped as an asset, tiled with an

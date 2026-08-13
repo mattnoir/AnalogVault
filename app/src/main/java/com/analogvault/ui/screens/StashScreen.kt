@@ -40,6 +40,18 @@ import kotlinx.coroutines.launch
 // ─── Format options (replaces "shots") ───────────────────────────────────────
 val FILM_FORMATS_DISPLAY = listOf("135 (35mm)", "120", "220", "4x5", "8x10", "Super 8", "110", "126", "Instant")
 
+/**
+ * The "I haven't filled this in" entry in the gear-limit dropdowns, stored as a
+ * blank string. It reads as a dash rather than an empty row so the option is
+ * visibly pickable — an empty row looks like a rendering fault, and these limits
+ * are ones a user legitimately wants to clear again once set.
+ */
+private const val UNKNOWN_LIMIT = "—"
+
+/** Bare aperture number as the lens fields store it ("8", "5.6"). */
+private fun apertureNum(a: Double): String =
+    if (a == a.toLong().toDouble()) a.toLong().toString() else a.toString()
+
 @Composable
 fun StashScreen(vm: MainViewModel) {
     // Collect once at top level — each tab only reads what it needs
@@ -1453,6 +1465,9 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
     var adapters   by remember { mutableStateOf(ed?.adapterMounts ?: emptyList<String>()) }
     var notes      by remember { mutableStateOf(ed?.notes ?: "") }
     var showAdapters by remember { mutableStateOf(adapters.isNotEmpty()) }
+    var fastest    by remember { mutableStateOf(ed?.fastestShutter ?: "") }
+    var slowest    by remember { mutableStateOf(ed?.slowestShutter ?: "") }
+    var hasBulb    by remember { mutableStateOf(ed?.hasBulb ?: false) }
 
     fun onCameraSelected(modelName: String) {
         name = modelName
@@ -1533,13 +1548,40 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                 }
             }
         }
+        // Shutter range. Left blank the meter suggests whatever the light asks
+        // for, which is the old behaviour; filled in it stops offering speeds the
+        // dial does not have.
+        Spacer(Modifier.height(14.dp))
+        Text("Shutter range", color = TextTertiary, fontSize = 11.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            VaultDropdown("Fastest", fastest.ifBlank { UNKNOWN_LIMIT },
+                listOf(UNKNOWN_LIMIT) + Constants.SHUTTER_SPEEDS.filter { it != "B" },
+                { fastest = if (it == UNKNOWN_LIMIT) "" else it }, modifier = Modifier.weight(1f))
+            VaultDropdown("Slowest", slowest.ifBlank { UNKNOWN_LIMIT },
+                listOf(UNKNOWN_LIMIT) + Constants.SHUTTER_SPEEDS.filter { it != "B" },
+                { slowest = if (it == UNKNOWN_LIMIT) "" else it }, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Bulb", color = TextSecondary, fontSize = 13.sp)
+                Text("Lets the meter suggest holding past the slowest speed",
+                    color = TextTertiary, fontSize = 10.sp)
+            }
+            Switch(checked = hasBulb, onCheckedChange = { hasBulb = it },
+                colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark))
+        }
+
         Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2)
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Camera", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(Camera(id = ed?.id ?: uid(), name = name, brand = brand, format = format,
                 mfFormat = mfFormat, lensSystem = lensSystem, condition = condition,
-                mount = mount, adapterMounts = adapters, notes = notes))
+                mount = mount, adapterMounts = adapters, notes = notes,
+                fastestShutter = fastest, slowestShutter = slowest, hasBulb = hasBulb))
         })
     }
 }
@@ -1550,6 +1592,7 @@ fun LensSheet(ed: Lens?, onDismiss: () -> Unit, onSave: (Lens) -> Unit) {
     var brand       by remember { mutableStateOf(ed?.brand ?: "") }
     var focalLength by remember { mutableStateOf(ed?.focalLength ?: "50") }
     var maxAperture by remember { mutableStateOf(ed?.maxAperture ?: "1.8") }
+    var minAperture by remember { mutableStateOf(ed?.minAperture ?: "") }
     var mount       by remember { mutableStateOf(ed?.mount ?: "") }
     var condition   by remember { mutableStateOf(ed?.condition ?: "Good") }
 
@@ -1568,10 +1611,18 @@ fun LensSheet(ed: Lens?, onDismiss: () -> Unit, onSave: (Lens) -> Unit) {
             VaultDropdown("Mount", mount, listOf("") + Constants.COMMON_MOUNTS, { mount = it }, modifier = Modifier.weight(1f))
             VaultDropdown("Condition", condition, Constants.LENS_CONDITIONS, { condition = it }, modifier = Modifier.weight(1f))
         }
+        // The far end of the ring. Left unknown the meter never stripes a
+        // stopped-down rung, because guessing f/16 on a lens that goes to f/22
+        // would rule out a frame the lens can take.
+        Spacer(Modifier.height(10.dp))
+        VaultDropdown("Min Aperture (stops down to)", minAperture.ifBlank { UNKNOWN_LIMIT },
+            listOf(UNKNOWN_LIMIT) + Constants.APERTURES.filter { it >= 4.0 }.map { apertureNum(it) },
+            { minAperture = if (it == UNKNOWN_LIMIT) "" else it })
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Lens", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(Lens(id = ed?.id ?: uid(), name = name, brand = brand, focalLength = focalLength,
-                maxAperture = maxAperture, mount = mount, condition = condition))
+                maxAperture = maxAperture, minAperture = minAperture, mount = mount,
+                condition = condition))
         })
     }
 }

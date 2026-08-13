@@ -242,13 +242,21 @@ fun VaultApp() {
                     onMeterConsumed      = { meterShutter = ""; meterAperture = ""; meterIso = "" },
                     onNavigateToDarkroom = { navigateTo(Tab.DARK) }
                 )
-                Tab.METER    -> Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-                    // The meter has no bottom bar, so it needs its own way out.
-                    MeterHeader(onClose = { currentTab = tabBeforeMeter })
-                    MeterScreen(vm, onUseInShot = { sh, ap, iso ->
-                        meterShutter = sh; meterAperture = ap; meterIso = iso
-                        navigateTo(Tab.ACTIVE, 0)
-                    })
+                // The meter owns its whole frame, status line and close button
+                // included — the readouts sit on the preview and the commit bar
+                // is pinned, so a header wrapped around it would push both.
+                // No navigationBarsPadding here: Scaffold's contentPadding
+                // already carries the system-bar inset, and adding it a second
+                // time left a band of dead black under the pinned commit bar.
+                Tab.METER    -> Box(Modifier.fillMaxSize()) {
+                    MeterScreen(
+                        vm = vm,
+                        onClose = { currentTab = tabBeforeMeter },
+                        onUseInShot = { sh, ap, iso ->
+                            meterShutter = sh; meterAperture = ap; meterIso = iso
+                            navigateTo(Tab.ACTIVE, 0)
+                        },
+                    )
                 }
                 Tab.WEATHER  -> WeatherScreen(vm)
                 Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
@@ -257,26 +265,6 @@ fun VaultApp() {
                 Tab.BACKUP   -> BackupScreen()
                 Tab.SETTINGS -> SettingsScreen(vm)
             }
-        }
-    }
-}
-
-/** Title row for the meter's full-screen destination. */
-@Composable
-private fun MeterHeader(onClose: () -> Unit) {
-    val colors = FilmTheme.colors
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(colors.void)
-            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("METER", style = FilmTheme.type.eyebrow, color = colors.dim)
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Default.Close, "Close the meter",
-                tint = colors.dim, modifier = Modifier.size(20.dp))
         }
     }
 }

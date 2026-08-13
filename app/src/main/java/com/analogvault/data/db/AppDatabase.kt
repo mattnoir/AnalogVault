@@ -120,13 +120,30 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+/**
+ * Add the gear limits the meter clamps against (v8 → v9).
+ *
+ * Every column defaults to "unknown" rather than to a plausible value. The meter
+ * treats unknown as unclamped, so an install that never fills any of this in
+ * behaves exactly as it did before — and a guessed default would be worse than
+ * nothing, because it would hazard-stripe a rung the gear can actually reach.
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE cameras ADD COLUMN fastestShutter TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE cameras ADD COLUMN slowestShutter TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE cameras ADD COLUMN hasBulb INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE lenses ADD COLUMN minAperture TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 8,
+    version = 9,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true

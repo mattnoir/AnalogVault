@@ -74,11 +74,10 @@ class MainViewModel @Inject constructor(
     val meterShutter: StateFlow<String> = _meterShutter.asStateFlow()
     private val _meterMetering = MutableStateFlow(Constants.METERING_TYPES[0])
     val meterMetering: StateFlow<String> = _meterMetering.asStateFlow()
-    /** "shutter" (fix shutter → solve aperture), "aperture" (fix aperture → solve shutter), "table" */
-    private val _meterMode = MutableStateFlow("shutter")
-    val meterMode: StateFlow<String> = _meterMode.asStateFlow()
-    private val _meterAperture = MutableStateFlow(8.0)
-    val meterAperture: StateFlow<Double> = _meterAperture.asStateFlow()
+    // The priority-mode selector and its fixed aperture are gone: the exposure
+    // ladder shows every equivalent pair and lets you pick one, which is both
+    // priorities at once. Their settings rows are left in the database rather
+    // than deleted, so downgrading an install does not lose them.
     private val _recipFilm = MutableStateFlow("Other B&W (generic)")
     val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
 
@@ -98,6 +97,19 @@ class MainViewModel @Inject constructor(
     val meterShadowEv: StateFlow<Double?> = _meterShadowEv.asStateFlow()
     private val _meterHighlightEv = MutableStateFlow<Double?>(null)
     val meterHighlightEv: StateFlow<Double?> = _meterHighlightEv.asStateFlow()
+    /**
+     * The roll the meter is metering for. It supplies the film speed, the gear
+     * to clamp against and the frame the commit bar logs to.
+     *
+     * Deliberately not persisted: which roll is in your hands is a fact about
+     * right now, and a stale value restored a week later would clamp the meter
+     * against a camera sitting in a drawer. Null means "no roll" — the meter
+     * still works, it just stops clamping and hands its reading to the shot
+     * sheet instead of logging a frame.
+     */
+    private val _meterRollId = MutableStateFlow<String?>(null)
+    val meterRollId: StateFlow<String?> = _meterRollId.asStateFlow()
+    fun setMeterRoll(rollId: String?) { _meterRollId.value = rollId }
 
     /** Called from the Camera2 capture callback (already throttled there). */
     fun onMeterReading(iso: Int, shutterSec: Double, aperture: Double) {
@@ -137,8 +149,6 @@ class MainViewModel @Inject constructor(
             _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
             _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
-            _meterMode.value     = repo.getSetting("meter_mode") ?: "shutter"
-            _meterAperture.value = repo.getSetting("meter_aperture")?.toDoubleOrNull() ?: 8.0
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
@@ -178,12 +188,6 @@ class MainViewModel @Inject constructor(
     }
     fun saveMeterMetering(m: String) = viewModelScope.launch {
         _meterMetering.value = m; repo.setSetting("meter_metering", m)
-    }
-    fun saveMeterMode(m: String) = viewModelScope.launch {
-        _meterMode.value = m; repo.setSetting("meter_mode", m)
-    }
-    fun saveMeterAperture(a: Double) = viewModelScope.launch {
-        _meterAperture.value = a; repo.setSetting("meter_aperture", a.toString())
     }
     fun saveRecipFilm(name: String) = viewModelScope.launch {
         _recipFilm.value = name; repo.setSetting("recip_film", name)
@@ -278,17 +282,26 @@ class MainViewModel @Inject constructor(
      * shot's exposure, now, cached weather) so the frame counter keeps up with
      * shooting; GPS is filled in asynchronously afterwards if permission is
      * already granted (never prompts). Details can be edited later.
+     *
+     * The meter passes the exposure it just solved; everything else still comes
+     * from the roll, so committing a reading and tapping a frame on Home write
+     * the same shape of shot.
      */
-    fun quickLogShot(rollId: String) = viewModelScope.launch {
+    fun quickLogShot(
+        rollId: String,
+        shutter: String? = null,
+        aperture: String? = null,
+        iso: String? = null,
+    ) = viewModelScope.launch {
         val roll = repo.rolls.first().find { it.id == rollId } ?: return@launch
         if (roll.finished || roll.developed) return@launch
         val last = roll.shots.lastOrNull()
         val film = films.value.find { it.id == roll.filmId }
         val shot = Shot(
             id       = uid(),
-            shutter  = last?.shutter ?: "",
-            aperture = last?.aperture ?: "",
-            iso      = last?.iso ?: roll.pushIso.ifBlank { film?.iso?.toString() ?: "" },
+            shutter  = shutter ?: last?.shutter ?: "",
+            aperture = aperture ?: last?.aperture ?: "",
+            iso      = iso ?: last?.iso ?: roll.pushIso.ifBlank { film?.iso?.toString() ?: "" },
             lens     = last?.lens ?: lenses.value.find { it.id == roll.cameraLensId }?.name.orEmpty(),
             weather  = (weatherState.value as? WeatherState.Success)?.data
                 ?.let { formatWeatherString(it, isMetric.value) } ?: "",
