@@ -36,7 +36,9 @@ import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.film.FilmNavBar
 import com.analogvault.ui.film.FilmNavItem
 import com.analogvault.ui.film.ChromaticText
+import com.analogvault.ui.film.ShutterOverlay
 import com.analogvault.ui.film.filmGrain
+import com.analogvault.ui.film.rememberShutterState
 import com.analogvault.ui.screens.*
 import com.analogvault.ui.theme.*
 import dagger.hilt.android.AndroidEntryPoint
@@ -179,13 +181,21 @@ fun VaultApp() {
         currentTab = tab
     }
 
+    // The meter is the one destination reached through the iris, and it is
+    // gated on the destination rather than on the LOG button so it cannot
+    // drift: however you get to the meter you get there the same way, and it
+    // leaves the way it arrived. Every other tab change keeps the slide.
+    val shutter = rememberShutterState()
+    fun openMeter() = shutter.fire { navigateTo(Tab.METER) }
+    fun closeMeter() = shutter.fire { currentTab = tabBeforeMeter }
+
     // Back: walk up one level — meter → wherever the shutter was pressed,
     // More sub-screens → More, any other tab → Home, Home → exit.
     BackHandler(enabled = currentTab != Tab.DASH) {
-        currentTab = when {
-            currentTab == Tab.METER -> tabBeforeMeter
-            currentTab in MORE_TABS -> Tab.MORE
-            else                    -> Tab.DASH
+        when {
+            currentTab == Tab.METER -> closeMeter()
+            currentTab in MORE_TABS -> currentTab = Tab.MORE
+            else                    -> currentTab = Tab.DASH
         }
     }
 
@@ -195,86 +205,101 @@ fun VaultApp() {
     // the numbers want every pixel.
     val showNavBar = currentTab != Tab.METER
 
-    Scaffold(
-        bottomBar = {
-            if (showNavBar) {
-                FilmNavBar(
-                    items = BOTTOM_TABS.map { tab ->
-                        FilmNavItem(
-                            label = tab.label,
-                            icon = tab.icon,
-                            badge = if (tab == Tab.ACTIVE) activeCount else null,
-                        )
-                    },
-                    selectedIndex = BOTTOM_TABS.indexOf(currentTab)
-                        .takeIf { it >= 0 }
-                        ?: BOTTOM_TABS.indexOf(Tab.MORE).takeIf { isMoreSub },
-                    onSelect = { navigateTo(BOTTOM_TABS[it]) },
-                    onShutter = { navigateTo(Tab.METER) },
-                    onShutterLongPress = { vm.toggleSafelight() },
-                )
-            }
-        }
-    ) { padding ->
-        AnimatedContent(
-            targetState = currentTab,
-            transitionSpec = {
-                // Slide toward the side the target tab sits on: rightward tab → enter from right,
-                // leftward tab → enter from left. Gives a sense of where each tab lives.
-                val dir = if (tabOrder(targetState) >= tabOrder(initialState)) 1 else -1
-                (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { dir * it / 6 }) togetherWith
-                (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { -dir * it / 6 })
-            },
-            label = "tab",
-            modifier = Modifier.padding(padding)
-        ) { tab ->
-            when (tab) {
-                Tab.DASH     -> DashboardScreen(vm,
-                    onNavigate = { tabIndex, subTab, rollId ->
-                        if (rollId != null) initialRollId = rollId
-                        val target = when (tabIndex) {
-                            1 -> Tab.STASH;  2 -> Tab.ACTIVE; 3 -> Tab.DARK
-                            4 -> Tab.METER;  5 -> Tab.WEATHER; 6 -> Tab.STATS
-                            else -> Tab.DASH
-                        }
-                        navigateTo(target, subTab)
-                    })
-                Tab.STASH    -> StashScreen(vm)
-                Tab.ACTIVE   -> ActiveScreen(
-                    vm = vm,
-                    initialSubTab = activeSubTab,
-                    initialRollId = initialRollId.also { initialRollId = null },
-                    meterShutter  = meterShutter,
-                    meterAperture = meterAperture,
-                    meterIso      = meterIso,
-                    onMeterConsumed      = { meterShutter = ""; meterAperture = ""; meterIso = "" },
-                    onNavigateToDarkroom = { navigateTo(Tab.DARK) }
-                )
-                // The meter owns its whole frame, status line and close button
-                // included — the readouts sit on the preview and the commit bar
-                // is pinned, so a header wrapped around it would push both.
-                // No navigationBarsPadding here: Scaffold's contentPadding
-                // already carries the system-bar inset, and adding it a second
-                // time left a band of dead black under the pinned commit bar.
-                Tab.METER    -> Box(Modifier.fillMaxSize()) {
-                    MeterScreen(
-                        vm = vm,
-                        onClose = { currentTab = tabBeforeMeter },
-                        onUseInShot = { sh, ap, iso ->
-                            meterShutter = sh; meterAperture = ap; meterIso = iso
-                            navigateTo(Tab.ACTIVE, 0)
+    // The Box is what lets the iris cover the window rather than the content
+    // area: the overlay is a sibling of the Scaffold, not a child of its body,
+    // so it paints over the nav bar, the status bar and the system bar insets
+    // too. Anything less and the blades close onto a lit strip of chrome.
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            bottomBar = {
+                if (showNavBar) {
+                    FilmNavBar(
+                        items = BOTTOM_TABS.map { tab ->
+                            FilmNavItem(
+                                label = tab.label,
+                                icon = tab.icon,
+                                badge = if (tab == Tab.ACTIVE) activeCount else null,
+                            )
                         },
+                        selectedIndex = BOTTOM_TABS.indexOf(currentTab)
+                            .takeIf { it >= 0 }
+                            ?: BOTTOM_TABS.indexOf(Tab.MORE).takeIf { isMoreSub },
+                        onSelect = { navigateTo(BOTTOM_TABS[it]) },
+                        onShutter = { openMeter() },
+                        onShutterLongPress = { vm.toggleSafelight() },
                     )
                 }
-                Tab.WEATHER  -> WeatherScreen(vm)
-                Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
-                Tab.DARK     -> DarkroomScreen(vm)
-                Tab.STATS    -> StatsScreen(vm)
-                Tab.HOMELAYOUT -> HomeLayoutScreen(vm)
-                Tab.BACKUP   -> BackupScreen()
-                Tab.SETTINGS -> SettingsScreen(vm)
+            }
+        ) { padding ->
+            AnimatedContent(
+                targetState = currentTab,
+                transitionSpec = {
+                    if (shutter.isRunning) {
+                        // Swapped behind closed blades. Sliding a screen nobody
+                        // can see wastes the shutter's hold: the incoming screen
+                        // would still be mid-slide when the iris opens onto it.
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        // Slide toward the side the target tab sits on: rightward tab → enter from right,
+                        // leftward tab → enter from left. Gives a sense of where each tab lives.
+                        val dir = if (tabOrder(targetState) >= tabOrder(initialState)) 1 else -1
+                        (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { dir * it / 6 }) togetherWith
+                        (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { -dir * it / 6 })
+                    }
+                },
+                label = "tab",
+                modifier = Modifier.padding(padding)
+            ) { tab ->
+                when (tab) {
+                    Tab.DASH     -> DashboardScreen(vm,
+                        onNavigate = { tabIndex, subTab, rollId ->
+                            if (rollId != null) initialRollId = rollId
+                            val target = when (tabIndex) {
+                                1 -> Tab.STASH;  2 -> Tab.ACTIVE; 3 -> Tab.DARK
+                                4 -> Tab.METER;  5 -> Tab.WEATHER; 6 -> Tab.STATS
+                                else -> Tab.DASH
+                            }
+                            if (target == Tab.METER) openMeter() else navigateTo(target, subTab)
+                        })
+                    Tab.STASH    -> StashScreen(vm)
+                    Tab.ACTIVE   -> ActiveScreen(
+                        vm = vm,
+                        initialSubTab = activeSubTab,
+                        initialRollId = initialRollId.also { initialRollId = null },
+                        meterShutter  = meterShutter,
+                        meterAperture = meterAperture,
+                        meterIso      = meterIso,
+                        onMeterConsumed      = { meterShutter = ""; meterAperture = ""; meterIso = "" },
+                        onNavigateToDarkroom = { navigateTo(Tab.DARK) }
+                    )
+                    // The meter owns its whole frame, status line and close button
+                    // included — the readouts sit on the preview and the commit bar
+                    // is pinned, so a header wrapped around it would push both.
+                    // No navigationBarsPadding here: Scaffold's contentPadding
+                    // already carries the system-bar inset, and adding it a second
+                    // time left a band of dead black under the pinned commit bar.
+                    Tab.METER    -> Box(Modifier.fillMaxSize()) {
+                        MeterScreen(
+                            vm = vm,
+                            onClose = { closeMeter() },
+                            onUseInShot = { sh, ap, iso ->
+                                meterShutter = sh; meterAperture = ap; meterIso = iso
+                                navigateTo(Tab.ACTIVE, 0)
+                            },
+                        )
+                    }
+                    Tab.WEATHER  -> WeatherScreen(vm)
+                    Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
+                    Tab.DARK     -> DarkroomScreen(vm)
+                    Tab.STATS    -> StatsScreen(vm)
+                    Tab.HOMELAYOUT -> HomeLayoutScreen(vm)
+                    Tab.BACKUP   -> BackupScreen()
+                    Tab.SETTINGS -> SettingsScreen(vm)
+                }
             }
         }
+
+        ShutterOverlay(shutter)
     }
 }
 
