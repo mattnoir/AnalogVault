@@ -11,6 +11,43 @@ interface WeatherApi {
         @Query("appid") apiKey: String,
         @Query("units") units: String = "metric"
     ): WeatherResponse
+
+    /**
+     * Place search by name.
+     *
+     * The Geocoding API is on the same free tier and the same key as current
+     * weather — no separate subscription, no extra token. It returns several
+     * matches because place names are not unique, and picking between two
+     * Springfields is the user's job, not ours.
+     */
+    @GET("geo/1.0/direct")
+    suspend fun searchPlaces(
+        @Query("q") query: String,
+        @Query("appid") apiKey: String,
+        @Query("limit") limit: Int = 5,
+    ): List<GeoPlace>
+}
+
+/**
+ * A place the weather can be asked about.
+ *
+ * [state] is only populated for US results, which is exactly where it is needed
+ * to tell two identically named towns apart.
+ */
+data class GeoPlace(
+    val name: String,
+    val lat: Double,
+    val lon: Double,
+    val country: String? = null,
+    val state: String? = null,
+) {
+    /** "Bratislava, SK" or "Springfield, Illinois, US". */
+    val label: String
+        get() = listOfNotNull(
+            name.takeIf { it.isNotBlank() },
+            state?.takeIf { it.isNotBlank() },
+            country?.takeIf { it.isNotBlank() },
+        ).joinToString(", ")
 }
 
 data class WeatherResponse(

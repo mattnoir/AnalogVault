@@ -11,9 +11,14 @@ import androidx.lifecycle.viewModelScope
 import com.analogvault.data.export.ExportResult
 import com.analogvault.data.export.RollExporter
 import com.analogvault.data.model.*
+import com.analogvault.data.network.GeoPlace
 import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.ui.screens.DEFAULT_HOME_ORDER
 import com.analogvault.ui.screens.DevTimer
+import com.analogvault.ui.screens.HomeSection
+import com.analogvault.ui.screens.parseHomeHidden
+import com.analogvault.ui.screens.parseHomeOrder
 import com.analogvault.ui.screens.MeterReading
 import com.analogvault.ui.screens.formatLatLon
 import com.analogvault.ui.screens.formatWeatherString
@@ -141,6 +146,14 @@ class MainViewModel @Inject constructor(
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
             _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
+            _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
+            _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
+            _placeName.value = repo.getSetting("place_name").orEmpty()
+            placeLat = repo.getSetting("place_lat")?.toDoubleOrNull()
+            placeLon = repo.getSetting("place_lon")?.toDoubleOrNull()
+            // Pinned places do not need the device, so the fetch can start here
+            // rather than waiting for a screen to ask for a location permission.
+            pinnedLatLon()?.let { (la, lo) -> fetchWeather(la, lo) }
             _remindersEnabled.value   = repo.getSetting("reminders_enabled") == "true"
             _remindExpiry.value       = (repo.getSetting("remind_expiry") ?: "true") == "true"
             _remindUndeveloped.value  = (repo.getSetting("remind_undeveloped") ?: "true") == "true"
@@ -368,6 +381,42 @@ class MainViewModel @Inject constructor(
     fun cutFromBulk(bulk: BulkRoll, frames: Int, quantity: Int, expiryDate: String) =
         viewModelScope.launch { repo.cutFromBulk(bulk, frames, quantity, expiryDate) }
 
+    // ─── Home layout ─────────────────────────────────────────────────────────
+    //
+    // Which rows Home is built from, in which order. Persisted as two CSVs of
+    // enum names rather than indices: indices would silently reshuffle
+    // everyone's layout the day a section is inserted into the middle of the
+    // enum, and names simply keep pointing at the same row.
+
+    private val _homeOrder = MutableStateFlow(DEFAULT_HOME_ORDER)
+    val homeOrder: StateFlow<List<HomeSection>> = _homeOrder.asStateFlow()
+    private val _homeHidden = MutableStateFlow(emptySet<HomeSection>())
+    val homeHidden: StateFlow<Set<HomeSection>> = _homeHidden.asStateFlow()
+
+    fun moveHomeSection(section: HomeSection, delta: Int) = viewModelScope.launch {
+        val current = _homeOrder.value.toMutableList()
+        val from = current.indexOf(section)
+        val to = from + delta
+        if (from < 0 || to !in current.indices) return@launch
+        current.removeAt(from)
+        current.add(to, section)
+        _homeOrder.value = current
+        repo.setSetting("home_order", current.joinToString(",") { it.name })
+    }
+
+    fun setHomeSectionVisible(section: HomeSection, visible: Boolean) = viewModelScope.launch {
+        val next = if (visible) _homeHidden.value - section else _homeHidden.value + section
+        _homeHidden.value = next
+        repo.setSetting("home_hidden", next.joinToString(",") { it.name })
+    }
+
+    fun resetHomeLayout() = viewModelScope.launch {
+        _homeOrder.value = DEFAULT_HOME_ORDER
+        _homeHidden.value = emptySet()
+        repo.setSetting("home_order", "")
+        repo.setSetting("home_hidden", "")
+    }
+
     // ─── Weather ─────────────────────────────────────────────────────────────
     private val _weatherState = MutableStateFlow<WeatherState>(WeatherState.Idle)
     val weatherState: StateFlow<WeatherState> = _weatherState
@@ -382,6 +431,66 @@ class MainViewModel @Inject constructor(
         } catch (e: Exception) {
             _weatherState.value = WeatherState.Error(e.message ?: "Network error")
         }
+    }
+
+    // ─── Chosen place ────────────────────────────────────────────────────────
+    //
+    // A pinned place overrides the device's location everywhere weather is used.
+    // Planning a shoot somewhere you are not is the normal case for this app —
+    // you check the light for the coast on Thursday from your kitchen — and a
+    // forecast that silently snaps back to where the phone is would be useless
+    // for it. Persisted as three settings rather than a table: it is one value,
+    // and a table for one row is a migration nobody needed.
+
+    private val _placeName = MutableStateFlow("")
+    /** Blank when following the device's location. */
+    val placeName: StateFlow<String> = _placeName.asStateFlow()
+    private var placeLat: Double? = null
+    private var placeLon: Double? = null
+
+    private val _placeResults = MutableStateFlow<List<GeoPlace>>(emptyList())
+    val placeResults: StateFlow<List<GeoPlace>> = _placeResults.asStateFlow()
+    private val _placeSearching = MutableStateFlow(false)
+    val placeSearching: StateFlow<Boolean> = _placeSearching.asStateFlow()
+
+    /** Coordinates to use, or null to fall back to the device. */
+    fun pinnedLatLon(): Pair<Double, Double>? {
+        val la = placeLat; val lo = placeLon
+        return if (la != null && lo != null) la to lo else null
+    }
+
+    fun searchPlaces(query: String) = viewModelScope.launch {
+        val key = _owmKey.value
+        if (key.isBlank() || query.isBlank()) { _placeResults.value = emptyList(); return@launch }
+        _placeSearching.value = true
+        try {
+            _placeResults.value = weatherApi.searchPlaces(query.trim(), key)
+        } catch (_: Exception) {
+            _placeResults.value = emptyList()
+        } finally {
+            _placeSearching.value = false
+        }
+    }
+    fun clearPlaceResults() { _placeResults.value = emptyList() }
+
+    fun pinPlace(place: GeoPlace) = viewModelScope.launch {
+        placeLat = place.lat; placeLon = place.lon
+        _placeName.value = place.label
+        repo.setSetting("place_name", place.label)
+        repo.setSetting("place_lat", place.lat.toString())
+        repo.setSetting("place_lon", place.lon.toString())
+        _placeResults.value = emptyList()
+        fetchWeather(place.lat, place.lon)
+    }
+
+    /** Back to wherever the phone is. */
+    fun unpinPlace() = viewModelScope.launch {
+        placeLat = null; placeLon = null
+        _placeName.value = ""
+        repo.setSetting("place_name", "")
+        repo.setSetting("place_lat", "")
+        repo.setSetting("place_lon", "")
+        _weatherState.value = WeatherState.Idle
     }
 
     // ─── Roll exports ────────────────────────────────────────────────────────

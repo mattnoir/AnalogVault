@@ -35,6 +35,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.film.FilmNavBar
 import com.analogvault.ui.film.FilmNavItem
+import com.analogvault.ui.film.ChromaticText
 import com.analogvault.ui.film.filmGrain
 import com.analogvault.ui.screens.*
 import com.analogvault.ui.theme.*
@@ -128,6 +129,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     // "More" sub-items — not shown in bottom bar directly
     DARK    ("Darkroom",Icons.Default.Science),
     STATS   ("Stats",   Icons.Default.BarChart),
+    HOMELAYOUT("Home layout", Icons.Default.Dashboard),
     WEATHER ("Weather", Icons.Default.Cloud),
     BACKUP  ("Backup",  Icons.Default.CloudDownload),
     SETTINGS("Settings",Icons.Default.Settings)
@@ -140,14 +142,15 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 // More until Home absorbs it, so nothing becomes unreachable in the meantime.
 // The OWM key entry it used to own already exists in Settings.
 private val BOTTOM_TABS = listOf(Tab.DASH, Tab.STASH, Tab.ACTIVE, Tab.MORE)
-private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.WEATHER, Tab.BACKUP, Tab.SETTINGS)
+private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.WEATHER, Tab.HOMELAYOUT, Tab.BACKUP, Tab.SETTINGS)
 
 // Left-to-right position of each tab. The screen transition slides toward the side the new
 // tab sits on (e.g. Home→Rolls slides in from the right, Rolls→Stash slides in from the left).
 private fun tabOrder(tab: Tab): Int = when (tab) {
     Tab.DASH -> 0; Tab.STASH -> 1; Tab.ACTIVE -> 2; Tab.MORE -> 3
-    Tab.DARK -> 4; Tab.STATS -> 5; Tab.WEATHER -> 6; Tab.BACKUP -> 7; Tab.SETTINGS -> 8
-    Tab.METER -> 9
+    Tab.DARK -> 4; Tab.STATS -> 5; Tab.WEATHER -> 6; Tab.HOMELAYOUT -> 7
+    Tab.BACKUP -> 8; Tab.SETTINGS -> 9
+    Tab.METER -> 10
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -267,6 +270,7 @@ fun VaultApp() {
                 Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
                 Tab.DARK     -> DarkroomScreen(vm)
                 Tab.STATS    -> StatsScreen(vm)
+                Tab.HOMELAYOUT -> HomeLayoutScreen(vm)
                 Tab.BACKUP   -> BackupScreen()
                 Tab.SETTINGS -> SettingsScreen(vm)
             }
@@ -281,37 +285,49 @@ private fun MoreScreen(currentSub: Tab?, onNavigate: (Tab) -> Unit) {
         Tab.STATS    to "Roll statistics, cost breakdown, shot map",
         Tab.WEATHER  to "Forecast and golden hour for planning a shoot",
         Tab.BACKUP   to "Export and import your vault data",
-        Tab.SETTINGS to "OWM key, currency, units, custom ISOs"
+        Tab.HOMELAYOUT to "Reorder or hide the rows on the home screen",
+        Tab.SETTINGS to "OWM key, currency, units, safelight, reminders"
     )
+    val colors = FilmTheme.colors
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier
+            .fillMaxSize()
+            .background(colors.void)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("More", color = AmberBright, fontSize = 22.sp)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(14.dp))
+        ChromaticText("MORE", style = FilmTheme.type.display, color = colors.halide)
+        Spacer(Modifier.height(10.dp))
         items.forEach { (tab, subtitle) ->
+            val selected = currentSub == tab
             Row(
-                modifier = Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (currentSub == tab) AmberDark.copy(alpha = 0.2f) else Bg2)
-                    .border(1.dp, if (currentSub == tab) Amber else Border,
-                        RoundedCornerShape(10.dp))
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.film)
+                    .border(1.dp, if (selected) colors.cyan else colors.edge)
                     .clickable { onNavigate(tab) }
-                    .padding(16.dp),
+                    .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(tab.icon, null, tint = if (currentSub == tab) Amber else TextSecondary,
-                    modifier = Modifier.size(28.dp))
+                Icon(tab.icon, null, tint = if (selected) colors.cyan else colors.dim,
+                    modifier = Modifier.size(22.dp))
                 // weight(1f) on the text, not a Spacer after it. An unweighted
                 // Column takes its full measured width, so a subtitle long
                 // enough to wrap pushed the chevron past the row's edge —
                 // visible on Darkroom before Weather was added, and on both after.
                 Column(Modifier.weight(1f)) {
-                    Text(tab.label, color = if (currentSub == tab) Amber else TextPrimary, fontSize = 16.sp)
-                    Text(subtitle, color = TextTertiary, fontSize = 12.sp)
+                    Text(
+                        tab.label.uppercase(),
+                        style = FilmTheme.type.stock.copy(fontSize = 19.sp),
+                        color = if (selected) colors.cyan else colors.halide,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(subtitle.uppercase(), style = FilmTheme.type.rebate, color = colors.dim)
                 }
-                Icon(Icons.Default.ChevronRight, null, tint = TextTertiary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.ChevronRight, null, tint = colors.dim,
+                    modifier = Modifier.size(18.dp))
             }
         }
     }

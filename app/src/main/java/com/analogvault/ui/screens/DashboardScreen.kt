@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import com.analogvault.data.model.BulkRoll
@@ -81,6 +82,10 @@ fun DashboardScreen(
     val bulkRolls    by vm.bulkRolls.collectAsState()
     val weatherState by vm.weatherState.collectAsState()
     val owmKey       by vm.owmKey.collectAsState()
+    val isMetric     by vm.isMetric.collectAsState()
+    val placeName    by vm.placeName.collectAsState()
+    val homeOrder    by vm.homeOrder.collectAsState()
+    val homeHidden   by vm.homeHidden.collectAsState()
 
     // Fetch our own weather when nothing else has.
     //
@@ -92,6 +97,8 @@ fun DashboardScreen(
     val context = LocalContext.current
     LaunchedEffect(owmKey, weatherState) {
         if (owmKey.isBlank() || weatherState !is WeatherState.Idle) return@LaunchedEffect
+        // A pinned place wins and needs no permission at all.
+        vm.pinnedLatLon()?.let { (lat, lon) -> vm.fetchWeather(lat, lon); return@LaunchedEffect }
         val granted = ContextCompat.checkSelfPermission(
             context, android.Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
@@ -128,11 +135,16 @@ fun DashboardScreen(
         isRefreshing = weatherState is WeatherState.Loading,
         onRefresh = {
             scope.launch {
-                val granted = ContextCompat.checkSelfPermission(
-                    context, android.Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
-                if (granted) {
-                    getWeatherLocation(context)?.let { (lat, lon) -> vm.fetchWeather(lat, lon) }
+                val pinned = vm.pinnedLatLon()
+                if (pinned != null) {
+                    vm.fetchWeather(pinned.first, pinned.second)
+                } else {
+                    val granted = ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (granted) {
+                        getWeatherLocation(context)?.let { (lat, lon) -> vm.fetchWeather(lat, lon) }
+                    }
                 }
             }
         },
@@ -149,57 +161,217 @@ fun DashboardScreen(
             HomeHeader(sun = sun, weather = weather, loadedCount = shooting.size)
         }
 
-        if (shooting.isNotEmpty()) {
-            item(key = "hero") {
-                LoadedRollHero(
-                    rolls = shooting,
-                    films = films,
-                    cameras = cameras,
-                    onLogFrame = { rollId -> vm.quickLogShot(rollId) },
-                    onOpenRoll = { rollId -> onNavigate(TAB_ACTIVE, 0, rollId) },
-                )
+        // Sections render in the order the user chose, so this is a loop over
+        // that order rather than a fixed sequence of items.
+        homeOrder.filterNot { it in homeHidden }.forEach { section ->
+            when (section) {
+                HomeSection.HERO -> {
+                    if (shooting.isNotEmpty()) {
+                        item(key = "hero") {
+                            LoadedRollHero(
+                                rolls = shooting,
+                                films = films,
+                                cameras = cameras,
+                                onLogFrame = { rollId -> vm.quickLogShot(rollId) },
+                                onOpenRoll = { rollId -> onNavigate(TAB_ACTIVE, 0, rollId) },
+                            )
+                        }
+                    } else {
+                        item(key = "hero_empty") {
+                            EmptyLoadedHero(onLoad = { onNavigate(TAB_ACTIVE, 0, null) })
+                        }
+                    }
+                }
+                HomeSection.PIPELINE -> item(key = "pipeline") {
+                    Pipeline(
+                        counts = listOf(
+                            "Shooting" to shooting.size,
+                            "To dev" to awaitDev.size,
+                            "To scan" to awaitScan.size,
+                            "Archived" to archived.size,
+                        ),
+                        onStage = { index -> onNavigate(TAB_ACTIVE, index, null) },
+                    )
+                }
+                HomeSection.WEATHER -> item(key = "weather") {
+                    WeatherStrip(
+                        weather = weather,
+                        light = light,
+                        films = films,
+                        placeName = placeName,
+                        isMetric = isMetric,
+                        hasKey = owmKey.isNotBlank(),
+                        onOpenWeather = { onNavigate(TAB_WEATHER, 0, null) },
+                    )
+                }
+                HomeSection.LIGHT -> item(key = "light") {
+                    LightRightNow(
+                        sun = sun,
+                        hasKey = owmKey.isNotBlank(),
+                        evAtIso100 = light?.evEstimate,
+                        loadedIso = shooting.firstOrNull()?.let { roll ->
+                            roll.pushIso.toIntOrNull()?.takeIf { it > 0 }
+                                ?: films.find { it.id == roll.filmId }?.iso?.takeIf { it > 0 }
+                        } ?: 100,
+                        onOpenMeter = { onNavigate(TAB_METER, 0, null) },
+                        onOpenWeather = { onNavigate(TAB_WEATHER, 0, null) },
+                    )
+                }
+                HomeSection.NUDGES -> items(nudges.size, key = { "nudge_$it" }) { i ->
+                    val nudge = nudges[i]
+                    NudgeCard(
+                        title = nudge.title,
+                        body = nudge.body,
+                        onClick = { onNavigate(nudge.tab, nudge.subTab, nudge.rollId) },
+                    )
+                }
             }
-        } else {
-            item(key = "hero_empty") {
-                EmptyLoadedHero(onLoad = { onNavigate(TAB_ACTIVE, 0, null) })
-            }
-        }
-
-        item(key = "pipeline") {
-            Pipeline(
-                counts = listOf(
-                    "Shooting" to shooting.size,
-                    "To dev" to awaitDev.size,
-                    "To scan" to awaitScan.size,
-                    "Archived" to archived.size,
-                ),
-                onStage = { index -> onNavigate(TAB_ACTIVE, index, null) },
-            )
-        }
-
-        item(key = "light") {
-            LightRightNow(
-                sun = sun,
-                hasKey = owmKey.isNotBlank(),
-                evAtIso100 = light?.evEstimate,
-                loadedIso = shooting.firstOrNull()?.let { roll ->
-                    roll.pushIso.toIntOrNull()?.takeIf { it > 0 }
-                        ?: films.find { it.id == roll.filmId }?.iso?.takeIf { it > 0 }
-                } ?: 100,
-                onOpenMeter = { onNavigate(TAB_METER, 0, null) },
-                onOpenWeather = { onNavigate(TAB_WEATHER, 0, null) },
-            )
-        }
-
-        items(nudges.size, key = { "nudge_$it" }) { i ->
-            val nudge = nudges[i]
-            NudgeCard(
-                title = nudge.title,
-                body = nudge.body,
-                onClick = { onNavigate(nudge.tab, nudge.subTab, nudge.rollId) },
-            )
         }
     }
+    }
+}
+
+// ─── Weather card ─────────────────────────────────────────────────────────────
+
+/**
+ * The weather as a short strip of film you swipe through.
+ *
+ * Three frames, in the order the questions actually arrive: what is it doing
+ * out there, what does that mean for shooting, and which of your stocks suits
+ * it. Splitting them across a pager rather than stacking them keeps Home
+ * scannable — the first frame answers the common case in one glance, and the
+ * other two are one thumb away when you are actually planning.
+ *
+ * Tapping any frame opens the full weather screen, where the forecast detail
+ * and the place picker live.
+ */
+@Composable
+private fun WeatherStrip(
+    weather: com.analogvault.data.network.WeatherResponse?,
+    light: LightConditions?,
+    films: List<FilmStock>,
+    placeName: String,
+    isMetric: Boolean,
+    hasKey: Boolean,
+    onOpenWeather: () -> Unit,
+) {
+    val colors = FilmTheme.colors
+
+    if (!hasKey || weather == null || light == null) {
+        FilmStripCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            onClick = onOpenWeather,
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Text("WEATHER", style = FilmTheme.type.eyebrow, color = colors.dim)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (!hasKey) "Add an OpenWeatherMap key to see conditions, the shooting note and a stock pick."
+                    else "No reading yet. Open weather to pick a place or use where you are.",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    color = colors.dim,
+                )
+            }
+        }
+        return
+    }
+
+    val top = remember(films, light) { recommendFilms(films, light).firstOrNull() }
+    val pages = 3
+    val pagerState = rememberPagerState(pageCount = { pages })
+
+    Column {
+        FilmStripCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            onClick = onOpenWeather,
+        ) {
+            HorizontalPager(state = pagerState) { page ->
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    when (page) {
+                        0 -> {
+                            Text(
+                                (placeName.ifBlank { weather.name }).uppercase(),
+                                style = FilmTheme.type.eyebrow, color = colors.dim,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val t = if (isMetric) weather.main.temp
+                                        else weather.main.temp * 9.0 / 5.0 + 32.0
+                                Text(
+                                    "${t.roundToInt()}°",
+                                    style = FilmTheme.type.readout.copy(fontSize = 40.sp),
+                                    color = colors.yellow,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    weather.weather.firstOrNull()?.description.orEmpty().uppercase(),
+                                    style = FilmTheme.type.data, color = colors.halide,
+                                    maxLines = 2,
+                                )
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            FilmChipRow {
+                                FilmChip("${weather.clouds.all}% CLOUD")
+                                FilmChip(
+                                    if (isMetric) "WIND ${weather.wind.speed.roundToInt()} M/S"
+                                    else "WIND ${(weather.wind.speed * 2.237).roundToInt()} MPH"
+                                )
+                                FilmChip("${weather.main.humidity}% RH")
+                            }
+                        }
+                        1 -> {
+                            Text("THE LIGHT", style = FilmTheme.type.eyebrow, color = colors.dim)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                light.lightQuality.uppercase(),
+                                style = FilmTheme.type.stock.copy(fontSize = 20.sp),
+                                color = colors.cyan,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                light.shootingNote,
+                                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                color = colors.halide,
+                            )
+                        }
+                        else -> {
+                            Text("SHOOT THIS", style = FilmTheme.type.eyebrow, color = colors.dim)
+                            Spacer(Modifier.height(8.dp))
+                            if (top == null) {
+                                Text(
+                                    "Nothing in the stash suits this light — or the stash is empty.",
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                    color = colors.dim,
+                                )
+                            } else {
+                                Text(
+                                    top.film.name.uppercase(),
+                                    style = FilmTheme.type.stock.copy(fontSize = 20.sp),
+                                    color = colors.magenta,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    top.reason,
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                    color = colors.halide,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                FilmChipRow { FilmChip("ISO ${top.film.iso}") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Frame counter for the pager, same idiom as the loaded-roll hero.
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "%02d / %02d".format(pagerState.currentPage + 1, pages),
+            style = FilmTheme.type.rebate, color = colors.dim,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
     }
 }
 

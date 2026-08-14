@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +39,9 @@ fun WeatherScreen(vm: MainViewModel) {
     val weatherState by vm.weatherState.collectAsState()
     val owmKey      by vm.owmKey.collectAsState()
     val isMetric    by vm.isMetric.collectAsState()
+    val placeName      by vm.placeName.collectAsState()
+    val placeResults   by vm.placeResults.collectAsState()
+    val placeSearching by vm.placeSearching.collectAsState()
 
     var editingKey by remember { mutableStateOf(false) }
     var keyInput   by remember { mutableStateOf(owmKey) }
@@ -103,16 +107,27 @@ fun WeatherScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(14.dp))
 
-        // Fetch button
-        VaultButton(
-            text = if (gpsLoading) "Getting location…" else "📍 Fetch Current Weather",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
+        // ── Place ─────────────────────────────────────────────────────────────
+        // Pinning a place is the normal case for planning: you check the light
+        // for the coast on Thursday from your kitchen. A pinned place overrides
+        // the device everywhere weather is used, including Home, so the two can
+        // never disagree about which sky they are describing.
+        PlacePicker(
+            pinnedName = placeName,
+            results = placeResults,
+            searching = placeSearching,
+            hasKey = owmKey.isNotBlank(),
+            onSearch = { vm.searchPlaces(it) },
+            onPick = { vm.pinPlace(it) },
+            onClearResults = { vm.clearPlaceResults() },
+            onUseDevice = {
+                vm.unpinPlace()
                 locationPermLauncher.launch(arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 ))
-            }
+            },
+            gpsLoading = gpsLoading,
         )
 
         Spacer(Modifier.height(16.dp))
@@ -298,6 +313,98 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
     }
 }
 
+// ─── Place picker ─────────────────────────────────────────────────────────────
+
+/**
+ * Search a place by name and pin it, or go back to following the device.
+ *
+ * Uses OpenWeatherMap's geocoding endpoint, which is on the same free tier and
+ * the same key as the forecast itself — no second subscription. It returns
+ * several matches on purpose: place names are not unique, and choosing between
+ * two Springfields is the user's call.
+ */
+@Composable
+private fun PlacePicker(
+    pinnedName: String,
+    results: List<com.analogvault.data.network.GeoPlace>,
+    searching: Boolean,
+    hasKey: Boolean,
+    gpsLoading: Boolean,
+    onSearch: (String) -> Unit,
+    onPick: (com.analogvault.data.network.GeoPlace) -> Unit,
+    onClearResults: () -> Unit,
+    onUseDevice: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp)).background(Bg2)
+            .border(1.dp, Border, RoundedCornerShape(10.dp))
+            .padding(14.dp)
+    ) {
+        Text("LOCATION", color = TextTertiary, fontSize = 10.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            if (pinnedName.isBlank()) "Following this device"
+            else "Pinned to $pinnedName",
+            color = if (pinnedName.isBlank()) TextSecondary else AmberBright,
+            fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            VaultTextField(
+                query, { query = it }, "Town or city",
+                modifier = Modifier.weight(1f),
+                placeholder = "e.g. Bratislava",
+            )
+            VaultButton(
+                text = if (searching) "…" else "Search",
+                small = true,
+                enabled = hasKey && query.isNotBlank(),
+                onClick = { onSearch(query) },
+            )
+        }
+        if (!hasKey) {
+            Spacer(Modifier.height(6.dp))
+            Text("Add an API key above to search places — it is the same free key.",
+                color = TextTertiary, fontSize = 11.sp)
+        }
+        if (results.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            results.forEach { place ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Bg3)
+                        .border(1.dp, Border, RoundedCornerShape(6.dp))
+                        .clickable { query = ""; onPick(place) }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(place.label, color = TextPrimary, fontSize = 13.sp,
+                        modifier = Modifier.weight(1f), maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text("%.2f, %.2f".format(place.lat, place.lon),
+                        color = TextTertiary, fontSize = 10.sp)
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            TextButton(onClick = { onClearResults() }) {
+                Text("Clear results", color = TextTertiary, fontSize = 11.sp)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        VaultButton(
+            text = if (gpsLoading) "Getting location…" else "📍 Use where I am",
+            modifier = Modifier.fillMaxWidth(),
+            ghost = pinnedName.isBlank(),
+            onClick = onUseDevice,
+        )
+    }
+}
+
 // ─── Light condition analysis ─────────────────────────────────────────────────
 
 data class LightConditions(
@@ -422,7 +529,9 @@ internal fun analyzeLightConditions(data: WeatherResponse): LightConditions {
 
 data class FilmRecommendation(val film: FilmStock, val score: Int, val reason: String)
 
-private fun recommendFilms(films: List<FilmStock>, light: LightConditions): List<FilmRecommendation> {
+// Internal rather than private: Home's weather card shows the same top pick, and
+// two scoring implementations would disagree the first time either is tuned.
+internal fun recommendFilms(films: List<FilmStock>, light: LightConditions): List<FilmRecommendation> {
     if (films.isEmpty()) return emptyList()
 
     // Only recommend stash films with quantity > 0
