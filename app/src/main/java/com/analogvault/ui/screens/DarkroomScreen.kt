@@ -754,8 +754,8 @@ fun CustomTimerSheet(onDismiss: () -> Unit, onStart: (DevTimer) -> Unit) {
         steps.forEachIndexed { i, (stepName, mins, secs) ->
             Column(
                 Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp)).background(Bg3)
-                    .border(1.dp, Border, RoundedCornerShape(8.dp))
+                    .background(Bg3)
+                    .border(1.dp, Border)
                     .padding(10.dp)
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,

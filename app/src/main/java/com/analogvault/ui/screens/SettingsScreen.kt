@@ -20,6 +20,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.util.Constants
 
 @Composable
@@ -52,7 +53,7 @@ fun SettingsScreen(vm: MainViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Settings", color = AmberBright, fontSize = 22.sp)
+        SectionTitle("Settings")
 
         // ── Weather ──────────────────────────────────────────────────────────
         SectionCard("Weather (OpenWeatherMap)") {
@@ -94,8 +95,10 @@ fun SettingsScreen(vm: MainViewModel) {
                     checked = isMetric,
                     onCheckedChange = { vm.saveMetric(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Amber,
-                        checkedTrackColor = AmberDark
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
                     )
                 )
             }
@@ -111,8 +114,10 @@ fun SettingsScreen(vm: MainViewModel) {
                     checked = highRefresh,
                     onCheckedChange = { vm.saveHighRefresh(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Amber,
-                        checkedTrackColor = AmberDark
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
                     )
                 )
             }
@@ -130,8 +135,10 @@ fun SettingsScreen(vm: MainViewModel) {
                     checked = safelight,
                     onCheckedChange = { vm.setSafelight(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Amber,
-                        checkedTrackColor = AmberDark
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
                     )
                 )
             }
@@ -158,7 +165,12 @@ fun SettingsScreen(vm: MainViewModel) {
                             vm.saveRemindersEnabled(on)
                         }
                     },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark)
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
+                    )
                 )
             }
             if (remindersEnabled) {
@@ -233,7 +245,12 @@ private fun ReminderToggle(label: String, checked: Boolean, onChange: (Boolean) 
         Switch(
             checked = checked,
             onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark),
+            colors = SwitchDefaults.colors(
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
+                    ),
             modifier = Modifier.height(24.dp)
         )
     }

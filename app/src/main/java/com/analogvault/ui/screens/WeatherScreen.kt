@@ -68,8 +68,8 @@ fun WeatherScreen(vm: MainViewModel) {
         // API Key section
         Box(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp)).background(Bg3)
-                .border(1.dp, Border, RoundedCornerShape(10.dp))
+                .background(Bg3)
+                .border(1.dp, Border)
                 .padding(12.dp)
         ) {
             Column {
@@ -144,8 +144,8 @@ fun WeatherScreen(vm: MainViewModel) {
             is WeatherState.Error -> {
                 Box(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp)).background(RedErr.copy(alpha = 0.1f))
-                        .border(1.dp, RedErr.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                        .background(RedErr.copy(alpha = 0.1f))
+                        .border(1.dp, RedErr.copy(alpha = 0.3f))
                         .padding(14.dp)
                 ) {
                     Text("⚠ ${state.message}", color = RedErr, fontSize = 13.sp)
@@ -175,8 +175,8 @@ fun WeatherScreen(vm: MainViewModel) {
 fun WeatherStatBox(label: String, value: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp)).background(Bg3)
-            .border(1.dp, Border, RoundedCornerShape(8.dp))
+            .background(Bg3)
+            .border(1.dp, Border)
             .padding(10.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -199,8 +199,8 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
         // Main card
         Box(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp)).background(Bg3)
-                .border(1.dp, Border, RoundedCornerShape(10.dp))
+                .background(Bg3)
+                .border(1.dp, Border)
                 .padding(16.dp)
         ) {
             Column {
@@ -259,8 +259,8 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
         Spacer(Modifier.height(14.dp))
         Box(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp)).background(AmberDark.copy(alpha = 0.15f))
-                .border(1.dp, AmberDark, RoundedCornerShape(10.dp))
+                .background(AmberDark.copy(alpha = 0.15f))
+                .border(1.dp, AmberDark)
                 .padding(12.dp)
         ) {
             Text("📸 ${light.shootingNote}", color = Amber, fontSize = 12.sp)
@@ -302,8 +302,8 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
             Spacer(Modifier.height(14.dp))
             Box(
                 modifier = Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp)).background(Bg3)
-                    .border(1.dp, Border, RoundedCornerShape(10.dp))
+                    .background(Bg3)
+                    .border(1.dp, Border)
                     .padding(12.dp)
             ) {
                 Text("Add film to your stash to get personalised recommendations here.",
@@ -339,8 +339,8 @@ private fun PlacePicker(
 
     Column(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp)).background(Bg2)
-            .border(1.dp, Border, RoundedCornerShape(10.dp))
+            .background(Bg2)
+            .border(1.dp, Border)
             .padding(14.dp)
     ) {
         Text("LOCATION", color = TextTertiary, fontSize = 10.sp)
@@ -376,9 +376,9 @@ private fun PlacePicker(
             results.forEach { place ->
                 Row(
                     Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
+                        
                         .background(Bg3)
-                        .border(1.dp, Border, RoundedCornerShape(6.dp))
+                        .border(1.dp, Border)
                         .clickable { query = ""; onPick(place) }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,

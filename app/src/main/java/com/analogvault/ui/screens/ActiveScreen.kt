@@ -154,9 +154,9 @@ fun ActiveScreen(
                         val cam  = cameras.find { it.id == roll.cameraId }
                         Box(
                             modifier = Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                
                                 .background(Bg4)
-                                .border(1.dp, Border, RoundedCornerShape(8.dp))
+                                .border(1.dp, Border)
                                 .clickable { selectedRollId = roll.id; showMeterRollPicker = false }
                                 .padding(12.dp)
                         ) {
@@ -785,8 +785,8 @@ fun RollDetailScreen(
             item(key = "map") {
                 Box(
                     modifier = Modifier.fillMaxWidth().height(300.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .border(1.dp, Border, RoundedCornerShape(10.dp))
+                        
+                        .border(1.dp, Border)
                 ) {
                     com.analogvault.ui.components.OsmMapView(
                         shots = roll.shots,
@@ -825,7 +825,7 @@ fun RollDetailScreen(
                                 model = File(shot.photoThumbPath),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(6.dp))
+                                modifier = Modifier.size(56.dp)
                                     .clickable { lightboxPath = shot.photoThumbPath }
                             )
                             Spacer(Modifier.height(4.dp))
@@ -1085,7 +1085,12 @@ fun ShotSheet(
                 Text("Location", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.weight(1f))
                 Text("Auto", color = TextTertiary, fontSize = 11.sp)
                 Switch(checked = autoLocation, onCheckedChange = { autoLocation = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark),
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
+                    ),
                     modifier = Modifier.height(20.dp))
             }
             Spacer(Modifier.height(4.dp))
@@ -1164,7 +1169,7 @@ fun ShotSheet(
         if (thumbPath.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
             AsyncImage(model = File(thumbPath), contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.size(80.dp).clip(RoundedCornerShape(8.dp)))
+                modifier = Modifier.size(80.dp))
         }
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Shot", modifier = Modifier.fillMaxWidth(), onClick = {
@@ -1279,7 +1284,12 @@ fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog, Double, Boolean) -> Unit) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Switch(checked = isSelfDev, onCheckedChange = { isSelfDev = it },
-                colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark))
+                colors = SwitchDefaults.colors(
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
+                    ))
             Text(if (isSelfDev) "Self-developed" else "Lab development", color = TextSecondary, fontSize = 12.sp)
         }
         Spacer(Modifier.height(6.dp))

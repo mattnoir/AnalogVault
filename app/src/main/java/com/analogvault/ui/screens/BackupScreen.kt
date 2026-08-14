@@ -28,6 +28,7 @@ import com.analogvault.ui.components.SectionCard
 import com.analogvault.ui.components.SectionTitle
 import com.analogvault.ui.components.VaultButton
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -87,8 +88,10 @@ fun BackupScreen() {
                     checked = includePhotos,
                     onCheckedChange = { includePhotos = it },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Amber,
-                        checkedTrackColor = AmberDark
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
                     )
                 )
                 androidx.compose.material3.Text(
@@ -175,9 +178,9 @@ private fun InfoCard(icon: ImageVector, text: String, color: Color) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            
             .background(color.copy(alpha = 0.08f))
-            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+            .border(1.dp, color.copy(alpha = 0.3f))
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -199,9 +202,9 @@ private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            
             .background(bg as Color)
-            .border(1.dp, border as Color, RoundedCornerShape(10.dp))
+            .border(1.dp, border as Color)
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically

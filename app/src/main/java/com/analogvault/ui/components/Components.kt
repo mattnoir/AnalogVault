@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,23 +62,36 @@ fun expiryStatus(rawDate: String): Triple<String, Color, Boolean> {
     } catch (e: Exception) { Triple(rawDate, TextSecondary, false) }
 }
 
-// ─── Amber chip / tag ─────────────────────────────────────────────────────────
+// ─── Data chip ────────────────────────────────────────────────────────────────
 
+/**
+ * A hairline data chip.
+ *
+ * Same name and signature the screens already call, drawn in the Dye Layer
+ * language: one border, no radius, mono caps, no fill. [textColor] is the
+ * semantic colour — it now drives the border as well as the text, since a chip
+ * with a filled background and a differently coloured label was two signals for
+ * one fact.
+ */
 @Composable
 fun VaultTag(
     text: String,
     modifier: Modifier = Modifier,
-    color: Color = Border,
-    textColor: Color = TextSecondary
+    color: Color = Color.Unspecified,
+    textColor: Color = Color.Unspecified
 ) {
+    val colors = FilmTheme.colors
+    val accent = when {
+        textColor != Color.Unspecified -> textColor
+        color != Color.Unspecified     -> color
+        else                           -> colors.dim
+    }
     Box(
         modifier = modifier
-            .drawBehind {
-                drawRoundRect(color = color, cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()))
-            }
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .border(1.dp, accent)
+            .padding(horizontal = 6.dp, vertical = 3.dp)
     ) {
-        Text(text, color = textColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Text(text.uppercase(), style = FilmTheme.type.data, color = accent, maxLines = 1)
     }
 }
 
@@ -122,8 +137,8 @@ fun SpinnerField(
         }
         Box {
             Box(
-                Modifier.background(if (tappable) Bg3 else Bg4, RoundedCornerShape(6.dp))
-                    .border(1.dp, if (tappable) Amber.copy(alpha = 0.45f) else Border, RoundedCornerShape(6.dp))
+                Modifier.background(if (tappable) Bg3 else Bg4)
+                    .border(1.dp, if (tappable) Amber.copy(alpha = 0.45f) else Border)
                     .then(if (tappable) Modifier.clickable {
                         if (onValueClick != null) onValueClick() else expanded = true
                     } else Modifier)
@@ -326,16 +341,20 @@ fun FullDatePickerDialog(
 
 @Composable
 fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    val colors = FilmTheme.colors
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Bg2)
-            .border(1.dp, Border, RoundedCornerShape(10.dp))
+            .background(colors.film)
+            .border(1.dp, colors.edge)
             .padding(14.dp)
     ) {
-        Text(title, color = Amber, fontSize = 14.sp)
-        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title.uppercase(), style = FilmTheme.type.eyebrow, color = colors.dim)
+            Spacer(Modifier.width(8.dp))
+            HorizontalDivider(color = colors.edge)
+        }
+        Spacer(Modifier.height(12.dp))
         content()
     }
 }
@@ -344,9 +363,18 @@ fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 fun SectionTitle(text: String, badge: String? = null) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp)) {
-        Text(text, color = Amber, fontSize = 18.sp, modifier = Modifier.weight(1f))
-        if (badge != null) Text(badge, color = TextTertiary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+    val colors = FilmTheme.colors
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier.padding(bottom = 14.dp)
+    ) {
+        Text(text.uppercase(), style = FilmTheme.type.display.copy(fontSize = 30.sp),
+            color = colors.halide)
+        if (badge != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(badge.uppercase(), style = FilmTheme.type.rebate, color = colors.dim,
+                modifier = Modifier.padding(bottom = 4.dp))
+        }
     }
 }
 
@@ -358,7 +386,9 @@ fun VaultCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val bgColor = Bg2
+    val colors = FilmTheme.colors
+    val bgColor = colors.film
+    val borderColor = colors.edge
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -370,16 +400,14 @@ fun VaultCard(
             // off-screen buffer (that only happens when alpha/clip/renderEffect are set).
             .graphicsLayer {}
             .drawBehind {
-                // drawBehind avoids clip() save/restore — much faster on Mali GPU
-                drawRoundRect(
-                    color = bgColor,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())
-                )
+                // Square, not rounded: everything in this design is a rectangle
+                // except the shutter. drawBehind still avoids the clip()
+                // save/restore, which is the reason this was hand-drawn.
+                drawRect(color = bgColor)
                 // Border drawn here (not via .border()) to stay inside the same
                 // RenderNode and avoid an extra save/restore layer.
-                drawRoundRect(
-                    color = Border,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+                drawRect(
+                    color = borderColor,
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
                 )
             }
@@ -403,22 +431,30 @@ fun VaultTextField(
     placeholder: String = "",
     enabled: Boolean = true
 ) {
+    val colors = FilmTheme.colors
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         enabled = enabled,
-        label = { Text(label, color = TextTertiary, fontSize = 11.sp) },
-        placeholder = if (placeholder.isNotBlank()) {{ Text(placeholder, color = TextTertiary, fontSize = 12.sp) }} else null,
+        shape = RectangleShape,
+        label = { Text(label.uppercase(), style = FilmTheme.type.rebate, color = colors.dim) },
+        placeholder = if (placeholder.isNotBlank()) {{
+            Text(placeholder, style = FilmTheme.type.data, color = colors.dead)
+        }} else null,
         singleLine = singleLine,
         minLines = minLines,
+        textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Amber,
-            unfocusedBorderColor = Border,
-            focusedTextColor = TextPrimary,
-            unfocusedTextColor = TextPrimary,
-            cursorColor = Amber,
-            focusedLabelColor = Amber,
+            focusedBorderColor = colors.cyan,
+            unfocusedBorderColor = colors.edge,
+            focusedTextColor = colors.halide,
+            unfocusedTextColor = colors.halide,
+            cursorColor = colors.cyan,
+            focusedLabelColor = colors.cyan,
+            focusedContainerColor = colors.film,
+            unfocusedContainerColor = colors.film,
+            disabledContainerColor = colors.film,
         ),
         modifier = modifier.fillMaxWidth()
     )
@@ -435,6 +471,7 @@ fun VaultDropdown(
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = FilmTheme.colors
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
         OutlinedTextField(
@@ -449,22 +486,26 @@ fun VaultDropdown(
             // hold — "135 (35mm)", "Color Negative (C-41)" — fit a half-width
             // column instead of being clipped by the single-line constraint.
             textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
-            label = { Text(label, color = TextTertiary, fontSize = 11.sp, maxLines = 1) },
+            shape = RectangleShape,
+            label = { Text(label.uppercase(), style = FilmTheme.type.rebate, color = colors.dim, maxLines = 1) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Amber, unfocusedBorderColor = Border,
-                focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary,
-                focusedLabelColor = Amber
+                focusedBorderColor = colors.cyan, unfocusedBorderColor = colors.edge,
+                focusedTextColor = colors.halide, unfocusedTextColor = colors.halide,
+                focusedLabelColor = colors.cyan,
+                focusedContainerColor = colors.film, unfocusedContainerColor = colors.film,
+                focusedTrailingIconColor = colors.cyan, unfocusedTrailingIconColor = colors.dim,
             ),
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
-            containerColor = Bg3) {
+            containerColor = colors.filmRaised, shape = RectangleShape,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.edge)) {
             options.forEach { opt ->
                 DropdownMenuItem(
-                    text = { Text(opt, color = TextPrimary, fontSize = 13.sp) },
+                    text = { Text(opt, style = FilmTheme.type.data, color = colors.halide) },
                     onClick = { onSelected(opt); expanded = false },
-                    colors = MenuDefaults.itemColors(textColor = TextPrimary)
+                    colors = MenuDefaults.itemColors(textColor = colors.halide)
                 )
             }
         }
@@ -496,20 +537,20 @@ fun AutoCompleteField(
             placeholder = placeholder
         )
         if (filtered.isNotEmpty()) {
+            val colors = FilmTheme.colors
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
-                    .background(Bg3)
-                    .border(1.dp, Border, RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+                    .background(colors.filmRaised)
+                    .border(1.dp, colors.edge)
             ) {
                 filtered.forEach { s ->
                     Text(
-                        s, color = TextPrimary, fontSize = 13.sp,
+                        s, style = FilmTheme.type.data, color = colors.halide,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { lastConfirmed = s; onValueChange(s) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .padding(horizontal = 12.dp, vertical = 9.dp)
                     )
                 }
             }
@@ -561,10 +602,12 @@ fun VaultSheet(
         skipPartiallyExpanded = true,
         confirmValueChange    = { it != SheetValue.Hidden }
     )
+    val colors = FilmTheme.colors
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState       = sheetState,
-        containerColor   = Bg2,
+        containerColor   = colors.film,
+        shape            = RectangleShape,
         tonalElevation   = 0.dp,
         // Remove the default drag handle — we show our own title row with X button
         dragHandle       = null
@@ -582,10 +625,11 @@ fun VaultSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                Text(title, color = AmberBright, fontSize = 18.sp)
+                Text(title.uppercase(), style = FilmTheme.type.stock.copy(fontSize = 22.sp),
+                    color = colors.halide)
                 IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Close, contentDescription = "Close",
-                        tint = TextSecondary, modifier = Modifier.size(20.dp))
+                        tint = colors.dim, modifier = Modifier.size(20.dp))
                 }
             }
             content()
@@ -602,18 +646,26 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = FilmTheme.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        titleContentColor = TextPrimary,
-        textContentColor = TextSecondary,
-        title = { Text("Confirm", color = AmberBright) },
-        text = { Text(message, color = TextSecondary) },
+        containerColor = colors.filmRaised,
+        shape = RectangleShape,
+        titleContentColor = colors.halide,
+        textContentColor = colors.dim,
+        title = {
+            Text("CONFIRM", style = FilmTheme.type.stock.copy(fontSize = 20.sp), color = colors.halide)
+        },
+        text = { Text(message, color = colors.halide) },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(confirmLabel, color = RedErr) }
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel.uppercase(), style = FilmTheme.type.data, color = colors.mask)
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) }
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", style = FilmTheme.type.data, color = colors.dim)
+            }
         }
     )
 }
@@ -630,52 +682,53 @@ fun VaultButton(
     small: Boolean = false,
     enabled: Boolean = true
 ) {
-    val bg = when {
-        !enabled -> Bg3
-        danger -> RedErr.copy(alpha = 0.15f)
-        ghost  -> Bg3
-        else   -> AmberDark
+    // Filled magenta for the action that commits, hairline for everything else.
+    // A screen where every button is filled has no primary action, which is the
+    // state the amber build was in.
+    val colors = FilmTheme.colors
+    val accent = when {
+        !enabled -> colors.dead
+        danger   -> colors.mask
+        ghost    -> colors.dim
+        else     -> colors.magenta
     }
-    val fg = when {
-        !enabled -> TextTertiary
-        danger -> RedErr
-        ghost  -> TextSecondary
-        else   -> TextPrimary
-    }
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(if (small) 34.dp else 44.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = bg, contentColor = fg,
-            disabledContainerColor = Bg3, disabledContentColor = TextTertiary
-        ),
-        contentPadding = PaddingValues(horizontal = if (small) 10.dp else 14.dp, vertical = 0.dp)
+    val filled = enabled && !ghost && !danger
+    Box(
+        modifier
+            .height(if (small) 36.dp else 46.dp)
+            .background(if (filled) accent else colors.film)
+            .border(1.dp, accent)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = if (small) 10.dp else 14.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = if (small) 11.sp else 13.sp)
+        Text(
+            text.uppercase(),
+            style = FilmTheme.type.data.copy(fontSize = if (small) 11.sp else 13.sp),
+            color = if (filled) colors.void else accent,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
     }
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
 @Composable
-fun VaultProgressBar(fraction: Float, color: Color = Amber) {
+fun VaultProgressBar(fraction: Float, color: Color = Color.Unspecified) {
+    val colors = FilmTheme.colors
+    val fill = if (color != Color.Unspecified) color else colors.cyan
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(4.dp)
-            .drawBehind {
-                drawRoundRect(color = Bg4, cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
-            }
+            .height(3.dp)
+            .drawBehind { drawRect(color = colors.filmRaised) }
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth(fraction.coerceIn(0f, 1f))
                 .fillMaxHeight()
-                .drawBehind {
-                    drawRoundRect(color = color, cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
-                }
+                .drawBehind { drawRect(color = fill) }
         )
     }
 }

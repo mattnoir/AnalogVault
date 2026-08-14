@@ -30,6 +30,7 @@ import com.analogvault.ui.film.rebateLine
 import com.analogvault.ui.film.rememberStockAccent
 import com.analogvault.ui.film.toStoredValue
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
 import com.analogvault.util.toDecimalOrNull
@@ -76,21 +77,22 @@ fun StashScreen(vm: MainViewModel) {
         // rather than shrinking or scrolling.
         ScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
-            containerColor = Bg2,
-            contentColor = Amber,
-            edgePadding = 0.dp,
+            containerColor = FilmTheme.colors.void,
+            contentColor = FilmTheme.colors.cyan,
+            edgePadding = 14.dp,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]), color = Amber
+                    Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                    color = FilmTheme.colors.cyan,
                 )
             }
         ) {
             tabs.forEachIndexed { i, t ->
                 Tab(selected = pagerState.currentPage == i,
                     onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
-                    text = { Text(t, fontSize = 12.sp) },
-                    selectedContentColor = Amber,
-                    unselectedContentColor = TextTertiary)
+                    text = { Text(t.uppercase(), style = FilmTheme.type.eyebrow) },
+                    selectedContentColor = FilmTheme.colors.cyan,
+                    unselectedContentColor = FilmTheme.colors.dim)
             }
         }
         HorizontalPager(
@@ -637,9 +639,9 @@ fun BulkRollSheet(
                         val selected = footageMetric == isMetric
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
+                                
                                 .background(if (selected) AmberDark else Bg3)
-                                .border(1.dp, if (selected) Amber else Border, RoundedCornerShape(4.dp))
+                                .border(1.dp, if (selected) Amber else Border)
                                 .clickable { footageMetric = isMetric; footage = "" }
                                 .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) { Text(label, color = if (selected) AmberBright else TextTertiary, fontSize = 11.sp) }
@@ -781,9 +783,9 @@ fun LoadFromBulkSheet(
                 val selected = frames == preset
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
+                        
                         .background(if (selected) AmberDark else Bg3)
-                        .border(1.dp, if (selected) Amber else Border, RoundedCornerShape(6.dp))
+                        .border(1.dp, if (selected) Amber else Border)
                         .clickable { frames = preset }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
@@ -875,8 +877,8 @@ fun FilterBar(
     extraToggle: Pair<String, Boolean>? = null, onExtraToggle: ((Boolean) -> Unit)? = null
 ) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Bg3)
-            .border(1.dp, Border, RoundedCornerShape(8.dp)).padding(10.dp),
+        Modifier.fillMaxWidth().background(Bg3)
+            .border(1.dp, Border).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -939,7 +941,10 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(cam.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(cam.name.ifBlank { "Unnamed" }.uppercase(),
+                            style = FilmTheme.type.stock.copy(fontSize = 19.sp),
+                            color = FilmTheme.colors.halide,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (cam.brand.isNotBlank()) Text(cam.brand, color = TextSecondary, fontSize = 11.sp)
                         Spacer(Modifier.height(4.dp))
                         TagRow() {
@@ -1016,7 +1021,10 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(lens.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(lens.name.ifBlank { "Unnamed" }.uppercase(),
+                            style = FilmTheme.type.stock.copy(fontSize = 19.sp),
+                            color = FilmTheme.colors.halide,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (lens.brand.isNotBlank()) Text(lens.brand, color = TextSecondary, fontSize = 11.sp)
                         Spacer(Modifier.height(4.dp))
                         TagRow() {
@@ -1152,7 +1160,10 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(acc.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(acc.name.ifBlank { "Unnamed" }.uppercase(),
+                            style = FilmTheme.type.stock.copy(fontSize = 19.sp),
+                            color = FilmTheme.colors.halide,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
                         TagRow() {
                             VaultTag(acc.type, textColor = AmberBright)
@@ -1282,9 +1293,9 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                         val sel = frameCount == preset.toString()
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
+                                
                                 .background(if (sel) AmberDark else Bg3)
-                                .border(1.dp, if (sel) Amber else Border, RoundedCornerShape(6.dp))
+                                .border(1.dp, if (sel) Amber else Border)
                                 .clickable { frameCount = preset.toString() }
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
                             contentAlignment = Alignment.Center
@@ -1307,9 +1318,9 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                         val sel = frameCount == n.toString()
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
+                                
                                 .background(if (sel) AmberDark else Bg3)
-                                .border(1.dp, if (sel) Amber else Border, RoundedCornerShape(6.dp))
+                                .border(1.dp, if (sel) Amber else Border)
                                 .clickable { frameCount = n.toString() }
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             contentAlignment = Alignment.Center
@@ -1503,9 +1514,9 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                     val sel = mfFormat == fmt
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
+                            
                             .background(if (sel) AmberDark else Bg3)
-                            .border(1.dp, if (sel) Amber else Border, RoundedCornerShape(6.dp))
+                            .border(1.dp, if (sel) Amber else Border)
                             .clickable { mfFormat = fmt }
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center
