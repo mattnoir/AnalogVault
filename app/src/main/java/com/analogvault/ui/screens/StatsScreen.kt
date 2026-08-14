@@ -1,66 +1,65 @@
 package com.analogvault.ui.screens
 
-import androidx.compose.foundation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import com.analogvault.util.Constants
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import com.analogvault.ui.MainViewModel
-import kotlinx.coroutines.launch
 import com.analogvault.ui.Stats
 import com.analogvault.ui.components.*
-import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
+import kotlinx.coroutines.launch
 
 @Composable
 fun StatsScreen(vm: MainViewModel) {
+    val colors   = FilmTheme.colors
     val stats    by vm.stats.collectAsState()
-    val rolls    by vm.rolls.collectAsState()
-    val films    by vm.films.collectAsState()
     val currency by vm.currency.collectAsState()
 
-    val tabs = listOf("Numbers", "Map")
+    val tabs = listOf("Numbers", "Habits", "Map")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(colors.void)) {
         TabRow(
             selectedTabIndex = pagerState.currentPage,
-            containerColor = Bg2, contentColor = Amber,
+            containerColor = colors.void, contentColor = colors.cyan,
             indicator = { positions ->
                 Box(
                     Modifier
                         .tabIndicatorOffset(positions[pagerState.currentPage])
                         .height(2.dp)
-                        .background(Amber, androidx.compose.foundation.shape.RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                        .background(colors.cyan)
                 )
             }
         ) {
             tabs.forEachIndexed { i, t ->
                 Tab(selected = pagerState.currentPage == i,
                     onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
-                    text = { Text(t, fontSize = 13.sp) },
-                    selectedContentColor = Amber, unselectedContentColor = TextTertiary)
+                    text = { Text(t.uppercase(), style = FilmTheme.type.eyebrow) },
+                    selectedContentColor = colors.cyan, unselectedContentColor = colors.dim)
             }
         }
 
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
                 0    -> StatsNumbers(stats, currency)
+                1    -> StatsHabits(stats)
                 else -> StatsMap(vm)
             }
         }
@@ -71,121 +70,124 @@ fun StatsScreen(vm: MainViewModel) {
 
 @Composable
 fun StatsNumbers(stats: Stats, currency: String = "€") {
+    val colors = FilmTheme.colors
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatBox("Total Rolls", stats.totalRolls.toString(), Amber, Modifier.weight(1f))
-                StatBox("Developed",   stats.developed.toString(),   GreenOk, Modifier.weight(1f))
-                StatBox("Shooting",    stats.shooting.toString(),    BlueInfo, Modifier.weight(1f))
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                StatBox("Total rolls", stats.totalRolls.toString(), colors.halide, Modifier.weight(1f))
+                StatBox("Developed", stats.developed.toString(), colors.cyan, Modifier.weight(1f))
+                StatBox("Shooting", stats.shooting.toString(), colors.magenta, Modifier.weight(1f))
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatBox("Total Shots", stats.totalShots.toString(),      Amber, Modifier.weight(1f))
-                StatBox("Avg/Roll",    "%.1f".format(stats.avgShots),    TextSecondary, Modifier.weight(1f))
-                StatBox("Awaiting Dev",stats.finished.toString(),        OrangeWarn, Modifier.weight(1f))
+            Row(
+                Modifier.padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                StatBox("Total frames", stats.totalShots.toString(), colors.halide, Modifier.weight(1f))
+                StatBox("Avg per roll", "%.1f".format(stats.avgShots), colors.dim, Modifier.weight(1f))
+                StatBox("Awaiting dev", stats.finished.toString(), colors.yellow, Modifier.weight(1f))
             }
         }
 
         if (stats.byMonth.isNotEmpty()) {
-            item { SectionTitle("Shots by Month") }
+            item { StatsEyebrow("Frames by month") }
             item { MonthBarChart(stats) }
         }
 
-        // Cost breakdown — shown whenever there are rolls
         val totalCost = stats.totalFilmCost + stats.totalDevCost + stats.totalScanCost
         if (stats.totalRolls > 0) {
-            item { SectionTitle("Cost Breakdown") }
+            item { StatsEyebrow("Cost") }
             item {
-                Column(
-                    Modifier.fillMaxWidth()
-                        .drawBehind { drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())) }
-                        .border(1.dp, Border, RoundedCornerShape(10.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val fmt = { v: Double -> if (v > 0.0) "${currency}%.2f".format(v) else "—" }
-                    val perShot = if (stats.totalShots > 0 && totalCost > 0.0)
-                        "${currency}%.3f/shot".format(totalCost / stats.totalShots) else null
-
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Film",         color = TextSecondary, fontSize = 13.sp)
-                        Text(fmt(stats.totalFilmCost), color = TextPrimary, fontSize = 13.sp)
+                StatsCard {
+                    val fmt = { v: Double -> if (v > 0.0) "$currency%.2f".format(v) else "—" }
+                    CostRow("Film on rolls", fmt(stats.filmCostOnRolls))
+                    if (stats.uncutBulkValue > 0.0) {
+                        CostRow("Bulk still on the spool", fmt(stats.uncutBulkValue))
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        val devLabel = when {
-                            stats.selfDevRolls > 0 && stats.labDevRolls > 0 ->
-                                "Development (${stats.selfDevRolls} self / ${stats.labDevRolls} lab)"
-                            stats.selfDevRolls > 0 -> "Development (self, ${stats.selfDevRolls} rolls)"
-                            stats.labDevRolls > 0  -> "Development (lab, ${stats.labDevRolls} rolls)"
-                            else -> "Development"
-                        }
-                        Text(devLabel, color = TextSecondary, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        Text(fmt(stats.totalDevCost), color = TextPrimary, fontSize = 13.sp)
+                    val devLabel = when {
+                        stats.selfDevRolls > 0 && stats.labDevRolls > 0 ->
+                            "Development · ${stats.selfDevRolls} self / ${stats.labDevRolls} lab"
+                        stats.selfDevRolls > 0 -> "Development · self, ${stats.selfDevRolls} rolls"
+                        stats.labDevRolls > 0  -> "Development · lab, ${stats.labDevRolls} rolls"
+                        else -> "Development"
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Scanning",     color = TextSecondary, fontSize = 13.sp)
-                        Text(fmt(stats.totalScanCost), color = TextPrimary, fontSize = 13.sp)
-                    }
-                    Spacer(Modifier.height(2.dp))
-                    HorizontalDivider(color = Border)
-                    Spacer(Modifier.height(2.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Total", color = if (totalCost > 0) Amber else TextSecondary,
-                            fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
-                        Text(if (totalCost > 0) "${currency}%.2f".format(totalCost) else "No costs recorded",
-                            color = if (totalCost > 0) Amber else TextTertiary,
-                            fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
-                    }
-                    if (perShot != null) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Avg cost/shot", color = TextSecondary, fontSize = 12.sp)
-                            Text(perShot, color = TextSecondary, fontSize = 12.sp)
-                        }
+                    CostRow(devLabel, fmt(stats.totalDevCost))
+                    CostRow("Scanning", fmt(stats.totalScanCost))
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(color = colors.edge)
+                    Spacer(Modifier.height(4.dp))
+                    CostRow(
+                        "Total",
+                        if (totalCost > 0) "$currency%.2f".format(totalCost) else "None recorded",
+                        accent = if (totalCost > 0) colors.yellow else colors.dim,
+                    )
+                    // Cost per frame is the number that actually changes
+                    // behaviour, so it is the one printed large — but it is
+                    // computed from what those frames consumed, not from the
+                    // total above. Bulk still on the spool is stock you own, not
+                    // money these frames cost, and dividing it by frames shot
+                    // would make every fresh 30 m roll look like a spending
+                    // spree.
+                    val spent = stats.filmCostOnRolls + stats.totalDevCost + stats.totalScanCost
+                    if (stats.totalShots > 0 && spent > 0.0) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("PER FRAME · FILM ON ROLLS, DEV AND SCAN",
+                            style = FilmTheme.type.rebate, color = colors.dim)
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            "$currency%.3f".format(spent / stats.totalShots),
+                            style = FilmTheme.type.readout.copy(fontSize = 34.sp),
+                            color = colors.yellow,
+                        )
                     }
                 }
             }
-            // Per-roll breakdown
+
             if (stats.rollCosts.isNotEmpty()) {
-                item { SectionTitle("Cost per Roll") }
+                item { StatsEyebrow("Cost per roll") }
                 item {
-                    Column(
-                        Modifier.fillMaxWidth()
-                            .drawBehind { drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())) }
-                            .border(1.dp, Border, RoundedCornerShape(10.dp))
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // Header
+                    StatsCard {
                         Row(Modifier.fillMaxWidth()) {
-                            Text("Film", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                            Text("Total", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                            Text("/shot", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            Text("FILM", style = FilmTheme.type.rebate, color = colors.dim,
+                                modifier = Modifier.weight(1f))
+                            Text("TOTAL", style = FilmTheme.type.rebate, color = colors.dim,
+                                modifier = Modifier.width(58.dp), textAlign = TextAlign.End)
+                            Text("/FRAME", style = FilmTheme.type.rebate, color = colors.dim,
+                                modifier = Modifier.width(58.dp), textAlign = TextAlign.End)
                         }
-                        HorizontalDivider(color = Border)
+                        Spacer(Modifier.height(6.dp))
+                        HorizontalDivider(color = colors.edge)
                         stats.rollCosts.forEach { rc ->
+                            Spacer(Modifier.height(9.dp))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(rc.filmName, color = TextPrimary, fontSize = 13.sp,
-                                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text(rc.filmName.uppercase(), style = FilmTheme.type.data,
+                                        color = colors.halide, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
                                     val breakdown = buildList {
-                                        if (rc.filmCost > 0) add("film ${currency}%.2f".format(rc.filmCost))
-                                        if (rc.devCost > 0) add("dev ${currency}%.2f".format(rc.devCost))
-                                        if (rc.scanCost > 0) add("scan ${currency}%.2f".format(rc.scanCost))
+                                        if (rc.filmCost > 0) add("FILM $currency%.2f".format(rc.filmCost))
+                                        if (rc.devCost > 0) add("DEV $currency%.2f".format(rc.devCost))
+                                        if (rc.scanCost > 0) add("SCAN $currency%.2f".format(rc.scanCost))
                                     }
-                                    if (breakdown.isNotEmpty())
-                                        Text(breakdown.joinToString(" · "), color = TextTertiary, fontSize = 10.sp)
+                                    if (breakdown.isNotEmpty()) {
+                                        Text(breakdown.joinToString("  ▸  "),
+                                            style = FilmTheme.type.rebate, color = colors.dim)
+                                    }
                                 }
-                                Text("${currency}%.2f".format(rc.totalCost),
-                                    color = Amber, fontSize = 13.sp,
-                                    modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                                Text(if (rc.costPerShot > 0) "${currency}%.3f".format(rc.costPerShot) else "—",
-                                    color = TextSecondary, fontSize = 12.sp,
-                                    modifier = Modifier.width(60.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                Text("$currency%.2f".format(rc.totalCost), style = FilmTheme.type.data,
+                                    color = colors.yellow, modifier = Modifier.width(58.dp),
+                                    textAlign = TextAlign.End)
+                                Text(if (rc.costPerShot > 0) "$currency%.3f".format(rc.costPerShot) else "—",
+                                    style = FilmTheme.type.data, color = colors.dim,
+                                    modifier = Modifier.width(58.dp), textAlign = TextAlign.End)
                             }
                         }
                     }
@@ -194,50 +196,171 @@ fun StatsNumbers(stats: Stats, currency: String = "€") {
         }
 
         if (stats.byFilm.isNotEmpty()) {
-            item { SectionTitle("Top Film Stocks") }
+            item { StatsEyebrow("Top film stocks") }
             item {
-                Column(Modifier.fillMaxWidth().drawBehind {
-                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
-                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    stats.byFilm.forEach { (name, count) ->
-                        RankRow(name, count, stats.byFilm.maxOfOrNull { it.value } ?: 1, Amber)
+                StatsCard {
+                    stats.byFilm.forEachIndexed { i, (name, count) ->
+                        if (i > 0) Spacer(Modifier.height(9.dp))
+                        RankRow(name, count, stats.byFilm.maxOfOrNull { it.value } ?: 1, colors.cyan)
                     }
                 }
             }
         }
 
         if (stats.byCam.isNotEmpty()) {
-            item { SectionTitle("Top Cameras") }
+            item { StatsEyebrow("Top cameras") }
             item {
-                Column(Modifier.fillMaxWidth().drawBehind {
-                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
-                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    stats.byCam.forEach { (name, count) ->
-                        RankRow(name, count, stats.byCam.maxOfOrNull { it.value } ?: 1, BlueInfo)
+                StatsCard {
+                    stats.byCam.forEachIndexed { i, (name, count) ->
+                        if (i > 0) Spacer(Modifier.height(9.dp))
+                        RankRow(name, count, stats.byCam.maxOfOrNull { it.value } ?: 1, colors.magenta)
                     }
                 }
             }
         }
 
         if (stats.byProc.isNotEmpty()) {
-            item { SectionTitle("Dev Processes") }
+            item { StatsEyebrow("Dev processes") }
             item {
-                Column(Modifier.fillMaxWidth().drawBehind {
-                        drawRoundRect(color = Bg2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
-                    }.border(1.dp, Border, RoundedCornerShape(10.dp)).padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    stats.byProc.forEach { (name, count) ->
-                        RankRow(name, count, stats.byProc.maxOfOrNull { it.value } ?: 1, GreenOk)
+                StatsCard {
+                    stats.byProc.forEachIndexed { i, (name, count) ->
+                        if (i > 0) Spacer(Modifier.height(9.dp))
+                        RankRow(name, count, stats.byProc.maxOfOrNull { it.value } ?: 1, colors.violet)
                     }
                 }
             }
         }
 
         if (stats.totalRolls == 0) {
-            item { EmptyState("No rolls shot yet") }
+            item {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    Text("NO ROLLS SHOT YET", style = FilmTheme.type.data, color = colors.dead)
+                }
+            }
         }
+    }
+}
+
+// ─── Habits tab ───────────────────────────────────────────────────────────────
+
+/**
+ * How this person actually shoots, as opposed to what their gear can do.
+ *
+ * Both charts run along the photographic scale rather than sorted by count, so
+ * the shape means something: a spike at f/8 and 1/125 is a daylight shooter, a
+ * long tail into the slow speeds is someone who uses a tripod.
+ */
+@Composable
+fun StatsHabits(stats: Stats) {
+    val colors = FilmTheme.colors
+    if (stats.byAperture.isEmpty() && stats.byShutter.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("NOTHING TO READ YET", style = FilmTheme.type.data, color = colors.dead)
+                Spacer(Modifier.height(8.dp))
+                Text("LOG FRAMES WITH AN APERTURE AND A SHUTTER SPEED",
+                    style = FilmTheme.type.rebate, color = colors.dim)
+            }
+        }
+        return
+    }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (stats.byAperture.isNotEmpty()) {
+            item { StatsEyebrow("Apertures") }
+            item { HabitChart(stats.byAperture, colors.cyan, prefix = "f/") }
+            item { HabitSummary(stats.byAperture, "MOST USED", "f/") }
+        }
+        if (stats.byShutter.isNotEmpty()) {
+            item { StatsEyebrow("Shutter speeds") }
+            item { HabitChart(stats.byShutter, colors.magenta) }
+            item { HabitSummary(stats.byShutter, "MOST USED") }
+        }
+    }
+}
+
+/**
+ * A histogram along the stop scale.
+ *
+ * Empty buckets inside the range are drawn as empty, not skipped: the gap
+ * between the fast glass you own and the aperture you actually use is the
+ * interesting part, and closing it up would hide it.
+ */
+@Composable
+private fun HabitChart(
+    buckets: List<Pair<String, Int>>,
+    accent: Color,
+    prefix: String = "",
+) {
+    val colors = FilmTheme.colors
+    val max = (buckets.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(colors.film)
+            .border(1.dp, colors.edge)
+            .padding(12.dp)
+    ) {
+        Canvas(Modifier.fillMaxWidth().height(130.dp)) {
+            val n = buckets.size
+            if (n == 0) return@Canvas
+            val gap = 4.dp.toPx()
+            val barW = (size.width - (n - 1) * gap) / n
+            buckets.forEachIndexed { i, (_, count) ->
+                val x = i * (barW + gap)
+                // Track first, so an unused stop still occupies its width and
+                // the scale stays evenly spaced.
+                drawRect(colors.filmRaised, Offset(x, 0f), Size(barW, size.height))
+                if (count > 0) {
+                    // Floor the height so one frame out of thirty still draws as
+                    // something rather than a hairline nobody can tell from the
+                    // empty buckets either side of it.
+                    val h = maxOf(size.height * (count.toFloat() / max), 3.dp.toPx())
+                    drawRect(accent, Offset(x, size.height - h), Size(barW, h))
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            buckets.forEach { (label, count) ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("$prefix$label", style = FilmTheme.type.rebate.copy(letterSpacing = 0.sp),
+                        color = if (count > 0) colors.halide else colors.dead,
+                        maxLines = 1, softWrap = false)
+                    Text(if (count > 0) "$count" else "·", style = FilmTheme.type.rebate,
+                        color = if (count > 0) accent else colors.dead)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HabitSummary(buckets: List<Pair<String, Int>>, label: String, prefix: String = "") {
+    val colors = FilmTheme.colors
+    val total = buckets.sumOf { it.second }
+    val top = buckets.maxByOrNull { it.second } ?: return
+    Row(
+        Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        // Written out rather than built from FilmChip, which uppercases: an
+        // f-number is written with a lowercase f, and "F/2.8" is the kind of
+        // detail this app is otherwise careful about.
+        HabitStat("$label $prefix${top.first}", colors.halide)
+        HabitStat("${top.second * 100 / total.coerceAtLeast(1)}% OF FRAMES", colors.dim)
+        HabitStat("$total LOGGED", colors.dim)
+    }
+}
+
+@Composable
+private fun HabitStat(text: String, color: Color) {
+    Box(Modifier.border(1.dp, color).padding(horizontal = 6.dp, vertical = 3.dp)) {
+        Text(text, style = FilmTheme.type.data, color = color, maxLines = 1)
     }
 }
 
@@ -245,6 +368,7 @@ fun StatsNumbers(stats: Stats, currency: String = "€") {
 
 @Composable
 fun StatsMap(vm: MainViewModel) {
+    val colors = FilmTheme.colors
     val rolls by vm.rolls.collectAsState()
     val films by vm.films.collectAsState()
 
@@ -268,35 +392,28 @@ fun StatsMap(vm: MainViewModel) {
     val totalShots   = rolls.sumOf { it.shots.size }
 
     Column(Modifier.fillMaxSize()) {
-        // Stats bar
         Row(
-            Modifier.fillMaxWidth().background(Bg2).padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.fillMaxWidth().background(colors.void).padding(horizontal = 14.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("$totalWithGps shots with GPS", color = TextSecondary, fontSize = 12.sp)
+            Text("$totalWithGps FRAMES WITH GPS", style = FilmTheme.type.rebate, color = colors.halide)
             if (totalShots > 0) {
-                Text("(${(totalWithGps * 100 / totalShots)}%)", color = TextTertiary, fontSize = 11.sp)
-            }
-            Spacer(Modifier.weight(1f))
-            if (totalWithGps == 0) {
-                Text("Log shots with GPS to see the map", color = TextTertiary, fontSize = 11.sp)
+                Text("${totalWithGps * 100 / totalShots}%", style = FilmTheme.type.rebate, color = colors.dim)
             }
         }
 
         if (allMapShots.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No GPS data yet", color = TextTertiary, fontSize = 14.sp)
+                    Text("NO GPS DATA YET", style = FilmTheme.type.data, color = colors.dead)
                     Spacer(Modifier.height(8.dp))
-                    Text("When logging shots, tap 📍 to capture location", color = TextTertiary, fontSize = 12.sp)
+                    Text("WHEN LOGGING A FRAME, TAP 📍 TO CAPTURE LOCATION",
+                        style = FilmTheme.type.rebate, color = colors.dim)
                 }
             }
         } else {
-            OsmMapViewMulti(
-                mapShots = allMapShots,
-                modifier = Modifier.fillMaxSize()
-            )
+            OsmMapViewMulti(mapShots = allMapShots, modifier = Modifier.fillMaxSize())
         }
     }
 }
@@ -304,83 +421,105 @@ fun StatsMap(vm: MainViewModel) {
 // ─── Sub-composables ──────────────────────────────────────────────────────────
 
 @Composable
-fun StatBox(label: String, value: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.clip(RoundedCornerShape(10.dp)).background(Bg3)
-            .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(14.dp),
-        contentAlignment = Alignment.Center
+private fun StatsEyebrow(title: String) {
+    val colors = FilmTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 18.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, color = color, fontSize = 26.sp)
-            Text(label, color = TextTertiary, fontSize = 9.sp, textAlign = TextAlign.Center)
-        }
+        Text(title.uppercase(), style = FilmTheme.type.eyebrow, color = colors.dim)
+        Spacer(Modifier.width(8.dp))
+        HorizontalDivider(color = colors.edge)
+    }
+}
+
+@Composable
+private fun StatsCard(content: @Composable ColumnScope.() -> Unit) {
+    val colors = FilmTheme.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(colors.film)
+            .border(1.dp, colors.edge)
+            .padding(12.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun CostRow(label: String, value: String, accent: Color? = null) {
+    val colors = FilmTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label.uppercase(), style = FilmTheme.type.rebate, color = accent ?: colors.dim,
+            modifier = Modifier.weight(1f))
+        Text(value, style = FilmTheme.type.data, color = accent ?: colors.halide)
+    }
+}
+
+@Composable
+fun StatBox(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    val colors = FilmTheme.colors
+    Column(
+        modifier
+            .background(colors.film)
+            .border(1.dp, colors.edge)
+            .padding(vertical = 12.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(value, style = FilmTheme.type.readout.copy(fontSize = 26.sp), color = color,
+            maxLines = 1, softWrap = false)
+        Spacer(Modifier.height(4.dp))
+        Text(label.uppercase(), style = FilmTheme.type.rebate, color = colors.dim,
+            textAlign = TextAlign.Center, maxLines = 2)
     }
 }
 
 @Composable
 fun MonthBarChart(stats: Stats) {
     if (stats.byMonth.isEmpty()) return
+    val colors = FilmTheme.colors
     val maxVal = (stats.byMonth.maxOfOrNull { it.value } ?: 1).coerceAtLeast(1)
-    val amberColor = Amber
-    val bgColor = Bg3
-    val textColor = TextTertiary
+    val bar = colors.yellow
+    val track = colors.filmRaised
 
-    Box(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Bg2)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(colors.film)
+            .border(1.dp, colors.edge)
             .padding(12.dp)
     ) {
-        Column {
-            Text("Shots per month", color = TextTertiary, fontSize = 10.sp)
-            Spacer(Modifier.height(8.dp))
-            // Use Canvas for crisp bars — avoids Compose layout overhead per bar
-            androidx.compose.foundation.Canvas(
-                modifier = Modifier.fillMaxWidth().height(120.dp)
-            ) {
-                val n = stats.byMonth.size
-                if (n == 0) return@Canvas
-                val barW = (size.width - (n - 1) * 4.dp.toPx()) / n
-                stats.byMonth.forEachIndexed { i, (_, count) ->
-                    val frac = count.toFloat() / maxVal
-                    val barH = (size.height - 20.dp.toPx()) * frac
-                    val x = i * (barW + 4.dp.toPx())
-                    val y = size.height - 20.dp.toPx() - barH
-                    // Bar background (empty)
-                    drawRoundRect(
-                        color = bgColor,
-                        topLeft = androidx.compose.ui.geometry.Offset(x, 0f),
-                        size = androidx.compose.ui.geometry.Size(barW, size.height - 20.dp.toPx()),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
-                    )
-                    // Filled bar
-                    if (barH > 0) {
-                        drawRoundRect(
-                            color = amberColor,
-                            topLeft = androidx.compose.ui.geometry.Offset(x, y),
-                            size = androidx.compose.ui.geometry.Size(barW, barH),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
-                        )
-                    }
-                }
+        Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+            val n = stats.byMonth.size
+            if (n == 0) return@Canvas
+            val gap = 4.dp.toPx()
+            val barW = (size.width - (n - 1) * gap) / n
+            stats.byMonth.forEachIndexed { i, (_, count) ->
+                val x = i * (barW + gap)
+                drawRect(track, Offset(x, 0f), Size(barW, size.height))
+                val h = size.height * (count.toFloat() / maxVal)
+                if (h > 0) drawRect(bar, Offset(x, size.height - h), Size(barW, h))
             }
-            Spacer(Modifier.height(4.dp))
-            // Labels row
-            Row(Modifier.fillMaxWidth()) {
-                stats.byMonth.forEach { (month, count) ->
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            // Show MMM from YYYY-MM
-                            month.substringAfter("-").let {
-                                listOf("","Jan","Feb","Mar","Apr","May","Jun",
-                                    "Jul","Aug","Sep","Oct","Nov","Dec")
-                                    .getOrNull(it.toIntOrNull() ?: 0) ?: it
-                            },
-                            color = textColor, fontSize = 8.sp
-                        )
-                        Text("$count", color = Amber, fontSize = 8.sp)
-                    }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            stats.byMonth.forEach { (month, count) ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        month.substringAfter("-").let {
+                            listOf("", "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                                "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+                                .getOrNull(it.toIntOrNull() ?: 0) ?: it
+                        },
+                        style = FilmTheme.type.rebate.copy(letterSpacing = 0.sp),
+                        color = colors.dim, maxLines = 1, softWrap = false,
+                    )
+                    Text("$count", style = FilmTheme.type.rebate, color = bar)
                 }
             }
         }
@@ -388,18 +527,18 @@ fun MonthBarChart(stats: Stats) {
 }
 
 @Composable
-fun RankRow(name: String, count: Int, max: Int, color: androidx.compose.ui.graphics.Color) {
+fun RankRow(name: String, count: Int, max: Int, color: Color) {
+    val colors = FilmTheme.colors
     val frac = (count.toFloat() / max).coerceIn(0f, 1f)
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(name, color = TextPrimary, fontSize = 12.sp,
+            Text(name.uppercase(), style = FilmTheme.type.data, color = colors.halide,
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count", color = color, fontSize = 12.sp)
+            Text("$count", style = FilmTheme.type.data, color = color)
         }
-        Spacer(Modifier.height(3.dp))
-        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Bg4)) {
-            Box(Modifier.fillMaxWidth(frac).fillMaxHeight()
-                .clip(RoundedCornerShape(2.dp)).background(color))
+        Spacer(Modifier.height(4.dp))
+        Box(Modifier.fillMaxWidth().height(3.dp).background(colors.filmRaised)) {
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(color))
         }
     }
 }

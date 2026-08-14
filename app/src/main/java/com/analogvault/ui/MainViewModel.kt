@@ -139,6 +139,7 @@ class MainViewModel @Inject constructor(
             _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
             _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
+            _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
             _remindersEnabled.value   = repo.getSetting("reminders_enabled") == "true"
             _remindExpiry.value       = (repo.getSetting("remind_expiry") ?: "true") == "true"
             _remindUndeveloped.value  = (repo.getSetting("remind_undeveloped") ?: "true") == "true"
@@ -412,11 +413,27 @@ class MainViewModel @Inject constructor(
     private var timerEndElapsedMs = 0L
     private var lastAgitationCueSec = -1
 
-    // Classic agitation rhythm: initial agitation, then ~10 s at each minute mark
+    // Haptic pulse at the start of each agitation window. The rhythm itself is a
+    // property of the step (see DevTime.Agitation), not a fixed minute mark —
+    // stand development agitates once in an hour and a rotary processor never
+    // stops, and a pulse every sixty seconds is wrong for both.
     private val _agitationCues = MutableStateFlow(true)
     val agitationCues: StateFlow<Boolean> = _agitationCues.asStateFlow()
     fun saveAgitationCues(on: Boolean) = viewModelScope.launch {
         _agitationCues.value = on; repo.setSetting("agitation_cues", on.toString())
+    }
+
+    /**
+     * Working temperature of the chemistry, in °C.
+     *
+     * Persisted because it is a property of the room and the tap, not of one
+     * session: whatever the darkroom ran at last night is the best guess for
+     * tonight, and being asked for it every time is how it ends up ignored.
+     */
+    private val _devTempC = MutableStateFlow(20.0)
+    val devTempC: StateFlow<Double> = _devTempC.asStateFlow()
+    fun saveDevTempC(t: Double) = viewModelScope.launch {
+        _devTempC.value = t; repo.setSetting("dev_temp_c", t.toString())
     }
 
     // ─── Reminders (daily WorkManager check) ─────────────────────────────────
@@ -504,12 +521,14 @@ class MainViewModel @Inject constructor(
                 if (!s.running) return@launch
                 val left = timerRemainingSeconds()
                 if (left <= 0) { onTimerStepFinished(); return@launch }
-                // Agitation cue at each whole minute of elapsed step time
-                // (skip when the step is about to finish — that gets its own alert)
-                val elapsed = s.timer.steps[s.currentStep].durationSec - left
-                if (_agitationCues.value && elapsed > 0 && elapsed % 60 == 0 &&
-                    lastAgitationCueSec != elapsed && left > 5
-                ) {
+                // Pulse on the leading edge of an agitation window, not through
+                // it: buzzing once a second for ten seconds is an alarm, and the
+                // cue only has to say "now".
+                val step = s.timer.steps[s.currentStep]
+                val elapsed = step.durationSec - left
+                val startsNow = step.agitation.isAgitating(elapsed) &&
+                    !step.agitation.isAgitating(elapsed - 1)
+                if (_agitationCues.value && startsNow && lastAgitationCueSec != elapsed && left > 3) {
                     lastAgitationCueSec = elapsed
                     vibrateAgitation()
                 }
@@ -563,6 +582,9 @@ class MainViewModel @Inject constructor(
         val byProc = r.filter { it.devLog != null }
             .groupBy { it.devLog!!.process.ifBlank { "Unknown" } }
             .mapValues { it.value.size }.entries.sortedByDescending { it.value }
+        val allShots = r.flatMap { it.shots }
+        val byAperture = com.analogvault.util.Habits.apertureHistogram(allShots.map { it.aperture })
+        val byShutter  = com.analogvault.util.Habits.shutterHistogram(allShots.map { it.shutter })
         // Film cost = per-roll film cost of shot rolls (stash films + bulk-cut rolls carry an
         // amortised costPerRoll) PLUS the value of bulk film not yet cut into rolls. Counting
         // only the uncut remainder avoids double-counting frames already cut into stash/rolls.
@@ -596,7 +618,11 @@ class MainViewModel @Inject constructor(
             byCam = byCam,
             byMonth = byMonth,
             byProc = byProc,
+            byAperture = byAperture,
+            byShutter = byShutter,
             totalFilmCost = filmRollCost + bulkRemaining,
+            filmCostOnRolls = filmRollCost,
+            uncutBulkValue = bulkRemaining,
             totalDevCost  = r.sumOf { it.devCost },
             totalScanCost = r.sumOf { it.scanCost },
             selfDevRolls  = r.count { it.isSelfDev && it.developed },
@@ -639,8 +665,19 @@ data class Stats(
     val byCam: List<Map.Entry<String, Int>> = emptyList(),
     val byMonth: List<Map.Entry<String, Int>> = emptyList(),
     val byProc: List<Map.Entry<String, Int>> = emptyList(),
+    /** Whole-stop histograms of the shot log, in scale order. See util/Habits. */
+    val byAperture: List<Pair<String, Int>> = emptyList(),
+    val byShutter: List<Pair<String, Int>> = emptyList(),
     // Cost totals
     val totalFilmCost: Double = 0.0,
+    /**
+     * Film cost of the rolls actually loaded, without the value of bulk stock
+     * still on the spool. [totalFilmCost] answers "what is my film worth"; this
+     * answers "what did these frames cost", and only the second one divides
+     * sensibly by a frame count.
+     */
+    val filmCostOnRolls: Double = 0.0,
+    val uncutBulkValue: Double = 0.0,
     val totalDevCost: Double = 0.0,
     val totalScanCost: Double = 0.0,
     val selfDevRolls: Int = 0,
