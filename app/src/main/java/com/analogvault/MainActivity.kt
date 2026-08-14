@@ -97,7 +97,11 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            FilmTheme {
+            // Safelight is chosen here, at the root, so the swap reaches every
+            // screen at once. A per-screen toggle would leave whichever surface
+            // you were not looking at still burning white.
+            val safelight by vm.safelight.collectAsState()
+            FilmTheme(safelight = safelight) {
                 // The grain is applied exactly once, here, on the root container —
                 // one tiled draw for the whole tree. Never per screen and never
                 // per list item; see FilmModifiers.filmGrain.
@@ -204,6 +208,7 @@ fun VaultApp() {
                         ?: BOTTOM_TABS.indexOf(Tab.MORE).takeIf { isMoreSub },
                     onSelect = { navigateTo(BOTTOM_TABS[it]) },
                     onShutter = { navigateTo(Tab.METER) },
+                    onShutterLongPress = { vm.toggleSafelight() },
                 )
             }
         }

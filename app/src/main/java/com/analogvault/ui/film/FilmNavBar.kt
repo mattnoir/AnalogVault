@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -72,6 +75,8 @@ fun FilmNavBar(
     onShutter: () -> Unit,
     modifier: Modifier = Modifier,
     shutterLabel: String = "LOG",
+    /** Long-press the shutter. Wired to safelight — see [ShutterButton]. */
+    onShutterLongPress: (() -> Unit)? = null,
 ) {
     require(items.size == 4) { "FilmNavBar splits two items either side of the shutter" }
     val colors = FilmTheme.colors
@@ -88,7 +93,11 @@ fun FilmNavBar(
         ) {
             NavButton(items[0], selectedIndex == 0) { onSelect(0) }
             NavButton(items[1], selectedIndex == 1) { onSelect(1) }
-            ShutterButton(label = shutterLabel, onClick = onShutter)
+            ShutterButton(
+                label = shutterLabel,
+                onClick = onShutter,
+                onLongClick = onShutterLongPress,
+            )
             NavButton(items[2], selectedIndex == 2) { onSelect(2) }
             NavButton(items[3], selectedIndex == 3) { onSelect(3) }
         }
@@ -165,13 +174,22 @@ private fun RowScope.NavButton(
  * Sized past the 48dp minimum on purpose — it is the largest target in the app
  * because it is the one pressed most often, one-handed, while the other hand is
  * holding a camera.
+ *
+ * Long-press toggles safelight. That gesture lives here rather than only in
+ * Settings because the moment you need it is the moment you have just turned the
+ * lights off, and the shutter is the one control this app expects you to be able
+ * to find without looking. It fires a haptic so the change is confirmed by feel
+ * as well as by the screen going red.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ShutterButton(
     label: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val colors = FilmTheme.colors
+    val haptics = LocalHapticFeedback.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -200,13 +218,23 @@ private fun ShutterButton(
                 )
             )
             .border(2.dp, colors.magenta, CircleShape)
-            .clickable(
+            .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
                 role = Role.Button,
                 onClick = onClick,
+                onLongClick = onLongClick?.let {
+                    {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        it()
+                    }
+                },
             )
-            .semantics { contentDescription = "Meter and log a frame" },
+            .semantics {
+                contentDescription = if (onLongClick != null)
+                    "Meter and log a frame. Long press to toggle safelight."
+                else "Meter and log a frame"
+            },
         contentAlignment = Alignment.Center,
     ) {
         Text(label, style = FilmTheme.type.rebate, color = Color.White)

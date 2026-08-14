@@ -120,8 +120,10 @@ fun WeatherScreen(vm: MainViewModel) {
         // State display
         when (val state = weatherState) {
             is WeatherState.Loading -> {
-                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Amber)
+                // Film advancing rather than a spinner: same message, spoken in
+                // the language the rest of the app uses.
+                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp)) {
+                    com.analogvault.ui.film.FilmAdvance(label = "Reading the light")
                 }
             }
             is WeatherState.Error -> {
@@ -139,7 +141,16 @@ fun WeatherScreen(vm: MainViewModel) {
                     WeatherDisplay(state.data, films, isMetric)
                 }
             else -> {
-                EmptyState("Tap the button to fetch weather at your location")
+                EmptyState(
+                    "No forecast yet.",
+                    verb = "Fetch the light where you are",
+                    onVerb = {
+                        locationPermLauncher.launch(arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        ))
+                    },
+                )
             }
         }
     }

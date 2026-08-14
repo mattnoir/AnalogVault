@@ -682,9 +682,12 @@ fun VaultProgressBar(fraction: Float, color: Color = Amber) {
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
+/**
+ * Kept as the name every screen already calls; the drawing lives in
+ * [com.analogvault.ui.film.UnexposedFrames] so the empty state and the film
+ * language stay one thing.
+ */
 @Composable
-fun EmptyState(text: String) {
-    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = TextTertiary, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
-    }
+fun EmptyState(text: String, verb: String? = null, onVerb: (() -> Unit)? = null) {
+    com.analogvault.ui.film.UnexposedFrames(text = text, verb = verb, onVerb = onVerb)
 }

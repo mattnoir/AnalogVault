@@ -45,7 +45,14 @@ private val FilmBase     = Color(0xFF100C18)
 private val FilmRaised   = Color(0xFF1A1424)
 private val EdgeLine     = Color(0xFF2E2440)
 private val SilverHalide = Color(0xFFEDE9F5)
-private val DimHalide    = Color(0xFF7E7594)
+// 4.76:1 on FilmBase and 5.18:1 on TrueVoid. It used to be #7E7594, which
+// measured 4.47:1 on FilmBase — under the 4.5:1 floor, and this is the colour
+// every eyebrow, rebate line and secondary label in the app is painted in, so
+// it was the single worst place to be a hair short.
+private val DimHalide    = Color(0xFF8479A0)
+// Deliberately below the contrast floor: this is the disabled and unavailable
+// colour — hatched ladder rungs, unexposed frames, out-of-stock cards — and
+// WCAG exempts disabled controls. Nothing load-bearing may be painted in it.
 private val DeadHalide   = Color(0xFF3A3150)
 
 @Immutable
@@ -89,6 +96,13 @@ val DyeLayerColors = FilmColors(
  * hierarchy exactly when you need it most — squinting at a dev timer in the
  * dark. Swapping the scheme lets us keep four distinguishable luminance steps
  * inside the red channel, which is what actually stays readable.
+ *
+ * This scheme is the app's one documented exception to the 4.5:1 contrast
+ * target, and the exception is the point. Safelight exists to preserve dark
+ * adaptation, and the brightness that would carry a red label to 4.5:1 on black
+ * is exactly the brightness that ruins the adaptation you turned it on for.
+ * `dim` here is raised as far as that trade allows (about 3.6:1 rather than the
+ * 2.3:1 it started at) and no further.
  */
 val SafelightColors = FilmColors(
     cyan = Color(0xFFFF6B6B),
@@ -101,7 +115,7 @@ val SafelightColors = FilmColors(
     filmRaised = Color(0xFF160202),
     edge = Color(0xFF3A0808),
     halide = Color(0xFFFF7A70),
-    dim = Color(0xFF8A2222),
+    dim = Color(0xFFB85050),
     dead = Color(0xFF4A0F0F),
     safelight = true,
 )

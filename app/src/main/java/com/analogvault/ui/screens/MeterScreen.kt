@@ -43,6 +43,14 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1115,7 +1123,14 @@ private fun MeterEyebrow(title: String) {
     }
 }
 
-/** A segmented control cell: border, no radius, mono caps. Selection glows. */
+/**
+ * A segmented control cell: border, no radius, mono caps.
+ *
+ * Selection is a glow, a colour change AND a solid bar along the bottom edge.
+ * The bar is the one that matters: glow and hue are the same signal to anyone
+ * who cannot separate cyan from grey, and a control whose only state cue is a
+ * colour has no state cue at all for them.
+ */
 @Composable
 private fun MeterSegment(
     label: String,
@@ -1125,7 +1140,7 @@ private fun MeterSegment(
     onClick: () -> Unit,
 ) {
     val colors = FilmTheme.colors
-    Box(
+    Column(
         modifier
             .then(
                 if (selected) Modifier.halation(accent, 10.dp, 0.25f, !colors.safelight)
@@ -1134,14 +1149,24 @@ private fun MeterSegment(
             .background(colors.film)
             .border(1.dp, if (selected) accent else colors.edge)
             .clickable(onClick = onClick)
-            .padding(vertical = 9.dp, horizontal = 4.dp),
-        contentAlignment = Alignment.Center,
+            .semantics { this.selected = selected; role = Role.Tab },
     ) {
-        Text(
-            label,
-            style = FilmTheme.type.data,
-            color = if (selected) accent else colors.dim,
-            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+        Box(
+            Modifier.fillMaxWidth().padding(vertical = 9.dp, horizontal = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                style = FilmTheme.type.data,
+                color = if (selected) accent else colors.dim,
+                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .background(if (selected) accent else Color.Transparent)
         )
     }
 }
@@ -1179,6 +1204,23 @@ private fun CalibrationRuler(
                 .clipToBounds()
                 .background(colors.film)
                 .border(1.dp, colors.edge)
+                // A Canvas driven by drag gestures is invisible to TalkBack and
+                // impossible to operate with it. Publishing the range and a
+                // setProgress action makes it a real control rather than a
+                // picture of one.
+                .semantics {
+                    contentDescription = "$caption. $label"
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current = value.toFloat(),
+                        range = range.first.toFloat()..range.last.toFloat(),
+                        steps = (range.last - range.first - 1).coerceAtLeast(0),
+                    )
+                    setProgress { target ->
+                        onValue(target.roundToInt().coerceIn(range.first, range.last))
+                        onCommit()
+                        true
+                    }
+                }
                 .pointerInput(range) {
                     fun set(x: Float) {
                         val frac = (x / size.width).coerceIn(0f, 1f)

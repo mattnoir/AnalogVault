@@ -29,6 +29,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val isMetric  by vm.isMetric.collectAsState()
     val customIsos by vm.customIsos.collectAsState()
     val highRefresh by vm.highRefresh.collectAsState()
+    val safelight by vm.safelight.collectAsState()
     val remindersEnabled  by vm.remindersEnabled.collectAsState()
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
@@ -109,6 +110,25 @@ fun SettingsScreen(vm: MainViewModel) {
                 Switch(
                     checked = highRefresh,
                     onCheckedChange = { vm.saveHighRefresh(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Amber,
+                        checkedTrackColor = AmberDark
+                    )
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Safelight", color = TextSecondary, fontSize = 13.sp)
+                    Text("Swaps the whole app to a red scheme for darkroom work, " +
+                        "and stops every glow and animation. Long-press the shutter " +
+                        "to toggle it without coming here.",
+                        color = TextTertiary, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = safelight,
+                    onCheckedChange = { vm.setSafelight(it) },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Amber,
                         checkedTrackColor = AmberDark

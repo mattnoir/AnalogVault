@@ -140,6 +140,7 @@ class MainViewModel @Inject constructor(
             _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
+            _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
             _remindersEnabled.value   = repo.getSetting("reminders_enabled") == "true"
             _remindExpiry.value       = (repo.getSetting("remind_expiry") ?: "true") == "true"
             _remindUndeveloped.value  = (repo.getSetting("remind_undeveloped") ?: "true") == "true"
@@ -430,6 +431,20 @@ class MainViewModel @Inject constructor(
      * session: whatever the darkroom ran at last night is the best guess for
      * tonight, and being asked for it every time is how it ends up ignored.
      */
+    /**
+     * Safelight mode: the whole app swaps to the red scheme.
+     *
+     * Persisted, because it is turned on when you walk into a dark room and off
+     * when you leave, and losing it on a process death mid-development would
+     * blind you at the worst moment.
+     */
+    private val _safelight = MutableStateFlow(false)
+    val safelight: StateFlow<Boolean> = _safelight.asStateFlow()
+    fun setSafelight(on: Boolean) = viewModelScope.launch {
+        _safelight.value = on; repo.setSetting("safelight", on.toString())
+    }
+    fun toggleSafelight() = setSafelight(!_safelight.value)
+
     private val _devTempC = MutableStateFlow(20.0)
     val devTempC: StateFlow<Double> = _devTempC.asStateFlow()
     fun saveDevTempC(t: Double) = viewModelScope.launch {

@@ -250,7 +250,8 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                 )
             }
         }
-        if (displayFilms.isEmpty()) item(key = "empty") { EmptyState(if (films.isEmpty()) "No film stocks yet" else "No films match filter") }
+        if (displayFilms.isEmpty()) item(key = "empty") { if (films.isEmpty()) EmptyState("No film in the stash.", verb = "Add a stock", onVerb = { editing = null; showSheet = true })
+            else EmptyState("No film matches this filter.", verb = "Clear the filter to see all ${films.size}.") }
         items(displayFilms, key = { it.id }, contentType = { "film" }) { film ->
             // Compute expiry once per item, not every frame
             val expKey = film.expiryDate
@@ -932,7 +933,8 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
             FilterBar(sortBy, listOf("Name", "Brand", "Format", "Condition"), { sortBy = it },
                 filterFormat, formatOptions, { filterFormat = it })
         }
-        if (displayCameras.isEmpty()) item(key = "empty") { EmptyState(if (cameras.isEmpty()) "No cameras yet" else "No cameras match filter") }
+        if (displayCameras.isEmpty()) item(key = "empty") { if (cameras.isEmpty()) EmptyState("No cameras yet.", verb = "Add a body", onVerb = { editing = null; showSheet = true })
+            else EmptyState("No camera matches this filter.", verb = "Clear the filter to see all ${cameras.size}.") }
         items(displayCameras, key = { it.id }, contentType = { "camera" }) { cam ->
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -1008,7 +1010,8 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
             FilterBar(sortBy, listOf("Name", "Brand", "Focal", "Aperture", "Condition"), { sortBy = it },
                 filterMount, mountOptions, { filterMount = it })
         }
-        if (displayLenses.isEmpty()) item(key = "empty") { EmptyState(if (lenses.isEmpty()) "No lenses yet" else "No lenses match filter") }
+        if (displayLenses.isEmpty()) item(key = "empty") { if (lenses.isEmpty()) EmptyState("No lenses yet.", verb = "Add a lens", onVerb = { editing = null; showSheet = true })
+            else EmptyState("No lens matches this filter.", verb = "Clear the filter to see all ${lenses.size}.") }
         items(displayLenses, key = { it.id }, contentType = { "lens" }) { lens ->
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -1143,7 +1146,8 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
             FilterBar(sortBy, listOf("Name", "Brand", "Type", "Condition"), { sortBy = it },
                 filterType, typeOptions, { filterType = it })
         }
-        if (displayAcc.isEmpty()) item(key = "empty") { EmptyState(if (accessories.isEmpty()) "No accessories yet" else "No accessories match filter") }
+        if (displayAcc.isEmpty()) item(key = "empty") { if (accessories.isEmpty()) EmptyState("No accessories yet.", verb = "Add one", onVerb = { editing = null; showSheet = true })
+            else EmptyState("No accessory matches this filter.", verb = "Clear the filter to see all ${accessories.size}.") }
         items(displayAcc, key = { it.id }, contentType = { "accessory" }) { acc ->
             VaultCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

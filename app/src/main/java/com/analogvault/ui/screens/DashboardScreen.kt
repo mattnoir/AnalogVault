@@ -29,6 +29,12 @@ import com.analogvault.data.model.Camera
 import com.analogvault.data.model.FilmStock
 import com.analogvault.data.model.Roll
 import com.analogvault.ui.MainViewModel
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.rememberCoroutineScope
+import com.analogvault.ui.film.LightLeak
+import kotlinx.coroutines.launch
 import com.analogvault.ui.WeatherState
 import com.analogvault.ui.film.*
 import com.analogvault.ui.theme.FilmTheme
@@ -63,6 +69,7 @@ private const val BULK_LOW_FRAMES = 40
  * they surface things that are true right now and would otherwise be found out
  * too late.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     vm: MainViewModel,
@@ -112,6 +119,27 @@ fun DashboardScreen(
 
     val nudges = remember(rolls, films, bulkRolls) { buildNudges(rolls, films, bulkRolls) }
 
+    // Pull to refresh the light. Home is the only screen where it earns its
+    // place: everything else here is local data that cannot be stale, and the
+    // weather is the one thing on the page that is a snapshot of outside.
+    val scope = rememberCoroutineScope()
+    val refreshState = rememberPullToRefreshState()
+    PullToRefreshBox(
+        isRefreshing = weatherState is WeatherState.Loading,
+        onRefresh = {
+            scope.launch {
+                val granted = ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    getWeatherLocation(context)?.let { (lat, lon) -> vm.fetchWeather(lat, lon) }
+                }
+            }
+        },
+        state = refreshState,
+        indicator = { LightLeak(refreshState, weatherState is WeatherState.Loading) },
+        modifier = Modifier.fillMaxSize(),
+    ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -171,6 +199,7 @@ fun DashboardScreen(
                 onClick = { onNavigate(nudge.tab, nudge.subTab, nudge.rollId) },
             )
         }
+    }
     }
 }
 

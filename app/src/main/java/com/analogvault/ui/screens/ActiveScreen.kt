@@ -267,14 +267,21 @@ fun ActiveScreen(
         ) {
             if (currentRolls.isEmpty()) {
                 item {
-                    val msg = when (subTab) {
-                        0 -> "No rolls in camera. Load one."
-                        1 -> "No rolls awaiting development"
-                        2 -> "No rolls awaiting scanning"
-                        3 -> "No completed rolls yet"
-                        else -> ""
+                    // Every empty state gets a verb. The ones with somewhere to
+                    // go get a button; the ones that resolve themselves by
+                    // shooting say what has to happen instead of offering a tap
+                    // that would go nowhere.
+                    when (subTab) {
+                        0 -> EmptyState("No rolls in camera.", verb = "Load one",
+                            onVerb = { showLoadSheet = true })
+                        1 -> EmptyState("Nothing waiting to be developed.",
+                            verb = "Finish a roll and it lands here.")
+                        2 -> EmptyState("Nothing waiting to be scanned.",
+                            verb = "Develop a roll and it lands here.")
+                        3 -> EmptyState("No finished rolls yet.",
+                            verb = "Scan a developed roll to complete it.")
+                        else -> EmptyState("Nothing here.")
                     }
-                    EmptyState(msg)
                 }
             }
 
@@ -789,7 +796,7 @@ fun RollDetailScreen(
             }
         }
 
-        if (roll.shots.isEmpty()) item { EmptyState("No shots logged") }
+        if (roll.shots.isEmpty()) item { EmptyState("No frames logged on this roll.", verb = "Meter one with the shutter, or add it by hand.") }
 
         items(roll.shots.reversed(), key = { it.id }) { shot ->
             val idx = roll.shots.indexOf(shot) + 1

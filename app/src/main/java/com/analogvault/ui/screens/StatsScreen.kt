@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -305,7 +306,9 @@ private fun HabitChart(
             .border(1.dp, colors.edge)
             .padding(12.dp)
     ) {
-        Canvas(Modifier.fillMaxWidth().height(130.dp)) {
+        // Decorative: the labelled row underneath is the real content,
+        // and a bare Canvas would otherwise be an unlabelled node.
+        Canvas(Modifier.fillMaxWidth().height(130.dp).clearAndSetSemantics { }) {
             val n = buckets.size
             if (n == 0) return@Canvas
             val gap = 4.dp.toPx()
@@ -494,7 +497,7 @@ fun MonthBarChart(stats: Stats) {
             .border(1.dp, colors.edge)
             .padding(12.dp)
     ) {
-        Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(110.dp).clearAndSetSemantics { }) {
             val n = stats.byMonth.size
             if (n == 0) return@Canvas
             val gap = 4.dp.toPx()

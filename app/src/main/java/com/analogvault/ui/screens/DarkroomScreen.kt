@@ -30,6 +30,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import com.analogvault.data.model.Chemical
 import com.analogvault.ui.DarkroomTimerState
@@ -98,7 +107,7 @@ fun ChemistryTab(vm: MainViewModel) {
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item { SectionTitle("Chemistry", "${chemicals.size} chemicals") }
-        if (chemicals.isEmpty()) item { EmptyState("No chemicals tracked yet") }
+        if (chemicals.isEmpty()) item { EmptyState("No chemistry tracked.", verb = "Add a developer", onVerb = { editing = null; showSheet = true }) }
         items(chemicals, key = { it.id }) { chem ->
             val used   = vm.rolledCount(chem)
             val maxR   = chem.maxRolls.toIntOrNull()
@@ -683,6 +692,9 @@ private fun AgitationBar(
             .width(26.dp)
             .background(colors.film)
             .border(1.dp, colors.edge)
+            // Decorative: the cue line beside it already says "agitate now" or
+            // how long until the next window, in words.
+            .clearAndSetSemantics { }
     ) {
         if (durationSec <= 0) return@Canvas
         val h = size.height
@@ -902,6 +914,7 @@ private fun DarkroomEyebrow(title: String) {
     }
 }
 
+/** Selection carries a bar as well as a colour — see MeterSegment for why. */
 @Composable
 private fun DarkroomSegment(
     label: String,
@@ -912,7 +925,7 @@ private fun DarkroomSegment(
     onClick: () -> Unit,
 ) {
     val colors = FilmTheme.colors
-    Box(
+    Column(
         modifier
             .then(
                 if (selected) Modifier.halation(accent, 12.dp, 0.25f, !colors.safelight)
@@ -921,14 +934,26 @@ private fun DarkroomSegment(
             .background(colors.film)
             .border(1.dp, if (selected) accent else colors.edge)
             .clickable(onClick = onClick)
-            .padding(vertical = if (tall) 15.dp else 11.dp, horizontal = 4.dp),
-        contentAlignment = Alignment.Center,
+            .semantics { this.selected = selected; role = Role.Button },
     ) {
-        Text(
-            label,
-            style = FilmTheme.type.data,
-            color = if (selected) accent else colors.dim,
-            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = if (tall) 15.dp else 11.dp, horizontal = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                style = FilmTheme.type.data,
+                color = if (selected) accent else colors.dim,
+                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .background(if (selected) accent else Color.Transparent)
         )
     }
 }
@@ -958,6 +983,19 @@ private fun TemperatureRuler(tempC: Double, onValue: (Double) -> Unit) {
                 .clipToBounds()
                 .background(colors.film)
                 .border(1.dp, colors.edge)
+                // Operable by TalkBack: a drag-driven Canvas is otherwise a
+                // picture of a control rather than a control.
+                .semantics {
+                    contentDescription = "Working temperature, ${"%.1f".format(tempC)} degrees Celsius"
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current = tempC.toFloat(),
+                        range = lo.toFloat()..hi.toFloat(),
+                    )
+                    setProgress { target ->
+                        onValue(Math.round(target.coerceIn(lo.toFloat(), hi.toFloat()) * 10) / 10.0)
+                        true
+                    }
+                }
                 // Drag only, deliberately no tap-to-set: this ruler spans 28 °C
                 // in a finger's width, so a stray tap would silently move the
                 // chemistry ten degrees.
