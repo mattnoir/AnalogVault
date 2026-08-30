@@ -145,8 +145,8 @@ fun ActiveScreen(
                 showMeterRollPicker = false
                 pendingMeterShutter = ""; pendingMeterAperture = ""; pendingMeterIso = ""
             },
-            containerColor = Bg3,
-            title = { Text("Log shot to which roll?", color = AmberBright) },
+            containerColor = FilmTheme.colors.filmRaised,
+            title = { Text("Log shot to which roll?", color = FilmTheme.colors.yellow) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     shooting.forEach { roll ->
@@ -155,14 +155,14 @@ fun ActiveScreen(
                         Box(
                             modifier = Modifier.fillMaxWidth()
                                 
-                                .background(Bg4)
-                                .border(1.dp, Border)
+                                .background(FilmTheme.colors.filmRaised)
+                                .border(1.dp, FilmTheme.colors.edge)
                                 .clickable { selectedRollId = roll.id; showMeterRollPicker = false }
                                 .padding(12.dp)
                         ) {
                             Column {
-                                Text(film?.name ?: "Unknown Film", color = TextPrimary, fontSize = 14.sp)
-                                Text(cam?.name ?: "Unknown Camera", color = TextSecondary, fontSize = 12.sp)
+                                Text(film?.name ?: "Unknown Film", color = FilmTheme.colors.halide, fontSize = 14.sp)
+                                Text(cam?.name ?: "Unknown Camera", color = FilmTheme.colors.dim, fontSize = 12.sp)
                             }
                         }
                     }
@@ -173,7 +173,7 @@ fun ActiveScreen(
                 TextButton(onClick = {
                     showMeterRollPicker = false
                     pendingMeterShutter = ""; pendingMeterAperture = ""; pendingMeterIso = ""
-                }) { Text("Cancel", color = TextSecondary) }
+                }) { Text("Cancel", color = FilmTheme.colors.dim) }
             }
         )
     }
@@ -477,8 +477,8 @@ fun LoadRollSheet(
     if (showAddIsoDialog) {
         AlertDialog(
             onDismissRequest = { showAddIsoDialog = false; customIsoInput = "" },
-            containerColor = Bg3,
-            title = { Text("Add custom ISO", color = AmberBright) },
+            containerColor = FilmTheme.colors.filmRaised,
+            title = { Text("Add custom ISO", color = FilmTheme.colors.yellow) },
             text = {
                 VaultTextField(customIsoInput, { customIsoInput = it.filter(Char::isDigit) },
                     "ISO value (e.g. 1000)",
@@ -488,11 +488,11 @@ fun LoadRollSheet(
                 TextButton(onClick = {
                     customIsoInput.toIntOrNull()?.let { v -> vm.addCustomIso(v); pushIso = v.toString() }
                     showAddIsoDialog = false; customIsoInput = ""
-                }) { Text("Add", color = Amber) }
+                }) { Text("Add", color = FilmTheme.colors.cyan) }
             },
             dismissButton = {
                 TextButton(onClick = { showAddIsoDialog = false; customIsoInput = "" }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = FilmTheme.colors.dim)
                 }
             }
         )
@@ -541,17 +541,17 @@ fun LoadRollSheet(
         }
         // Load date — picker, not free text
         Column {
-            Text("Load Date", color = TextTertiary, fontSize = 11.sp)
+            Text("Load Date", color = FilmTheme.colors.dim, fontSize = 11.sp)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(formatDate(startDate), color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(formatDate(startDate), color = FilmTheme.colors.halide, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 VaultButton("Pick", small = true, ghost = true, onClick = { showDatePicker = true })
             }
         }
         Spacer(Modifier.height(10.dp))
         if (selFilm != null) {
-            Text("$rollFrames-exposure roll", color = TextTertiary, fontSize = 11.sp)
+            Text("$rollFrames-exposure roll", color = FilmTheme.colors.dim, fontSize = 11.sp)
             Spacer(Modifier.height(6.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
@@ -570,7 +570,7 @@ fun LoadRollSheet(
             val direction = if (stops > 0) "push +${"%.0f".format(stops)}" else "pull −${"%.0f".format(kotlin.math.abs(stops))}"
             Spacer(Modifier.height(4.dp))
             Text("$direction stop${if (kotlin.math.abs(stops) != 1.0) "s" else ""}",
-                color = if (stops > 0) OrangeWarn else BlueInfo, fontSize = 11.sp)
+                color = if (stops > 0) FilmTheme.colors.yellow else FilmTheme.colors.violet, fontSize = 11.sp)
         }
         Spacer(Modifier.height(16.dp))
         if (isBusy) {
@@ -578,7 +578,7 @@ fun LoadRollSheet(
                 if (allowBusyLoad)
                     "⚠ This camera already has a roll loaded. Load anyway for MF cameras with multiple backs."
                 else "⚠ This camera already has a roll loaded. Finish or remove it first.",
-                color = OrangeWarn, fontSize = 11.sp
+                color = FilmTheme.colors.yellow, fontSize = 11.sp
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -660,34 +660,34 @@ fun RollDetailScreen(
     ) {
         item {
             TextButton(onClick = onBack, contentPadding = PaddingValues(0.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Amber, modifier = Modifier.size(18.dp))
-                Text(" All Rolls", color = Amber, fontSize = 13.sp)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = FilmTheme.colors.cyan, modifier = Modifier.size(18.dp))
+                Text(" All Rolls", color = FilmTheme.colors.cyan, fontSize = 13.sp)
             }
         }
 
         // Roll info card
         item {
             VaultCard {
-                Text(film?.name ?: "Unknown Film", color = TextPrimary, fontSize = 17.sp)
+                Text(film?.name ?: "Unknown Film", color = FilmTheme.colors.halide, fontSize = 17.sp)
                 Text("${cam?.name ?: "?"}${if (lens != null) " · ${lens.name}" else ""}",
-                    color = TextSecondary, fontSize = 12.sp)
+                    color = FilmTheme.colors.dim, fontSize = 12.sp)
                 Spacer(Modifier.height(6.dp))
                 TagRow() {
-                    VaultTag("Loaded ${formatDate(roll.startDate)}", textColor = BlueInfo)
+                    VaultTag("Loaded ${formatDate(roll.startDate)}", textColor = FilmTheme.colors.violet)
                     film?.type?.split(" ")?.firstOrNull()?.let { VaultTag(it) }
                     if (roll.pushIso.isNotBlank() && film != null) {
                         // Rating film above box speed = push
                         val stops = kotlin.math.log2(roll.pushIso.toDouble() / film.iso.toDouble())
                         val label = if (stops > 0) "Push +${"%.0f".format(stops)}" else "Pull −${"%.0f".format(kotlin.math.abs(stops))}"
-                        VaultTag("$label @ ISO ${roll.pushIso}", textColor = OrangeWarn)
+                        VaultTag("$label @ ISO ${roll.pushIso}", textColor = FilmTheme.colors.yellow)
                     }
-                    if (roll.finished)  VaultTag("Finished",  textColor = Amber)
-                    if (roll.developed) VaultTag("Developed", textColor = GreenOk)
-                    if (roll.scanned)   VaultTag("Scanned",   textColor = GreenOk)
+                    if (roll.finished)  VaultTag("Finished",  textColor = FilmTheme.colors.cyan)
+                    if (roll.developed) VaultTag("Developed", textColor = FilmTheme.colors.cyan)
+                    if (roll.scanned)   VaultTag("Scanned",   textColor = FilmTheme.colors.cyan)
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("${roll.shots.size}/$total shots", color = TextTertiary, fontSize = 10.sp)
+                    Text("${roll.shots.size}/$total shots", color = FilmTheme.colors.dim, fontSize = 10.sp)
                 }
                 VaultProgressBar(pct)
                 Spacer(Modifier.height(10.dp))
@@ -734,7 +734,7 @@ fun RollDetailScreen(
         roll.devLog?.let { log ->
             item {
                 VaultCard {
-                    Text("🧪 ${log.process}", color = TextPrimary, fontSize = 12.sp)
+                    Text("🧪 ${log.process}", color = FilmTheme.colors.halide, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
                     TagRow() {
                         VaultTag(log.developer); VaultTag("${log.temp}°C"); VaultTag("${log.devTime}min")
@@ -745,7 +745,7 @@ fun RollDetailScreen(
         roll.scanLog?.let { log ->
             item {
                 VaultCard {
-                    Text("🔍 ${log.method}", color = TextPrimary, fontSize = 12.sp)
+                    Text("🔍 ${log.method}", color = FilmTheme.colors.halide, fontSize = 12.sp)
                     if (log.dpi.isNotBlank()) { Spacer(Modifier.height(4.dp)); VaultTag("${log.dpi} DPI") }
                 }
             }
@@ -755,7 +755,7 @@ fun RollDetailScreen(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("Shot Log", color = Amber, fontSize = 16.sp)
+                Text("Shot Log", color = FilmTheme.colors.cyan, fontSize = 16.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (roll.shots.isNotEmpty()) {
                         VaultButton("⇪ Export", small = true, ghost = true,
@@ -786,7 +786,7 @@ fun RollDetailScreen(
                 Box(
                     modifier = Modifier.fillMaxWidth().height(300.dp)
                         
-                        .border(1.dp, Border)
+                        .border(1.dp, FilmTheme.colors.edge)
                 ) {
                     com.analogvault.ui.components.OsmMapView(
                         shots = roll.shots,
@@ -802,22 +802,22 @@ fun RollDetailScreen(
             val idx = roll.shots.indexOf(shot) + 1
             VaultCard {
                 Row(Modifier.fillMaxWidth()) {
-                    Box(Modifier.size(28.dp).clip(CircleShape).background(Bg4),
+                    Box(Modifier.size(28.dp).clip(CircleShape).background(FilmTheme.colors.filmRaised),
                         contentAlignment = Alignment.Center) {
-                        Text("$idx", color = Amber, fontSize = 11.sp)
+                        Text("$idx", color = FilmTheme.colors.cyan, fontSize = 11.sp)
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         TagRow() {
-                            if (shot.shutter.isNotBlank())  VaultTag(shot.shutter, textColor = AmberBright)
+                            if (shot.shutter.isNotBlank())  VaultTag(shot.shutter, textColor = FilmTheme.colors.yellow)
                             if (shot.aperture.isNotBlank()) VaultTag("f/${shot.aperture}")
                             if (shot.iso.isNotBlank())      VaultTag("ISO ${shot.iso}")
                         }
-                        if (shot.lens.isNotBlank())     { Spacer(Modifier.height(2.dp)); Text(shot.lens, color = TextSecondary, fontSize = 11.sp) }
-                        if (shot.location.isNotBlank()) { Spacer(Modifier.height(2.dp)); Text("📍 ${shot.location}", color = BlueInfo, fontSize = 11.sp) }
-                        if (shot.notes.isNotBlank())    { Spacer(Modifier.height(2.dp)); Text(shot.notes, color = TextSecondary, fontSize = 11.sp) }
-                        if (shot.weather.isNotBlank())  { Spacer(Modifier.height(2.dp)); Text("🌤 ${shot.weather}", color = TextTertiary, fontSize = 10.sp) }
-                        Text(shot.date.ifBlank { "—" }, color = TextTertiary, fontSize = 10.sp)
+                        if (shot.lens.isNotBlank())     { Spacer(Modifier.height(2.dp)); Text(shot.lens, color = FilmTheme.colors.dim, fontSize = 11.sp) }
+                        if (shot.location.isNotBlank()) { Spacer(Modifier.height(2.dp)); Text("📍 ${shot.location}", color = FilmTheme.colors.violet, fontSize = 11.sp) }
+                        if (shot.notes.isNotBlank())    { Spacer(Modifier.height(2.dp)); Text(shot.notes, color = FilmTheme.colors.dim, fontSize = 11.sp) }
+                        if (shot.weather.isNotBlank())  { Spacer(Modifier.height(2.dp)); Text("🌤 ${shot.weather}", color = FilmTheme.colors.dim, fontSize = 10.sp) }
+                        Text(shot.date.ifBlank { "—" }, color = FilmTheme.colors.dim, fontSize = 10.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         if (shot.photoThumbPath.isNotBlank()) {
@@ -833,12 +833,12 @@ fun RollDetailScreen(
                         Row {
                             IconButton(onClick = { editingShot = shot; showShotSheet = true },
                                 modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                                Icon(Icons.Default.Edit, null, tint = FilmTheme.colors.dim, modifier = Modifier.size(14.dp))
                             }
                             IconButton(onClick = {
                                 confirmMsg = "Delete shot #$idx?" to { vm.deleteShot(roll.id, shot.id) }
                             }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Delete, null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                                Icon(Icons.Default.Delete, null, tint = FilmTheme.colors.mask.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
                             }
                         }
                     }
@@ -879,11 +879,11 @@ fun RollDetailScreen(
     if (showExportDialog) {
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            containerColor = Bg3,
-            title = { Text("Export shot log", color = AmberBright) },
+            containerColor = FilmTheme.colors.filmRaised,
+            title = { Text("Export shot log", color = FilmTheme.colors.yellow) },
             text = {
                 Text("CSV for spreadsheets, or a printable PDF contact sheet to archive with your negatives.",
-                    color = TextSecondary, fontSize = 13.sp)
+                    color = FilmTheme.colors.dim, fontSize = 13.sp)
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -898,14 +898,14 @@ fun RollDetailScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showExportDialog = false }) { Text("Cancel", color = TextSecondary) }
+                TextButton(onClick = { showExportDialog = false }) { Text("Cancel", color = FilmTheme.colors.dim) }
             }
         )
     }
     lightboxPath?.let { path ->
         Dialog(onDismissRequest = { lightboxPath = null },
             properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.95f))
+            Box(Modifier.fillMaxSize().background(FilmTheme.colors.void.copy(alpha = 0.95f))
                 .clickable { lightboxPath = null }, contentAlignment = Alignment.Center) {
                 AsyncImage(model = File(path), contentDescription = null,
                     modifier = Modifier.fillMaxWidth().padding(16.dp))
@@ -1021,8 +1021,8 @@ fun ShotSheet(
     if (showAddIsoDialog) {
         AlertDialog(
             onDismissRequest = { showAddIsoDialog = false; customIsoInput = "" },
-            containerColor = Bg3,
-            title = { Text("Add custom ISO", color = AmberBright) },
+            containerColor = FilmTheme.colors.filmRaised,
+            title = { Text("Add custom ISO", color = FilmTheme.colors.yellow) },
             text = {
                 VaultTextField(customIsoInput, { customIsoInput = it.filter(Char::isDigit) },
                     "ISO value (e.g. 1000)",
@@ -1035,11 +1035,11 @@ fun ShotSheet(
                         iso = v.toString()
                     }
                     showAddIsoDialog = false; customIsoInput = ""
-                }) { Text("Add", color = Amber) }
+                }) { Text("Add", color = FilmTheme.colors.cyan) }
             },
             dismissButton = {
                 TextButton(onClick = { showAddIsoDialog = false; customIsoInput = "" }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = FilmTheme.colors.dim)
                 }
             }
         )
@@ -1082,8 +1082,8 @@ fun ShotSheet(
         Column {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Location", color = TextTertiary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                Text("Auto", color = TextTertiary, fontSize = 11.sp)
+                Text("Location", color = FilmTheme.colors.dim, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                Text("Auto", color = FilmTheme.colors.dim, fontSize = 11.sp)
                 Switch(checked = autoLocation, onCheckedChange = { autoLocation = it },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = FilmTheme.colors.void,
@@ -1109,8 +1109,8 @@ fun ShotSheet(
                         Manifest.permission.ACCESS_COARSE_LOCATION
                     ))
                 }) {
-                    if (gpsLoading) CircularProgressIndicator(Modifier.size(18.dp), color = Amber, strokeWidth = 2.dp)
-                    else Icon(Icons.Default.LocationOn, "GPS", tint = if (autoLocation) Amber else TextTertiary)
+                    if (gpsLoading) CircularProgressIndicator(Modifier.size(18.dp), color = FilmTheme.colors.cyan, strokeWidth = 2.dp)
+                    else Icon(Icons.Default.LocationOn, "GPS", tint = if (autoLocation) FilmTheme.colors.cyan else FilmTheme.colors.dim)
                 }
             }
         }
@@ -1141,8 +1141,8 @@ fun ShotSheet(
                     weatherLoading = false
                 }
             }) {
-                if (weatherLoading) CircularProgressIndicator(Modifier.size(18.dp), color = Amber, strokeWidth = 2.dp)
-                else Icon(Icons.Default.Cloud, "Fetch weather", tint = Amber)
+                if (weatherLoading) CircularProgressIndicator(Modifier.size(18.dp), color = FilmTheme.colors.cyan, strokeWidth = 2.dp)
+                else Icon(Icons.Default.Cloud, "Fetch weather", tint = FilmTheme.colors.cyan)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -1150,11 +1150,11 @@ fun ShotSheet(
         Spacer(Modifier.height(10.dp))
         // Date & time with picker button
         Column {
-            Text("Date & Time", color = TextTertiary, fontSize = 11.sp)
+            Text("Date & Time", color = FilmTheme.colors.dim, fontSize = 11.sp)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(date, color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(date, color = FilmTheme.colors.halide, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 VaultButton("Pick", small = true, ghost = true, onClick = { showDatePicker = true })
             }
         }
@@ -1205,7 +1205,7 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
 
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Bg)) {
+        Box(Modifier.fillMaxSize().background(FilmTheme.colors.void)) {
             AndroidView(factory = { ctx ->
                 val pv = PreviewView(ctx)
                 ProcessCameraProvider.getInstance(ctx).addListener({
@@ -1226,9 +1226,9 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
             Box(Modifier.fillMaxSize().padding(bottom = 48.dp), contentAlignment = Alignment.BottomCenter) {
                 Row(horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextPrimary, modifier = Modifier.size(28.dp))
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = FilmTheme.colors.halide, modifier = Modifier.size(28.dp))
                     }
-                    Box(Modifier.size(72.dp).clip(CircleShape).background(Amber)
+                    Box(Modifier.size(72.dp).clip(CircleShape).background(FilmTheme.colors.cyan)
                         .clickable {
                             val ic = imageCapture ?: return@clickable
                             scope.launch {
@@ -1245,7 +1245,7 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
                                 }
                             }
                         }, contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Default.Camera, contentDescription = "Capture", tint = Bg, modifier = Modifier.size(32.dp))
+                        Icon(imageVector = Icons.Default.Camera, contentDescription = "Capture", tint = FilmTheme.colors.void, modifier = Modifier.size(32.dp))
                     }
                     Spacer(Modifier.size(48.dp))
                 }
@@ -1290,7 +1290,7 @@ fun DevSheet(onDismiss: () -> Unit, onSave: (DevLog, Double, Boolean) -> Unit) {
                         uncheckedThumbColor = FilmTheme.colors.dim,
                         uncheckedTrackColor = FilmTheme.colors.film,
                     ))
-            Text(if (isSelfDev) "Self-developed" else "Lab development", color = TextSecondary, fontSize = 12.sp)
+            Text(if (isSelfDev) "Self-developed" else "Lab development", color = FilmTheme.colors.dim, fontSize = 12.sp)
         }
         Spacer(Modifier.height(6.dp))
         VaultTextField(devCost, { devCost = it },

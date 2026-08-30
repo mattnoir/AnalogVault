@@ -59,7 +59,7 @@ fun SettingsScreen(vm: MainViewModel) {
         SectionCard("Weather (OpenWeatherMap)") {
             Text(
                 "Get a free API key at openweathermap.org/api — paste it here to enable the weather screen and auto weather in shot logs.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -76,7 +76,7 @@ fun SettingsScreen(vm: MainViewModel) {
         SectionCard("Display & Units") {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Currency symbol", color = TextSecondary, fontSize = 13.sp,
+                Text("Currency symbol", color = FilmTheme.colors.dim, fontSize = 13.sp,
                     modifier = Modifier.weight(1f))
                 VaultTextField(
                     currencyDraft, { currencyDraft = it.take(3) }, "",
@@ -87,10 +87,10 @@ fun SettingsScreen(vm: MainViewModel) {
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Units", color = TextSecondary, fontSize = 13.sp,
+                Text("Units", color = FilmTheme.colors.dim, fontSize = 13.sp,
                     modifier = Modifier.weight(1f))
                 Text(if (isMetric) "Metric" else "Imperial",
-                    color = TextPrimary, fontSize = 13.sp)
+                    color = FilmTheme.colors.halide, fontSize = 13.sp)
                 Switch(
                     checked = isMetric,
                     onCheckedChange = { vm.saveMetric(it) },
@@ -106,9 +106,9 @@ fun SettingsScreen(vm: MainViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Prefer 120 Hz display", color = TextSecondary, fontSize = 13.sp)
+                    Text("Prefer 120 Hz display", color = FilmTheme.colors.dim, fontSize = 13.sp)
                     Text("Smoother scrolling on LTPO panels; uses more battery",
-                        color = TextTertiary, fontSize = 11.sp)
+                        color = FilmTheme.colors.dim, fontSize = 11.sp)
                 }
                 Switch(
                     checked = highRefresh,
@@ -125,11 +125,11 @@ fun SettingsScreen(vm: MainViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Safelight", color = TextSecondary, fontSize = 13.sp)
+                    Text("Safelight", color = FilmTheme.colors.dim, fontSize = 13.sp)
                     Text("Swaps the whole app to a red scheme for darkroom work, " +
                         "and stops every glow and animation. Long-press the shutter " +
                         "to toggle it without coming here.",
-                        color = TextTertiary, fontSize = 11.sp)
+                        color = FilmTheme.colors.dim, fontSize = 11.sp)
                 }
                 Switch(
                     checked = safelight,
@@ -149,12 +149,12 @@ fun SettingsScreen(vm: MainViewModel) {
             Text(
                 "A daily check that notifies you about film nearing expiry, finished " +
                 "rolls sitting undeveloped, and ageing mixed chemistry.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Enable reminders", color = TextSecondary, fontSize = 13.sp,
+                Text("Enable reminders", color = FilmTheme.colors.dim, fontSize = 13.sp,
                     modifier = Modifier.weight(1f))
                 Switch(
                     checked = remindersEnabled,
@@ -185,7 +185,7 @@ fun SettingsScreen(vm: MainViewModel) {
             Text(
                 "Add non-standard ISO values (e.g. 1000, 3400) for unusual films. " +
                 "These appear alongside standard values in shot and film ISO pickers.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -212,16 +212,16 @@ fun SettingsScreen(vm: MainViewModel) {
                             label = { Text("ISO $iso", fontSize = 12.sp) },
                             trailingIcon = {
                                 Icon(Icons.Default.Delete, null,
-                                    tint = TextTertiary, modifier = Modifier.size(14.dp))
+                                    tint = FilmTheme.colors.dim, modifier = Modifier.size(14.dp))
                             },
                             colors = InputChipDefaults.inputChipColors(
-                                containerColor = Bg4,
-                                labelColor = TextPrimary
+                                containerColor = FilmTheme.colors.filmRaised,
+                                labelColor = FilmTheme.colors.halide
                             )
                         )
                     }
                 }
-                Text("Tap chip to remove", color = TextTertiary, fontSize = 11.sp)
+                Text("Tap chip to remove", color = FilmTheme.colors.dim, fontSize = 11.sp)
             }
         }
 
@@ -230,7 +230,7 @@ fun SettingsScreen(vm: MainViewModel) {
             Text(
                 "Built-in ISO range: ${Constants.ISOS.first()}–${Constants.ISOS.last()}. " +
                 "Add custom values above for anything outside this range.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
         }
     }
@@ -241,7 +241,7 @@ private fun ReminderToggle(label: String, checked: Boolean, onChange: (Boolean) 
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(label, color = TextTertiary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(label, color = FilmTheme.colors.dim, fontSize = 12.sp, modifier = Modifier.weight(1f))
         Switch(
             checked = checked,
             onCheckedChange = onChange,

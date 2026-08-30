@@ -67,7 +67,7 @@ fun BackupScreen() {
             text = "Backup saves all your film stocks, cameras, lenses, rolls, shot logs, " +
                     "chemicals, and settings to a single .avault file you can store anywhere. " +
                     "Shot photos are included when the toggle below is on.",
-            color = BlueInfo
+            color = FilmTheme.colors.violet
         )
 
         Spacer(Modifier.height(24.dp))
@@ -77,7 +77,7 @@ fun BackupScreen() {
             Text(
                 "Creates a .avault file (ZIP containing your data + photos). " +
                 "Store it anywhere — Downloads, Google Drive, a USB drive.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             Row(
@@ -96,7 +96,7 @@ fun BackupScreen() {
                 )
                 androidx.compose.material3.Text(
                     if (includePhotos) "Include shot photos (larger file)" else "Exclude photos (smaller file)",
-                    color = TextSecondary,
+                    color = FilmTheme.colors.dim,
                     fontSize = 12.sp
                 )
             }
@@ -119,7 +119,7 @@ fun BackupScreen() {
                 "Opens a .avault backup file, or an older .json export. " +
                 "Existing records with the same ID are overwritten; " +
                 "everything else is merged in — nothing is deleted.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(14.dp))
             VaultButton(
@@ -137,7 +137,7 @@ fun BackupScreen() {
             Text(
                 "Every shot from every roll as one CSV — film, camera, exposure, " +
                 "location, notes. Per-roll CSV/PDF exports are on each roll's detail screen.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             VaultButton(
@@ -185,15 +185,15 @@ private fun InfoCard(icon: ImageVector, text: String, color: Color) {
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Icon(icon, null, tint = color, modifier = Modifier.size(18.dp).padding(top = 1.dp))
-        Text(text, color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        Text(text, color = FilmTheme.colors.dim, fontSize = 12.sp, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
     val (bg, border, textColor, icon) = when (result) {
-        is BackupResult.Success -> listOf(GreenOk.copy(alpha = 0.1f), GreenOk.copy(alpha = 0.4f), GreenOk, "✓")
-        is BackupResult.Error   -> listOf(RedErr.copy(alpha = 0.1f),  RedErr.copy(alpha = 0.4f),  RedErr,  "⚠")
+        is BackupResult.Success -> listOf(FilmTheme.colors.cyan.copy(alpha = 0.1f), FilmTheme.colors.cyan.copy(alpha = 0.4f), FilmTheme.colors.cyan, "✓")
+        is BackupResult.Error   -> listOf(FilmTheme.colors.mask.copy(alpha = 0.1f),  FilmTheme.colors.mask.copy(alpha = 0.4f),  FilmTheme.colors.mask,  "⚠")
     }
     val message = when (result) {
         is BackupResult.Success -> result.message
@@ -222,8 +222,8 @@ private fun NoteRow(label: String, value: String) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, color = TextTertiary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-        Text(value, color = TextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f, fill = false),
+        Text(label, color = FilmTheme.colors.dim, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        Text(value, color = FilmTheme.colors.dim, fontSize = 11.sp, modifier = Modifier.weight(1f, fill = false),
             textAlign = androidx.compose.ui.text.style.TextAlign.End)
     }
 }

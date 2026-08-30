@@ -180,12 +180,12 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         item(key = "header") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("Film Stash", color = Amber, fontSize = 18.sp)
+                Text("Film Stash", color = FilmTheme.colors.cyan, fontSize = 18.sp)
                 Spacer(Modifier.width(6.dp))
-                Text("${displayFilms.size}/${films.size}", color = TextTertiary, fontSize = 10.sp)
+                Text("${displayFilms.size}/${films.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterType != "All" || filterExp) Amber else TextTertiary)
+                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterType != "All" || filterExp) FilmTheme.colors.cyan else FilmTheme.colors.dim)
                 }
                 VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
             }
@@ -203,10 +203,10 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Icon(
                         imageVector = if (bulkExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null, tint = TextSecondary,
+                        contentDescription = null, tint = FilmTheme.colors.dim,
                         modifier = Modifier.size(18.dp)
                     )
-                    Text("Bulk Film (${bulkRolls.size})", color = AmberBright, fontSize = 13.sp)
+                    Text("Bulk Film (${bulkRolls.size})", color = FilmTheme.colors.yellow, fontSize = 13.sp)
                 }
                 VaultButton("+ Bulk", small = true, ghost = true,
                     onClick = { editingBulk = null; showBulkSheet = true })
@@ -216,7 +216,7 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
         if (bulkExpanded) {
             if (bulkRolls.isEmpty()) {
                 item(key = "bulk_empty") {
-                    Text("No bulk film tracked yet", color = TextTertiary, fontSize = 12.sp,
+                    Text("No bulk film tracked yet", color = FilmTheme.colors.dim, fontSize = 12.sp,
                         modifier = Modifier.padding(bottom = 4.dp))
                 }
             }
@@ -236,9 +236,9 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HorizontalDivider(Modifier.weight(1f), color = Border)
-                Text("Individual Rolls", color = TextTertiary, fontSize = 11.sp)
-                HorizontalDivider(Modifier.weight(1f), color = Border)
+                HorizontalDivider(Modifier.weight(1f), color = FilmTheme.colors.edge)
+                Text("Individual Rolls", color = FilmTheme.colors.dim, fontSize = 11.sp)
+                HorizontalDivider(Modifier.weight(1f), color = FilmTheme.colors.edge)
             }
             Spacer(Modifier.height(4.dp))
         }
@@ -278,10 +278,10 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                 ) {
                     Icon(
                         imageVector = if (depletedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null, tint = TextSecondary,
+                        contentDescription = null, tint = FilmTheme.colors.dim,
                         modifier = Modifier.size(18.dp)
                     )
-                    Text("Out of stock (${depleted.size})", color = TextTertiary, fontSize = 13.sp)
+                    Text("Out of stock (${depleted.size})", color = FilmTheme.colors.dim, fontSize = 13.sp)
                 }
             }
             if (depletedExpanded) {
@@ -450,7 +450,7 @@ private fun AccentPicker(
     }
 
     Column {
-        Text("Accent", color = TextTertiary, fontSize = 11.sp)
+        Text("Accent", color = FilmTheme.colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -620,7 +620,7 @@ fun BulkRollSheet(
         Spacer(Modifier.height(10.dp))
 
         // Frame count — enter directly or calculate from footage
-        Text("Total Frames in Canister", color = TextTertiary, fontSize = 11.sp)
+        Text("Total Frames in Canister", color = FilmTheme.colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Bottom) {
@@ -628,7 +628,7 @@ fun BulkRollSheet(
                 modifier = Modifier.weight(1f),
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                 placeholder = "e.g. 3200")
-            Text("or", color = TextTertiary, fontSize = 12.sp,
+            Text("or", color = FilmTheme.colors.dim, fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 14.dp))
             Column(Modifier.weight(1f)) {
                 // Unit toggle: ft / m
@@ -640,11 +640,11 @@ fun BulkRollSheet(
                         Box(
                             modifier = Modifier
                                 
-                                .background(if (selected) AmberDark else Bg3)
-                                .border(1.dp, if (selected) Amber else Border)
+                                .background(if (selected) FilmTheme.colors.violet else FilmTheme.colors.filmRaised)
+                                .border(1.dp, if (selected) FilmTheme.colors.cyan else FilmTheme.colors.edge)
                                 .clickable { footageMetric = isMetric; footage = "" }
                                 .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) { Text(label, color = if (selected) AmberBright else TextTertiary, fontSize = 11.sp) }
+                        ) { Text(label, color = if (selected) FilmTheme.colors.yellow else FilmTheme.colors.dim, fontSize = 11.sp) }
                     }
                 }
                 VaultTextField(footage, { footage = it },
@@ -652,7 +652,7 @@ fun BulkRollSheet(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                     placeholder = if (footageMetric) "e.g. 30" else "e.g. 100")
                 if (footageFrames != null) {
-                    Text("≈ $footageFrames frames", color = Amber, fontSize = 10.sp)
+                    Text("≈ $footageFrames frames", color = FilmTheme.colors.cyan, fontSize = 10.sp)
                 }
             }
             if (footageFrames != null) {
@@ -663,13 +663,13 @@ fun BulkRollSheet(
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("Purchase Date", color = TextTertiary, fontSize = 11.sp)
+                Text("Purchase Date", color = FilmTheme.colors.dim, fontSize = 11.sp)
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         purchaseDate.ifBlank { "Not set" },
-                        color = if (purchaseDate.isBlank()) TextTertiary else TextPrimary,
+                        color = if (purchaseDate.isBlank()) FilmTheme.colors.dim else FilmTheme.colors.halide,
                         fontSize = 13.sp, modifier = Modifier.weight(1f)
                     )
                     VaultButton("Pick", small = true, ghost = true,
@@ -677,13 +677,13 @@ fun BulkRollSheet(
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text("Expiry", color = TextTertiary, fontSize = 11.sp)
+                Text("Expiry", color = FilmTheme.colors.dim, fontSize = 11.sp)
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         if (expiryDate.isBlank()) "Not set" else expiryDate,
-                        color = if (expiryDate.isBlank()) TextTertiary else TextPrimary,
+                        color = if (expiryDate.isBlank()) FilmTheme.colors.dim else FilmTheme.colors.halide,
                         fontSize = 12.sp, modifier = Modifier.weight(1f)
                     )
                     VaultButton("Pick", small = true, ghost = true, onClick = { showExpPicker = true })
@@ -768,14 +768,14 @@ fun LoadFromBulkSheet(
             VaultTag(bulk.type.split(" ").first())
             VaultTag("ISO ${bulk.iso}")
             VaultTag("$remaining frames left", textColor = when {
-                remaining <= 36 -> OrangeWarn
-                else -> GreenOk
+                remaining <= 36 -> FilmTheme.colors.yellow
+                else -> FilmTheme.colors.cyan
             })
         }
         Spacer(Modifier.height(14.dp))
 
         // Frames per roll — quick picks + custom
-        Text("Frames per roll", color = TextTertiary, fontSize = 11.sp)
+        Text("Frames per roll", color = FilmTheme.colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -784,13 +784,13 @@ fun LoadFromBulkSheet(
                 Box(
                     modifier = Modifier
                         
-                        .background(if (selected) AmberDark else Bg3)
-                        .border(1.dp, if (selected) Amber else Border)
+                        .background(if (selected) FilmTheme.colors.violet else FilmTheme.colors.filmRaised)
+                        .border(1.dp, if (selected) FilmTheme.colors.cyan else FilmTheme.colors.edge)
                         .clickable { frames = preset }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(preset, color = if (selected) AmberBright else TextSecondary, fontSize = 13.sp)
+                    Text(preset, color = if (selected) FilmTheme.colors.yellow else FilmTheme.colors.dim, fontSize = 13.sp)
                 }
             }
             VaultTextField(
@@ -813,9 +813,9 @@ fun LoadFromBulkSheet(
                 placeholder = "1")
             if (framesInt > 0) {
                 Column {
-                    Text("Uses $totalFramesNeeded fr", color = TextSecondary, fontSize = 11.sp)
+                    Text("Uses $totalFramesNeeded fr", color = FilmTheme.colors.dim, fontSize = 11.sp)
                     Text("$afterLoad fr left", color = when {
-                        overBudget -> RedErr; afterLoad <= 36 -> OrangeWarn; else -> GreenOk
+                        overBudget -> FilmTheme.colors.mask; afterLoad <= 36 -> FilmTheme.colors.yellow; else -> FilmTheme.colors.cyan
                     }, fontSize = 11.sp)
                 }
             }
@@ -823,18 +823,18 @@ fun LoadFromBulkSheet(
         if (overBudget) {
             Spacer(Modifier.height(4.dp))
             Text("⚠ Exceeds available footage by ${totalFramesNeeded - remaining} frames",
-                color = RedErr, fontSize = 11.sp)
+                color = FilmTheme.colors.mask, fontSize = 11.sp)
         }
         Spacer(Modifier.height(12.dp))
 
         // Expiry date — picker, not manual entry
-        Text("Expiry date", color = TextTertiary, fontSize = 11.sp)
+        Text("Expiry date", color = FilmTheme.colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 if (expiryDate.isBlank()) "Not set" else expiryDate,
-                color = if (expiryDate.isBlank()) TextTertiary else TextPrimary,
+                color = if (expiryDate.isBlank()) FilmTheme.colors.dim else FilmTheme.colors.halide,
                 fontSize = 13.sp, modifier = Modifier.weight(1f)
             )
             VaultButton("Pick", small = true, ghost = true, onClick = { showExpPicker = true })
@@ -877,8 +877,8 @@ fun FilterBar(
     extraToggle: Pair<String, Boolean>? = null, onExtraToggle: ((Boolean) -> Unit)? = null
 ) {
     Column(
-        Modifier.fillMaxWidth().background(Bg3)
-            .border(1.dp, Border).padding(10.dp),
+        Modifier.fillMaxWidth().background(FilmTheme.colors.filmRaised)
+            .border(1.dp, FilmTheme.colors.edge).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -888,9 +888,9 @@ fun FilterBar(
         if (extraToggle != null && onExtraToggle != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = extraToggle.second, onCheckedChange = onExtraToggle,
-                    colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark))
+                    colors = SwitchDefaults.colors(checkedThumbColor = FilmTheme.colors.cyan, checkedTrackColor = FilmTheme.colors.violet))
                 Spacer(Modifier.width(8.dp))
-                Text(extraToggle.first, color = TextSecondary, fontSize = 12.sp)
+                Text(extraToggle.first, color = FilmTheme.colors.dim, fontSize = 12.sp)
             }
         }
     }
@@ -922,11 +922,11 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "header") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Cameras", color = Amber, fontSize = 18.sp)
-                Text("${displayCameras.size}/${cameras.size}", color = TextTertiary, fontSize = 10.sp)
+                Text("Cameras", color = FilmTheme.colors.cyan, fontSize = 18.sp)
+                Text("${displayCameras.size}/${cameras.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterFormat != "All") Amber else TextTertiary)
+                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterFormat != "All") FilmTheme.colors.cyan else FilmTheme.colors.dim)
                 }
                 VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
             }
@@ -945,25 +945,25 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
                             style = FilmTheme.type.stock.copy(fontSize = 19.sp),
                             color = FilmTheme.colors.halide,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (cam.brand.isNotBlank()) Text(cam.brand, color = TextSecondary, fontSize = 11.sp)
+                        if (cam.brand.isNotBlank()) Text(cam.brand, color = FilmTheme.colors.dim, fontSize = 11.sp)
                         Spacer(Modifier.height(4.dp))
                         TagRow() {
-                            VaultTag(cam.format, textColor = AmberBright)
+                            VaultTag(cam.format, textColor = FilmTheme.colors.yellow)
                             VaultTag(cam.condition)
                             if (cam.mount.isNotBlank()) VaultTag(cam.mount)
                             VaultTag(cam.lensSystem)
-                            if (cam.id in busyCameraIds) VaultTag("📷 Film loaded", textColor = BlueInfo)
+                            if (cam.id in busyCameraIds) VaultTag("📷 Film loaded", textColor = FilmTheme.colors.violet)
                         }
                         cam.adapterMounts.take(3).let { if (it.isNotEmpty()) {
                             Spacer(Modifier.height(2.dp))
                             TagRow() {
-                                it.forEach { m -> VaultTag(m, textColor = BlueInfo) }
+                                it.forEach { m -> VaultTag(m, textColor = FilmTheme.colors.violet) }
                             }
                         }}
                     }
                     Row {
-                        IconButton(onClick = { editing = cam; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary) }
-                        IconButton(onClick = { confirmDelete = cam }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f)) }
+                        IconButton(onClick = { editing = cam; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.dim) }
+                        IconButton(onClick = { confirmDelete = cam }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
                     }
                 }
             }
@@ -1002,11 +1002,11 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "header") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Lenses", color = Amber, fontSize = 18.sp)
-                Text("${displayLenses.size}/${lenses.size}", color = TextTertiary, fontSize = 10.sp)
+                Text("Lenses", color = FilmTheme.colors.cyan, fontSize = 18.sp)
+                Text("${displayLenses.size}/${lenses.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterMount != "All") Amber else TextTertiary)
+                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterMount != "All") FilmTheme.colors.cyan else FilmTheme.colors.dim)
                 }
                 VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
             }
@@ -1025,19 +1025,19 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
                             style = FilmTheme.type.stock.copy(fontSize = 19.sp),
                             color = FilmTheme.colors.halide,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (lens.brand.isNotBlank()) Text(lens.brand, color = TextSecondary, fontSize = 11.sp)
+                        if (lens.brand.isNotBlank()) Text(lens.brand, color = FilmTheme.colors.dim, fontSize = 11.sp)
                         Spacer(Modifier.height(4.dp))
                         TagRow() {
-                            VaultTag("${lens.focalLength}mm", textColor = AmberBright)
+                            VaultTag("${lens.focalLength}mm", textColor = FilmTheme.colors.yellow)
                             VaultTag("f/${lens.maxAperture}")
                             if (lens.mount.isNotBlank()) VaultTag(lens.mount)
                             VaultTag(lens.condition)
                         }
                     }
                     Row {
-                        IconButton(onClick = { dofLens = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.CenterFocusStrong, "DOF calculator", modifier = Modifier.size(16.dp), tint = Amber) }
-                        IconButton(onClick = { editing = lens; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary) }
-                        IconButton(onClick = { confirmDelete = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f)) }
+                        IconButton(onClick = { dofLens = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.CenterFocusStrong, "DOF calculator", modifier = Modifier.size(16.dp), tint = FilmTheme.colors.cyan) }
+                        IconButton(onClick = { editing = lens; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.dim) }
+                        IconButton(onClick = { confirmDelete = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
                     }
                 }
             }
@@ -1070,8 +1070,8 @@ fun DofDialog(lens: Lens, onDismiss: () -> Unit) {
     val (near, far) = com.analogvault.util.Exposure.dofNearFar(focal, aperture, distanceM.toDouble(), coc)
 
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Bg3,
-        title = { Text("DOF · ${lens.name.ifBlank { "${focal.toInt()}mm" }}", color = AmberBright, fontSize = 16.sp) },
+        onDismissRequest = onDismiss, containerColor = FilmTheme.colors.filmRaised,
+        title = { Text("DOF · ${lens.name.ifBlank { "${focal.toInt()}mm" }}", color = FilmTheme.colors.yellow, fontSize = 16.sp) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1083,35 +1083,35 @@ fun DofDialog(lens: Lens, onDismiss: () -> Unit) {
                 }
                 Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Focus distance", color = TextSecondary, fontSize = 12.sp)
-                        Text(m(distanceM.toDouble()), color = Amber, fontSize = 12.sp)
+                        Text("Focus distance", color = FilmTheme.colors.dim, fontSize = 12.sp)
+                        Text(m(distanceM.toDouble()), color = FilmTheme.colors.cyan, fontSize = 12.sp)
                     }
                     Slider(
                         value = distanceM,
                         onValueChange = { distanceM = ((it * 10).toInt() / 10f) },
                         valueRange = 0.5f..30f,
-                        colors = SliderDefaults.colors(thumbColor = Amber, activeTrackColor = Amber, inactiveTrackColor = Border)
+                        colors = SliderDefaults.colors(thumbColor = FilmTheme.colors.cyan, activeTrackColor = FilmTheme.colors.cyan, inactiveTrackColor = FilmTheme.colors.edge)
                     )
                 }
-                HorizontalDivider(color = Border)
+                HorizontalDivider(color = FilmTheme.colors.edge)
                 DofRow("In focus", if (far == null) "${m(near)} → ∞" else "${m(near)} → ${m(far)}")
                 DofRow("Total DOF", if (far == null) "∞" else m(far - near))
                 DofRow("Hyperfocal", "${m(hyperM)} (focus here → ${m(hyperM / 2)} to ∞)")
                 Text(
                     "${focal.toInt()}mm on $format · CoC ${coc}mm",
-                    color = TextTertiary, fontSize = 10.sp
+                    color = FilmTheme.colors.dim, fontSize = 10.sp
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = Amber) } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = FilmTheme.colors.cyan) } }
     )
 }
 
 @Composable
 private fun DofRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = TextTertiary, fontSize = 12.sp)
-        Text(value, color = TextPrimary, fontSize = 12.sp)
+        Text(label, color = FilmTheme.colors.dim, fontSize = 12.sp)
+        Text(value, color = FilmTheme.colors.halide, fontSize = 12.sp)
     }
 }
 
@@ -1141,11 +1141,11 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "header") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Accessories", color = Amber, fontSize = 18.sp)
-                Text("${displayAcc.size}/${accessories.size}", color = TextTertiary, fontSize = 10.sp)
+                Text("Accessories", color = FilmTheme.colors.cyan, fontSize = 18.sp)
+                Text("${displayAcc.size}/${accessories.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterType != "All") Amber else TextTertiary)
+                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterType != "All") FilmTheme.colors.cyan else FilmTheme.colors.dim)
                 }
                 VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
             }
@@ -1166,14 +1166,14 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
                         TagRow() {
-                            VaultTag(acc.type, textColor = AmberBright)
+                            VaultTag(acc.type, textColor = FilmTheme.colors.yellow)
                             if (acc.brand.isNotBlank()) VaultTag(acc.brand)
                             VaultTag(acc.condition)
                         }
                     }
                     Row {
-                        IconButton(onClick = { editing = acc; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = TextSecondary) }
-                        IconButton(onClick = { confirmDelete = acc }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = RedErr.copy(alpha = 0.7f)) }
+                        IconButton(onClick = { editing = acc; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.dim) }
+                        IconButton(onClick = { confirmDelete = acc }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
                     }
                 }
             }
@@ -1212,8 +1212,8 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
     if (showAddIsoDialog) {
         AlertDialog(
             onDismissRequest = { showAddIsoDialog = false; customIsoInput = "" },
-            containerColor = Bg3,
-            title = { Text("Add custom ISO", color = AmberBright) },
+            containerColor = FilmTheme.colors.filmRaised,
+            title = { Text("Add custom ISO", color = FilmTheme.colors.yellow) },
             text = {
                 VaultTextField(customIsoInput, { customIsoInput = it.filter(Char::isDigit) },
                     "ISO value", keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
@@ -1225,11 +1225,11 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                         iso = v.toString()
                     }
                     showAddIsoDialog = false; customIsoInput = ""
-                }) { Text("Add", color = Amber) }
+                }) { Text("Add", color = FilmTheme.colors.cyan) }
             },
             dismissButton = {
                 TextButton(onClick = { showAddIsoDialog = false; customIsoInput = "" }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = FilmTheme.colors.dim)
                 }
             }
         )
@@ -1283,7 +1283,7 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
         // ── Frame count picker (format-aware) ────────────────────────────────
         if (is135 || is120) {
             Spacer(Modifier.height(10.dp))
-            Text("Frames per roll", color = TextTertiary, fontSize = 11.sp)
+            Text("Frames per roll", color = FilmTheme.colors.dim, fontSize = 11.sp)
             Spacer(Modifier.height(6.dp))
             if (is135) {
                 // Quick-pick 12 / 24 / 36 + custom
@@ -1294,12 +1294,12 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                         Box(
                             modifier = Modifier
                                 
-                                .background(if (sel) AmberDark else Bg3)
-                                .border(1.dp, if (sel) Amber else Border)
+                                .background(if (sel) FilmTheme.colors.violet else FilmTheme.colors.filmRaised)
+                                .border(1.dp, if (sel) FilmTheme.colors.cyan else FilmTheme.colors.edge)
                                 .clickable { frameCount = preset.toString() }
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
                             contentAlignment = Alignment.Center
-                        ) { Text(preset.toString(), color = if (sel) AmberBright else TextSecondary, fontSize = 13.sp) }
+                        ) { Text(preset.toString(), color = if (sel) FilmTheme.colors.yellow else FilmTheme.colors.dim, fontSize = 13.sp) }
                     }
                     VaultTextField(
                         value = if (frameCount !in listOf("12","24","36")) frameCount else "",
@@ -1319,15 +1319,15 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
                         Box(
                             modifier = Modifier
                                 
-                                .background(if (sel) AmberDark else Bg3)
-                                .border(1.dp, if (sel) Amber else Border)
+                                .background(if (sel) FilmTheme.colors.violet else FilmTheme.colors.filmRaised)
+                                .border(1.dp, if (sel) FilmTheme.colors.cyan else FilmTheme.colors.edge)
                                 .clickable { frameCount = n.toString() }
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(fmt, color = if (sel) AmberBright else TextSecondary, fontSize = 12.sp)
-                                Text("$n fr", color = if (sel) Amber else TextTertiary, fontSize = 10.sp)
+                                Text(fmt, color = if (sel) FilmTheme.colors.yellow else FilmTheme.colors.dim, fontSize = 12.sp)
+                                Text("$n fr", color = if (sel) FilmTheme.colors.cyan else FilmTheme.colors.dim, fontSize = 10.sp)
                             }
                         }
                     }
@@ -1339,10 +1339,10 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // Expiry: show picker button + text field
             Column(Modifier.weight(1f)) {
-                Text("Expiry", color = TextTertiary, fontSize = 11.sp)
+                Text("Expiry", color = FilmTheme.colors.dim, fontSize = 11.sp)
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (expiry.isBlank()) "Not set" else expiry, color = if (expiry.isBlank()) TextTertiary else TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(if (expiry.isBlank()) "Not set" else expiry, color = if (expiry.isBlank()) FilmTheme.colors.dim else FilmTheme.colors.halide, fontSize = 13.sp, modifier = Modifier.weight(1f))
                     VaultButton("Pick", small = true, ghost = true, onClick = { showExpPicker = true })
                     if (expiry.isNotBlank()) VaultButton("✕", small = true, ghost = true, onClick = { expiry = "" })
                 }
@@ -1352,11 +1352,11 @@ fun FilmSheet(ed: FilmStock?, onDismiss: () -> Unit, onSave: (FilmStock) -> Unit
         Spacer(Modifier.height(10.dp))
         // Purchase date — optional, uses the same date picker as the rest of the app
         Column {
-            Text("Purchase Date", color = TextTertiary, fontSize = 11.sp)
+            Text("Purchase Date", color = FilmTheme.colors.dim, fontSize = 11.sp)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (purchaseDate.isBlank()) "Not set" else formatDate(purchaseDate),
-                    color = if (purchaseDate.isBlank()) TextTertiary else TextPrimary,
+                    color = if (purchaseDate.isBlank()) FilmTheme.colors.dim else FilmTheme.colors.halide,
                     fontSize = 13.sp, modifier = Modifier.weight(1f))
                 VaultButton("Pick", small = true, ghost = true, onClick = { showPurchaseDatePicker = true })
                 if (purchaseDate.isNotBlank()) VaultButton("✕", small = true, ghost = true, onClick = { purchaseDate = "" })
@@ -1434,8 +1434,8 @@ fun MonthYearPickerDialog(year: Int, month: Int, onConfirm: (Int, Int) -> Unit, 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        title = { Text("Expiry Date", color = AmberBright) },
+        containerColor = FilmTheme.colors.filmRaised,
+        title = { Text("Expiry Date", color = FilmTheme.colors.yellow) },
         text = {
             Row(
                 Modifier.fillMaxWidth(),
@@ -1459,10 +1459,10 @@ fun MonthYearPickerDialog(year: Int, month: Int, onConfirm: (Int, Int) -> Unit, 
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(selYear, selMonth) }) { Text("Set", color = Amber) }
+            TextButton(onClick = { onConfirm(selYear, selMonth) }) { Text("Set", color = FilmTheme.colors.cyan) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = FilmTheme.colors.dim) }
         }
     )
 }
@@ -1506,7 +1506,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
         // MF shooting format — only for 120 cameras
         if (format == "120 (MF)") {
             Spacer(Modifier.height(10.dp))
-            Text("Shooting format", color = TextTertiary, fontSize = 11.sp)
+            Text("Shooting format", color = FilmTheme.colors.dim, fontSize = 11.sp)
             Spacer(Modifier.height(6.dp))
             TagRow() {
                 Constants.MF_FORMATS.forEach { fmt ->
@@ -1515,15 +1515,15 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                     Box(
                         modifier = Modifier
                             
-                            .background(if (sel) AmberDark else Bg3)
-                            .border(1.dp, if (sel) Amber else Border)
+                            .background(if (sel) FilmTheme.colors.violet else FilmTheme.colors.filmRaised)
+                            .border(1.dp, if (sel) FilmTheme.colors.cyan else FilmTheme.colors.edge)
                             .clickable { mfFormat = fmt }
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(fmt, color = if (sel) AmberBright else TextSecondary, fontSize = 12.sp)
-                            Text("$frames fr", color = if (sel) Amber else TextTertiary, fontSize = 10.sp)
+                            Text(fmt, color = if (sel) FilmTheme.colors.yellow else FilmTheme.colors.dim, fontSize = 12.sp)
+                            Text("$frames fr", color = if (sel) FilmTheme.colors.cyan else FilmTheme.colors.dim, fontSize = 10.sp)
                         }
                     }
                 }
@@ -1531,7 +1531,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
             if (mfFormat.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text("Loading a 120 roll will default to ${Constants.MF_FRAME_COUNTS[mfFormat]} frames",
-                    color = TextTertiary, fontSize = 10.sp)
+                    color = FilmTheme.colors.dim, fontSize = 10.sp)
             }
         }
 
@@ -1546,7 +1546,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
             if (mount.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = { showAdapters = !showAdapters }) {
-                    Text("🔧 ${if (showAdapters) "Hide" else "Add"} Adapter Mounts${if (adapters.isNotEmpty()) " (${adapters.size})" else ""}", color = Amber, fontSize = 12.sp)
+                    Text("🔧 ${if (showAdapters) "Hide" else "Add"} Adapter Mounts${if (adapters.isNotEmpty()) " (${adapters.size})" else ""}", color = FilmTheme.colors.cyan, fontSize = 12.sp)
                 }
                 if (showAdapters) {
                     val options = Constants.MOUNT_GROUPS[mount]?.adapters ?: Constants.COMMON_MOUNTS.filter { it != mount }
@@ -1556,8 +1556,8 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                             FilterChip(selected = on, onClick = { adapters = if (on) adapters - m else adapters + m },
                                 label = { Text(m, fontSize = 10.sp) },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AmberDark, selectedLabelColor = TextPrimary,
-                                    containerColor = Bg4, labelColor = TextSecondary))
+                                    selectedContainerColor = FilmTheme.colors.violet, selectedLabelColor = FilmTheme.colors.halide,
+                                    containerColor = FilmTheme.colors.filmRaised, labelColor = FilmTheme.colors.dim))
                         }
                     }
                 }
@@ -1567,7 +1567,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
         // for, which is the old behaviour; filled in it stops offering speeds the
         // dial does not have.
         Spacer(Modifier.height(14.dp))
-        Text("Shutter range", color = TextTertiary, fontSize = 11.sp)
+        Text("Shutter range", color = FilmTheme.colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             VaultDropdown("Fastest", fastest.ifBlank { UNKNOWN_LIMIT },
@@ -1581,12 +1581,12 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Bulb", color = TextSecondary, fontSize = 13.sp)
+                Text("Bulb", color = FilmTheme.colors.dim, fontSize = 13.sp)
                 Text("Lets the meter suggest holding past the slowest speed",
-                    color = TextTertiary, fontSize = 10.sp)
+                    color = FilmTheme.colors.dim, fontSize = 10.sp)
             }
             Switch(checked = hasBulb, onCheckedChange = { hasBulb = it },
-                colors = SwitchDefaults.colors(checkedThumbColor = Amber, checkedTrackColor = AmberDark))
+                colors = SwitchDefaults.colors(checkedThumbColor = FilmTheme.colors.cyan, checkedTrackColor = FilmTheme.colors.violet))
         }
 
         Spacer(Modifier.height(10.dp))
@@ -1674,10 +1674,11 @@ fun AccessorySheet(ed: Accessory?, onDismiss: () -> Unit, onSave: (Accessory) ->
 fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit,
                    onLoad: (() -> Unit)? = null, currency: String = "€") {
     val expKey = film.expiryDate
-    val (exLabel, exColor, _) = expiryStatus(expKey)
+    val (exLabel, exLevel, _) = expiryStatus(expKey)
+    val exColor = expiryColor(exLevel)
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Bg3,
-        title = { Text(film.name.ifBlank { "Film" }, color = AmberBright) },
+        onDismissRequest = onDismiss, containerColor = FilmTheme.colors.filmRaised,
+        title = { Text(film.name.ifBlank { "Film" }, color = FilmTheme.colors.yellow) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (film.brand.isNotBlank()) InfoRow("Brand", film.brand)
@@ -1687,25 +1688,25 @@ fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit,
                 if (film.quantity > 1) InfoRow("Quantity", "${film.quantity} rolls")
                 if (film.costPerRoll > 0.0) InfoRow("Cost/Roll", "${currency}%.2f".format(film.costPerRoll))
                 if (exLabel.isNotBlank()) TagRow() {
-                    Text("Expiry", color = TextTertiary, fontSize = 12.sp)
+                    Text("Expiry", color = FilmTheme.colors.dim, fontSize = 12.sp)
                     VaultTag(exLabel, textColor = exColor)
                 }
-                if (film.notes.isNotBlank()) Text(film.notes, color = TextSecondary, fontSize = 12.sp)
+                if (film.notes.isNotBlank()) Text(film.notes, color = FilmTheme.colors.dim, fontSize = 12.sp)
             }
         },
         confirmButton = { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (onLoad != null) VaultButton("Load Film", small = true, onClick = onLoad)
-            else VaultTag("📷 In Camera", textColor = BlueInfo)
+            else VaultTag("📷 In Camera", textColor = FilmTheme.colors.violet)
             VaultButton("Edit", small = true, ghost = true, onClick = onEdit)
         }},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = FilmTheme.colors.dim) } }
     )
 }
 
 @Composable private fun InfoRow(label: String, value: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, color = TextTertiary, fontSize = 12.sp, modifier = Modifier.width(80.dp))
-        Text(value, color = TextPrimary, fontSize = 12.sp)
+        Text(label, color = FilmTheme.colors.dim, fontSize = 12.sp, modifier = Modifier.width(80.dp))
+        Text(value, color = FilmTheme.colors.halide, fontSize = 12.sp)
     }
 }
 

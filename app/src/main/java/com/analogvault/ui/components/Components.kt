@@ -40,14 +40,25 @@ fun formatDate(iso: String): String {
     } catch (e: Exception) { iso }
 }
 
-fun expiryStatus(rawDate: String): Triple<String, Color, Boolean> {
-    if (rawDate.isBlank()) return Triple("", Color.Transparent, false)
+/**
+ * How close a stock is to its expiry date.
+ *
+ * Returns a level rather than a colour. Colour is a property of the theme and
+ * this is pure date arithmetic — mixing them meant a non-composable function
+ * reaching for a palette, which is also what stopped it following the safelight
+ * swap. Callers map the level with [expiryColor].
+ */
+enum class ExpiryLevel { NONE, OK, SOON, EXPIRED }
+
+/** Label, level, and whether it is already past. */
+fun expiryStatus(rawDate: String): Triple<String, ExpiryLevel, Boolean> {
+    if (rawDate.isBlank()) return Triple("", ExpiryLevel.NONE, false)
     // Support both "yyyy-MM" (month-only) and "yyyy-MM-dd" formats
     val isMonthOnly = rawDate.length == 7
     val dateStr = if (isMonthOnly) "$rawDate-01" else rawDate
     return try {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val date = sdf.parse(dateStr) ?: return Triple(rawDate, TextSecondary, false)
+        val date = sdf.parse(dateStr) ?: return Triple(rawDate, ExpiryLevel.NONE, false)
         val days = ((date.time - Date().time) / 86400000).toInt()
         val displayLabel = if (isMonthOnly) {
             SimpleDateFormat("MMM yyyy", Locale.US).format(date)
@@ -55,11 +66,19 @@ fun expiryStatus(rawDate: String): Triple<String, Color, Boolean> {
             formatDate(dateStr)
         }
         when {
-            days < 0  -> Triple("Expired", RedErr, true)
-            days < 90 -> Triple("Exp. in ${days}d", OrangeWarn, false)
-            else      -> Triple(displayLabel, GreenOk, false)
+            days < 0  -> Triple("Expired", ExpiryLevel.EXPIRED, true)
+            days < 90 -> Triple("Exp. in ${days}d", ExpiryLevel.SOON, false)
+            else      -> Triple(displayLabel, ExpiryLevel.OK, false)
         }
-    } catch (e: Exception) { Triple(rawDate, TextSecondary, false) }
+    } catch (e: Exception) { Triple(rawDate, ExpiryLevel.NONE, false) }
+}
+
+/** Mask for gone, yellow for a decision to make, dim for fine. */
+@Composable
+fun expiryColor(level: ExpiryLevel): Color = when (level) {
+    ExpiryLevel.EXPIRED -> FilmTheme.colors.mask
+    ExpiryLevel.SOON    -> FilmTheme.colors.yellow
+    else                -> FilmTheme.colors.dim
 }
 
 // ─── Data chip ────────────────────────────────────────────────────────────────
@@ -130,33 +149,33 @@ fun SpinnerField(
     var expanded by remember { mutableStateOf(false) }
     val tappable = onValueClick != null || (pickerOptions != null && onPick != null)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = TextTertiary, fontSize = 10.sp)
+        Text(label, color = FilmTheme.colors.dim, fontSize = 10.sp)
         Spacer(Modifier.height(2.dp))
         IconButton(onClick = onInc, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ExpandLess, null, tint = Amber, modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.ExpandLess, null, tint = FilmTheme.colors.cyan, modifier = Modifier.size(20.dp))
         }
         Box {
             Box(
-                Modifier.background(if (tappable) Bg3 else Bg4)
-                    .border(1.dp, if (tappable) Amber.copy(alpha = 0.45f) else Border)
+                Modifier.background(if (tappable) FilmTheme.colors.filmRaised else FilmTheme.colors.filmRaised)
+                    .border(1.dp, if (tappable) FilmTheme.colors.cyan.copy(alpha = 0.45f) else FilmTheme.colors.edge)
                     .then(if (tappable) Modifier.clickable {
                         if (onValueClick != null) onValueClick() else expanded = true
                     } else Modifier)
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(value, color = TextPrimary, fontSize = 16.sp)
+                Text(value, color = FilmTheme.colors.halide, fontSize = 16.sp)
             }
             if (pickerOptions != null && onPick != null) {
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
-                    containerColor = Bg3,
+                    containerColor = FilmTheme.colors.filmRaised,
                     modifier = Modifier.heightIn(max = 280.dp)
                 ) {
                     pickerOptions.forEach { (lbl, v) ->
                         DropdownMenuItem(
-                            text = { Text(lbl, color = if (lbl == value) Amber else TextPrimary, fontSize = 14.sp) },
+                            text = { Text(lbl, color = if (lbl == value) FilmTheme.colors.cyan else FilmTheme.colors.halide, fontSize = 14.sp) },
                             onClick = { onPick(v); expanded = false }
                         )
                     }
@@ -164,7 +183,7 @@ fun SpinnerField(
             }
         }
         IconButton(onClick = onDec, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ExpandMore, null, tint = Amber, modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.ExpandMore, null, tint = FilmTheme.colors.cyan, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -179,29 +198,29 @@ private fun ClockTimeDialog(
     val state = rememberTimePickerState(initialHour = hour, initialMinute = minute, is24Hour = true)
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        title = { Text("Pick Time", color = AmberBright) },
+        containerColor = FilmTheme.colors.filmRaised,
+        title = { Text("Pick Time", color = FilmTheme.colors.yellow) },
         text = {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 TimePicker(
                     state = state,
                     colors = TimePickerDefaults.colors(
-                        clockDialColor = Bg4,
-                        clockDialSelectedContentColor = Bg,
-                        clockDialUnselectedContentColor = TextPrimary,
-                        selectorColor = Amber,
-                        timeSelectorSelectedContainerColor = AmberDark,
-                        timeSelectorSelectedContentColor = AmberBright,
-                        timeSelectorUnselectedContainerColor = Bg4,
-                        timeSelectorUnselectedContentColor = TextSecondary
+                        clockDialColor = FilmTheme.colors.filmRaised,
+                        clockDialSelectedContentColor = FilmTheme.colors.void,
+                        clockDialUnselectedContentColor = FilmTheme.colors.halide,
+                        selectorColor = FilmTheme.colors.cyan,
+                        timeSelectorSelectedContainerColor = FilmTheme.colors.violet,
+                        timeSelectorSelectedContentColor = FilmTheme.colors.yellow,
+                        timeSelectorUnselectedContainerColor = FilmTheme.colors.filmRaised,
+                        timeSelectorUnselectedContentColor = FilmTheme.colors.dim
                     )
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(state.hour, state.minute) }) { Text("Set", color = Amber) }
+            TextButton(onClick = { onConfirm(state.hour, state.minute) }) { Text("Set", color = FilmTheme.colors.cyan) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = FilmTheme.colors.dim) } }
     )
 }
 
@@ -254,8 +273,8 @@ fun FullDatePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        title = { Text(if (includeTime) "Date & Time" else "Select Date", color = AmberBright) },
+        containerColor = FilmTheme.colors.filmRaised,
+        title = { Text(if (includeTime) "Date & Time" else "Select Date", color = FilmTheme.colors.yellow) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // Date row: Day | Month | Year
@@ -291,7 +310,7 @@ fun FullDatePickerDialog(
                 }
                 if (includeTime) {
                     Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = FilmTheme.colors.edge)
                     Spacer(Modifier.height(12.dp))
                     // Time row: Hour | : | Minute — tap a value to open the round clock
                     Row(
@@ -307,7 +326,7 @@ fun FullDatePickerDialog(
                             onValueClick = { showClock = true },
                             modifier = Modifier.weight(1f)
                         )
-                        Text(":", color = Amber, fontSize = 24.sp,
+                        Text(":", color = FilmTheme.colors.cyan, fontSize = 24.sp,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 32.dp))
                         SpinnerField(
                             label = "Min",
@@ -319,7 +338,7 @@ fun FullDatePickerDialog(
                         )
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("Tap the time to open the clock", color = TextTertiary, fontSize = 10.sp)
+                    Text("Tap the time to open the clock", color = FilmTheme.colors.dim, fontSize = 10.sp)
                 }
             }
         },
@@ -330,10 +349,10 @@ fun FullDatePickerDialog(
                 else
                     "%04d-%02d-%02d".format(selYear, selMonth, selDay)
                 onConfirm(result)
-            }) { Text("Set", color = Amber) }
+            }) { Text("Set", color = FilmTheme.colors.cyan) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = FilmTheme.colors.dim) }
         }
     )
 }
@@ -404,7 +423,7 @@ fun VaultCard(
                 // except the shutter. drawBehind still avoids the clip()
                 // save/restore, which is the reason this was hand-drawn.
                 drawRect(color = bgColor)
-                // Border drawn here (not via .border()) to stay inside the same
+                // FilmTheme.colors.edge drawn here (not via .border()) to stay inside the same
                 // RenderNode and avoid an extra save/restore layer.
                 drawRect(
                     color = borderColor,
@@ -670,7 +689,7 @@ fun ConfirmDialog(
     )
 }
 
-// ─── Amber button ─────────────────────────────────────────────────────────────
+// ─── FilmTheme.colors.cyan button ─────────────────────────────────────────────────────────────
 
 @Composable
 fun VaultButton(

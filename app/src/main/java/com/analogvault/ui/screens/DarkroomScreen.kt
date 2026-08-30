@@ -49,6 +49,7 @@ import com.analogvault.ui.film.FilmChipRow
 import com.analogvault.ui.film.halation
 import com.analogvault.ui.film.hazardHatch
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
 import com.analogvault.util.DevTime
@@ -127,14 +128,14 @@ fun ChemistryTab(vm: MainViewModel) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
-                        Text(chem.name.ifBlank { "Unnamed" }, color = TextPrimary, fontSize = 15.sp)
+                        Text(chem.name.ifBlank { "Unnamed" }, color = FilmTheme.colors.halide, fontSize = 15.sp)
                         Text("${chem.type}${if (chem.dilution.isNotBlank()) " · ${chem.dilution}" else ""}",
-                            color = TextSecondary, fontSize = 12.sp)
+                            color = FilmTheme.colors.dim, fontSize = 12.sp)
                     }
                     when (alert) {
-                        "exhausted" -> VaultTag("⚠ Exhausted", textColor = RedErr)
-                        "warn"      -> VaultTag("⚠ Near limit", textColor = OrangeWarn)
-                        else        -> if (maxR != null) VaultTag("OK", textColor = GreenOk)
+                        "exhausted" -> VaultTag("⚠ Exhausted", textColor = FilmTheme.colors.mask)
+                        "warn"      -> VaultTag("⚠ Near limit", textColor = FilmTheme.colors.yellow)
+                        else        -> if (maxR != null) VaultTag("OK", textColor = FilmTheme.colors.cyan)
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -147,9 +148,9 @@ fun ChemistryTab(vm: MainViewModel) {
                 if (pct != null) {
                     Spacer(Modifier.height(6.dp))
                     VaultProgressBar(pct, color = when {
-                        pct >= 1f   -> RedErr
-                        pct >= 0.8f -> OrangeWarn
-                        else        -> GreenOk
+                        pct >= 1f   -> FilmTheme.colors.mask
+                        pct >= 0.8f -> FilmTheme.colors.yellow
+                        else        -> FilmTheme.colors.cyan
                     })
                 }
                 if (adjTime != null) {
@@ -157,11 +158,11 @@ fun ChemistryTab(vm: MainViewModel) {
                     val base = chem.baseDevTime.toDoubleOrNull() ?: 0.0
                     val diff = "%.2f".format(adjTime.toDouble() - base)
                     Text("⏱ Adjusted dev time: $adjTime min (+$diff for $used rolls)",
-                        color = Amber, fontSize = 11.sp)
+                        color = FilmTheme.colors.cyan, fontSize = 11.sp)
                 }
                 if (chem.notes.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
-                    Text(chem.notes, color = TextTertiary, fontSize = 11.sp)
+                    Text(chem.notes, color = FilmTheme.colors.dim, fontSize = 11.sp)
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -749,22 +750,22 @@ fun CustomTimerSheet(onDismiss: () -> Unit, onStart: (DevTimer) -> Unit) {
     VaultSheet("Custom Timer", onDismiss) {
         VaultTextField(name, { name = it }, "Process name", placeholder = "e.g. HC-110 Dilution B")
         Spacer(Modifier.height(12.dp))
-        Text("Steps", color = Amber, fontSize = 13.sp)
+        Text("Steps", color = FilmTheme.colors.cyan, fontSize = 13.sp)
         Spacer(Modifier.height(8.dp))
         steps.forEachIndexed { i, (stepName, mins, secs) ->
             Column(
                 Modifier.fillMaxWidth()
-                    .background(Bg3)
-                    .border(1.dp, Border)
+                    .background(FilmTheme.colors.filmRaised)
+                    .border(1.dp, FilmTheme.colors.edge)
                     .padding(10.dp)
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Step ${i + 1}", color = TextTertiary, fontSize = 11.sp)
+                    Text("Step ${i + 1}", color = FilmTheme.colors.dim, fontSize = 11.sp)
                     if (steps.size > 1) {
                         IconButton(onClick = { steps = steps.toMutableList().also { it.removeAt(i) } },
                             Modifier.size(24.dp)) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = RedErr.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                            Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = FilmTheme.colors.mask.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -808,24 +809,24 @@ fun SetRollsDialog(chem: Chemical, current: Int, onConfirm: (Int) -> Unit, onDis
     var value by remember { mutableStateOf(current.toString()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        title = { Text("Rolls used for ${chem.name}", color = AmberBright) },
+        containerColor = FilmTheme.colors.filmRaised,
+        title = { Text("Rolls used for ${chem.name}", color = FilmTheme.colors.yellow) },
         text = {
             OutlinedTextField(
                 value = value, onValueChange = { value = it },
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Amber,
-                    unfocusedBorderColor = Border, focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary)
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = FilmTheme.colors.cyan,
+                    unfocusedBorderColor = FilmTheme.colors.edge, focusedTextColor = FilmTheme.colors.halide,
+                    unfocusedTextColor = FilmTheme.colors.halide)
             )
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(value.toIntOrNull() ?: current) }) {
-                Text("Set", color = Amber)
+                Text("Set", color = FilmTheme.colors.cyan)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = FilmTheme.colors.dim) } }
     )
 }
 

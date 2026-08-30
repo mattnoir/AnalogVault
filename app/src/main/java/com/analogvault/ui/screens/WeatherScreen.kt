@@ -25,6 +25,7 @@ import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.WeatherState
 import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -68,12 +69,12 @@ fun WeatherScreen(vm: MainViewModel) {
         // API Key section
         Box(
             modifier = Modifier.fillMaxWidth()
-                .background(Bg3)
-                .border(1.dp, Border)
+                .background(FilmTheme.colors.filmRaised)
+                .border(1.dp, FilmTheme.colors.edge)
                 .padding(12.dp)
         ) {
             Column {
-                Text("OpenWeatherMap API Key", color = TextSecondary, fontSize = 11.sp)
+                Text("OpenWeatherMap API Key", color = FilmTheme.colors.dim, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
                 if (editingKey) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -81,11 +82,11 @@ fun WeatherScreen(vm: MainViewModel) {
                             value = keyInput, onValueChange = { keyInput = it },
                             modifier = Modifier.weight(1f),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Amber, unfocusedBorderColor = Border,
-                                focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary
+                                focusedBorderColor = FilmTheme.colors.cyan, unfocusedBorderColor = FilmTheme.colors.edge,
+                                focusedTextColor = FilmTheme.colors.halide, unfocusedTextColor = FilmTheme.colors.halide
                             ),
                             singleLine = true,
-                            placeholder = { Text("Paste API key…", color = TextTertiary, fontSize = 12.sp) }
+                            placeholder = { Text("Paste API key…", color = FilmTheme.colors.dim, fontSize = 12.sp) }
                         )
                         VaultButton("Save", small = true, onClick = { vm.saveOwmKey(keyInput); editingKey = false })
                     }
@@ -93,15 +94,15 @@ fun WeatherScreen(vm: MainViewModel) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             if (owmKey.isBlank()) "No key set" else "●●●●●●●●${owmKey.takeLast(4)}",
-                            color = if (owmKey.isBlank()) TextTertiary else GreenOk, fontSize = 13.sp
+                            color = if (owmKey.isBlank()) FilmTheme.colors.dim else FilmTheme.colors.cyan, fontSize = 13.sp
                         )
                         TextButton(onClick = { keyInput = owmKey; editingKey = true }) {
-                            Text(if (owmKey.isBlank()) "Add Key" else "Edit", color = Amber, fontSize = 12.sp)
+                            Text(if (owmKey.isBlank()) "Add Key" else "Edit", color = FilmTheme.colors.cyan, fontSize = 12.sp)
                         }
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                Text("Free key at openweathermap.org/api", color = TextTertiary, fontSize = 10.sp)
+                Text("Free key at openweathermap.org/api", color = FilmTheme.colors.dim, fontSize = 10.sp)
             }
         }
 
@@ -144,11 +145,11 @@ fun WeatherScreen(vm: MainViewModel) {
             is WeatherState.Error -> {
                 Box(
                     modifier = Modifier.fillMaxWidth()
-                        .background(RedErr.copy(alpha = 0.1f))
-                        .border(1.dp, RedErr.copy(alpha = 0.3f))
+                        .background(FilmTheme.colors.mask.copy(alpha = 0.1f))
+                        .border(1.dp, FilmTheme.colors.mask.copy(alpha = 0.3f))
                         .padding(14.dp)
                 ) {
-                    Text("⚠ ${state.message}", color = RedErr, fontSize = 13.sp)
+                    Text("⚠ ${state.message}", color = FilmTheme.colors.mask, fontSize = 13.sp)
                 }
             }
             is WeatherState.Success -> {
@@ -175,13 +176,13 @@ fun WeatherScreen(vm: MainViewModel) {
 fun WeatherStatBox(label: String, value: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .background(Bg3)
-            .border(1.dp, Border)
+            .background(FilmTheme.colors.filmRaised)
+            .border(1.dp, FilmTheme.colors.edge)
             .padding(10.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            Text(value, color = TextPrimary, fontSize = 16.sp)
-            Text(label, color = TextTertiary, fontSize = 9.sp)
+            Text(value, color = FilmTheme.colors.halide, fontSize = 16.sp)
+            Text(label, color = FilmTheme.colors.dim, fontSize = 9.sp)
         }
     }
 }
@@ -199,8 +200,8 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
         // Main card
         Box(
             modifier = Modifier.fillMaxWidth()
-                .background(Bg3)
-                .border(1.dp, Border)
+                .background(FilmTheme.colors.filmRaised)
+                .border(1.dp, FilmTheme.colors.edge)
                 .padding(16.dp)
         ) {
             Column {
@@ -208,10 +209,10 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
                     Column {
                         Text(
                             "${data.name}${if (data.sys?.country != null) ", ${data.sys.country}" else ""}",
-                            color = TextSecondary, fontSize = 12.sp
+                            color = FilmTheme.colors.dim, fontSize = 12.sp
                         )
-                        Text("${"%.0f".format(temp(data.main.temp))}$tempUnit", color = Amber, fontSize = 48.sp)
-                        Text("Feels like ${"%.0f".format(temp(data.main.feels_like))}$tempUnit", color = TextSecondary, fontSize = 12.sp)
+                        Text("${"%.0f".format(temp(data.main.temp))}$tempUnit", color = FilmTheme.colors.cyan, fontSize = 48.sp)
+                        Text("Feels like ${"%.0f".format(temp(data.main.feels_like))}$tempUnit", color = FilmTheme.colors.dim, fontSize = 12.sp)
                     }
                     if (desc != null) {
                         Column(horizontalAlignment = Alignment.End) {
@@ -221,15 +222,15 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
                                 modifier = Modifier.size(56.dp)
                             )
                             Text(desc.description.replaceFirstChar { it.uppercase() },
-                                color = TextSecondary, fontSize = 11.sp)
+                                color = FilmTheme.colors.dim, fontSize = 11.sp)
                         }
                     }
                 }
                 // Time-of-day indicator
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    VaultTag(light.timeLabel, textColor = light.timeLabelColor)
-                    VaultTag(light.lightQuality, textColor = light.lightQualityColor)
+                    VaultTag(light.timeLabel, textColor = FilmTheme.colors.yellow)
+                    VaultTag(light.lightQuality, textColor = FilmTheme.colors.cyan)
                 }
             }
         }
@@ -259,17 +260,17 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
         Spacer(Modifier.height(14.dp))
         Box(
             modifier = Modifier.fillMaxWidth()
-                .background(AmberDark.copy(alpha = 0.15f))
-                .border(1.dp, AmberDark)
+                .background(FilmTheme.colors.violet.copy(alpha = 0.15f))
+                .border(1.dp, FilmTheme.colors.violet)
                 .padding(12.dp)
         ) {
-            Text("📸 ${light.shootingNote}", color = Amber, fontSize = 12.sp)
+            Text("📸 ${light.shootingNote}", color = FilmTheme.colors.cyan, fontSize = 12.sp)
         }
 
         // Film recommendations from stash
         if (recs.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
-            Text("Best from your stash", color = AmberBright, fontSize = 13.sp)
+            Text("Best from your stash", color = FilmTheme.colors.yellow, fontSize = 13.sp)
             Spacer(Modifier.height(8.dp))
             recs.forEachIndexed { i, rec ->
                 VaultCard {
@@ -282,17 +283,17 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
                                     when (i) { 0 -> "🥇"; 1 -> "🥈"; else -> "🥉" },
                                     fontSize = 14.sp
                                 )
-                                Text(rec.film.name, color = TextPrimary, fontSize = 14.sp)
+                                Text(rec.film.name, color = FilmTheme.colors.halide, fontSize = 14.sp)
                             }
                             Spacer(Modifier.height(4.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 VaultTag("ISO ${rec.film.iso}")
                                 VaultTag(rec.film.type.split(" ").first())
                                 if (rec.film.quantity > 0)
-                                    VaultTag("×${rec.film.quantity}", textColor = GreenOk)
+                                    VaultTag("×${rec.film.quantity}", textColor = FilmTheme.colors.cyan)
                             }
                             Spacer(Modifier.height(5.dp))
-                            Text(rec.reason, color = TextSecondary, fontSize = 11.sp)
+                            Text(rec.reason, color = FilmTheme.colors.dim, fontSize = 11.sp)
                         }
                     }
                 }
@@ -302,12 +303,12 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
             Spacer(Modifier.height(14.dp))
             Box(
                 modifier = Modifier.fillMaxWidth()
-                    .background(Bg3)
-                    .border(1.dp, Border)
+                    .background(FilmTheme.colors.filmRaised)
+                    .border(1.dp, FilmTheme.colors.edge)
                     .padding(12.dp)
             ) {
                 Text("Add film to your stash to get personalised recommendations here.",
-                    color = TextTertiary, fontSize = 12.sp)
+                    color = FilmTheme.colors.dim, fontSize = 12.sp)
             }
         }
     }
@@ -339,16 +340,16 @@ private fun PlacePicker(
 
     Column(
         Modifier.fillMaxWidth()
-            .background(Bg2)
-            .border(1.dp, Border)
+            .background(FilmTheme.colors.film)
+            .border(1.dp, FilmTheme.colors.edge)
             .padding(14.dp)
     ) {
-        Text("LOCATION", color = TextTertiary, fontSize = 10.sp)
+        Text("LOCATION", color = FilmTheme.colors.dim, fontSize = 10.sp)
         Spacer(Modifier.height(8.dp))
         Text(
             if (pinnedName.isBlank()) "Following this device"
             else "Pinned to $pinnedName",
-            color = if (pinnedName.isBlank()) TextSecondary else AmberBright,
+            color = if (pinnedName.isBlank()) FilmTheme.colors.dim else FilmTheme.colors.yellow,
             fontSize = 13.sp,
         )
         Spacer(Modifier.height(10.dp))
@@ -369,7 +370,7 @@ private fun PlacePicker(
         if (!hasKey) {
             Spacer(Modifier.height(6.dp))
             Text("Add an API key above to search places — it is the same free key.",
-                color = TextTertiary, fontSize = 11.sp)
+                color = FilmTheme.colors.dim, fontSize = 11.sp)
         }
         if (results.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
@@ -377,22 +378,22 @@ private fun PlacePicker(
                 Row(
                     Modifier.fillMaxWidth()
                         
-                        .background(Bg3)
-                        .border(1.dp, Border)
+                        .background(FilmTheme.colors.filmRaised)
+                        .border(1.dp, FilmTheme.colors.edge)
                         .clickable { query = ""; onPick(place) }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(place.label, color = TextPrimary, fontSize = 13.sp,
+                    Text(place.label, color = FilmTheme.colors.halide, fontSize = 13.sp,
                         modifier = Modifier.weight(1f), maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text("%.2f, %.2f".format(place.lat, place.lon),
-                        color = TextTertiary, fontSize = 10.sp)
+                        color = FilmTheme.colors.dim, fontSize = 10.sp)
                 }
                 Spacer(Modifier.height(6.dp))
             }
             TextButton(onClick = { onClearResults() }) {
-                Text("Clear results", color = TextTertiary, fontSize = 11.sp)
+                Text("Clear results", color = FilmTheme.colors.dim, fontSize = 11.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -409,9 +410,7 @@ private fun PlacePicker(
 
 data class LightConditions(
     val timeLabel: String,
-    val timeLabelColor: androidx.compose.ui.graphics.Color,
     val lightQuality: String,
-    val lightQualityColor: androidx.compose.ui.graphics.Color,
     val shootingNote: String,
     // Numeric signals for film scoring
     val isGoldenHour: Boolean,
@@ -485,24 +484,24 @@ internal fun analyzeLightConditions(data: WeatherResponse): LightConditions {
         }
     }
 
-    val (timeLabel, timeLabelColor) = when {
-        isNight     -> "🌙 Night"       to TextTertiary
-        isBlueHour  -> "🌆 Blue Hour"   to androidx.compose.ui.graphics.Color(0xFF7EB8D4)
-        isGoldenHour-> "🌅 Golden Hour" to Amber
-        isHighSun   -> "☀ Midday Sun"   to androidx.compose.ui.graphics.Color(0xFFFFE066)
-        else        -> "🌤 Daytime"     to TextSecondary
+    val timeLabel = when {
+        isNight     -> "🌙 Night"
+        isBlueHour  -> "🌆 Blue Hour"
+        isGoldenHour-> "🌅 Golden Hour"
+        isHighSun   -> "☀ Midday Sun"
+        else        -> "🌤 Daytime"
     }
 
-    val (lightQuality, lightQualityColor) = when {
-        isNight      -> "Very low light"   to RedErr
-        isFoggy      -> "Foggy/flat"       to TextTertiary
-        isRainy      -> "Soft diffused"    to GreenOk
-        isBlueHour   -> "Cool even light"  to androidx.compose.ui.graphics.Color(0xFF7EB8D4)
-        isGoldenHour -> "Warm directional" to Amber
-        isHighSun && clouds < 20 -> "Harsh contrast" to OrangeWarn
-        isOvercast   -> "Flat overcast"    to TextSecondary
-        clouds < 40  -> "Soft directional" to GreenOk
-        else         -> "Mixed cloud"      to TextSecondary
+    val lightQuality = when {
+        isNight      -> "Very low light"
+        isFoggy      -> "Foggy/flat"
+        isRainy      -> "Soft diffused"
+        isBlueHour   -> "Cool even light"
+        isGoldenHour -> "Warm directional"
+        isHighSun && clouds < 20 -> "Harsh contrast"
+        isOvercast   -> "Flat overcast"
+        clouds < 40  -> "Soft directional"
+        else         -> "Mixed cloud"
     }
 
     val shootingNote = when {
@@ -520,7 +519,7 @@ internal fun analyzeLightConditions(data: WeatherResponse): LightConditions {
     }
 
     return LightConditions(
-        timeLabel, timeLabelColor, lightQuality, lightQualityColor, shootingNote,
+        timeLabel, lightQuality, shootingNote,
         isGoldenHour, isBlueHour, isNight, isHighSun, isOvercast, isRainy, isFoggy, baseEv
     )
 }
