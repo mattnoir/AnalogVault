@@ -28,6 +28,7 @@ import com.analogvault.ui.film.FilmStockCard
 import com.analogvault.ui.film.StockAccent
 import com.analogvault.ui.film.rebateLine
 import com.analogvault.ui.film.rememberStockAccent
+import com.analogvault.ui.film.toSafelight
 import com.analogvault.ui.film.toStoredValue
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
@@ -449,8 +450,10 @@ private fun AccentPicker(
         )
     }
 
+    val colors = FilmTheme.colors
+
     Column {
-        Text("Accent", color = FilmTheme.colors.dim, fontSize = 11.sp)
+        Text("Accent", color = colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -462,12 +465,22 @@ private fun AccentPicker(
             )
             presets.forEach { preset ->
                 val value = preset.toStoredValue()
+                // The swatch is painted in the active scheme like everything
+                // else. Eight patches of white and green light is exactly the
+                // dark adaptation safelight is protecting, and the stored value
+                // is unaffected — only what you can see while picking is.
                 AccentSwatch(
-                    brush = preset.verticalBrush(),
+                    brush = (if (colors.safelight) preset.toSafelight(colors) else preset).verticalBrush(),
                     selected = selected == value,
                     onClick = { onSelect(value) },
                 )
             }
+        }
+        if (colors.safelight) {
+            Spacer(Modifier.height(6.dp))
+            Text("Safelight is on — these are the real accents shown in red. " +
+                "Turn it off to pick by colour.",
+                color = colors.dim, fontSize = 11.sp)
         }
     }
 }
