@@ -111,7 +111,21 @@ fun DashboardScreen(
     val awaitScan = rolls.filter { it.developed && !it.scanned }
     val archived  = rolls.filter { it.scanned }
 
-    val weather = (weatherState as? WeatherState.Success)?.data
+    // Hold the last good reading across a refresh.
+    //
+    // A pull drops weatherState to Loading, and everything derived from it —
+    // the headline, the sun clock, the light card — went null for the length of
+    // the fetch. That is what made refreshing flip the header to "5 rolls
+    // loaded" and back a second later: the roll count is the fallback for
+    // *light unknown*, and a refresh briefly made the light unknown. The
+    // weather is a snapshot of outside either way, so a few seconds stale is
+    // strictly better than a page that empties itself while you watch.
+    //
+    // produceState keeps its previous value when the block assigns nothing,
+    // which is exactly the Loading and Error cases.
+    val weather by produceState<com.analogvault.data.network.WeatherResponse?>(null, weatherState) {
+        (weatherState as? WeatherState.Success)?.data?.let { value = it }
+    }
     val light = remember(weather) { weather?.let { analyzeLightConditions(it) } }
     val sun = remember(weather) {
         weather?.let {
@@ -383,6 +397,11 @@ private fun HomeHeader(sun: SunClock?, weather: com.analogvault.data.network.Wea
 
     // The headline states the most time-sensitive true thing, in that order:
     // light about to change, then light happening now, then what is loaded.
+    //
+    // The last two branches are the light-unknown case, and now only that: no
+    // OWM key, no location permission, or a first fetch that has not landed.
+    // Once a reading exists it is held across refreshes, so the roll count no
+    // longer flashes up between a pull and the response.
     val headline = when {
         sun?.goldenMinutesLeft != null -> "Golden hour now"
         sun?.minutesToGolden != null && sun.minutesToGolden!! <= 180 ->
