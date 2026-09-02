@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.analogvault.ui.MainViewModel
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIconSpec
+import com.analogvault.ui.film.FilmIcons
 import com.analogvault.ui.film.FilmNavBar
 import com.analogvault.ui.film.FilmNavItem
 import com.analogvault.ui.film.ChromaticText
@@ -119,20 +122,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    DASH    ("Home",     Icons.Default.Home),
-    STASH   ("Stash",   Icons.Default.Inventory),
-    ACTIVE  ("Rolls",   Icons.Default.CameraRoll),
-    MORE    ("More",    Icons.Default.MoreHoriz),
+private enum class Tab(val label: String, val icon: FilmIconSpec) {
+    DASH    ("Home",     FilmIcons.Home),
+    STASH   ("Stash",   FilmIcons.Stash),
+    ACTIVE  ("Rolls",   FilmIcons.Rolls),
+    MORE    ("More",    FilmIcons.More),
     // Reached from the shutter, not from the bar. Full screen, no bottom bar.
-    METER   ("Meter",   Icons.Default.WbSunny),
+    METER   ("Meter",   FilmIcons.Meter),
     // "More" sub-items — not shown in bottom bar directly
-    DARK    ("Darkroom",Icons.Default.Science),
-    STATS   ("Stats",   Icons.Default.BarChart),
-    HOMELAYOUT("Home layout", Icons.Default.Dashboard),
-    WEATHER ("Weather", Icons.Default.Cloud),
-    BACKUP  ("Backup",  Icons.Default.CloudDownload),
-    SETTINGS("Settings",Icons.Default.Settings)
+    DARK    ("Darkroom",FilmIcons.Darkroom),
+    STATS   ("Stats",   FilmIcons.Stats),
+    // No icon in the set is "arrange the rows on Home"; a contact sheet is a
+    // grid of frames you rearrange, which is near enough and stays in the set.
+    HOMELAYOUT("Home layout", FilmIcons.ContactSheet),
+    WEATHER ("Weather", FilmIcons.Weather),
+    BACKUP  ("Backup",  FilmIcons.Backup),
+    SETTINGS("Settings",FilmIcons.Settings)
 }
 
 // Four destinations, two either side of the shutter.
@@ -311,8 +316,8 @@ private fun MoreScreen(currentSub: Tab?, onNavigate: (Tab) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(tab.icon, null, tint = if (selected) colors.cyan else colors.dim,
-                    modifier = Modifier.size(22.dp))
+                DyeIcon(tab.icon, null, size = 22.dp,
+                    tint = if (selected) colors.cyan else colors.dim)
                 // weight(1f) on the text, not a Spacer after it. An unweighted
                 // Column takes its full measured width, so a subtitle long
                 // enough to wrap pushed the chevron past the row's edge —
@@ -326,8 +331,7 @@ private fun MoreScreen(currentSub: Tab?, onNavigate: (Tab) -> Unit) {
                     Spacer(Modifier.height(3.dp))
                     Text(subtitle.uppercase(), style = FilmTheme.type.rebate, color = colors.dim)
                 }
-                Icon(Icons.Default.ChevronRight, null, tint = colors.dim,
-                    modifier = Modifier.size(18.dp))
+                DyeIcon(FilmIcons.ChevronRight, null, size = 18.dp, tint = colors.dim)
             }
         }
     }

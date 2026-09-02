@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.analogvault.data.backup.BackupResult
 import com.analogvault.ui.BackupViewModel
+import com.analogvault.ui.components.IconLabel
 import com.analogvault.ui.components.SectionCard
 import com.analogvault.ui.components.SectionTitle
 import com.analogvault.ui.components.VaultButton
@@ -31,6 +32,9 @@ import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
 import java.text.SimpleDateFormat
 import java.util.*
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
+import com.analogvault.ui.film.FilmIconSpec
 
 @Composable
 fun BackupScreen() {
@@ -63,7 +67,7 @@ fun BackupScreen() {
 
         // Info card
         InfoCard(
-            icon = Icons.Default.Info,
+            icon = FilmIcons.Bulb,
             text = "Backup saves all your film stocks, cameras, lenses, rolls, shot logs, " +
                     "chemicals, and settings to a single .avault file you can store anywhere. " +
                     "Shot photos are included when the toggle below is on.",
@@ -102,7 +106,8 @@ fun BackupScreen() {
             }
             Spacer(Modifier.height(10.dp))
             VaultButton(
-                text = if (busy) "Exporting…" else "⬆  Export Backup",
+                text = if (busy) "Exporting…" else "Export Backup",
+            icon = if (busy) null else FilmIcons.Backup,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
@@ -123,7 +128,8 @@ fun BackupScreen() {
             )
             Spacer(Modifier.height(14.dp))
             VaultButton(
-                text = if (busy) "Importing…" else "⬇  Import Backup",
+                text = if (busy) "Importing…" else "Import Backup",
+            icon = if (busy) null else FilmIcons.LoadRoll,
                 modifier = Modifier.fillMaxWidth(),
                 ghost = true,
                 onClick = { importLauncher.launch(arrayOf("application/zip", "application/json", "*/*")) }
@@ -141,7 +147,8 @@ fun BackupScreen() {
             )
             Spacer(Modifier.height(10.dp))
             VaultButton(
-                text = "📄  Export All Shot Logs (CSV)",
+                text = "Export All Shot Logs (CSV)",
+            icon = FilmIcons.ContactSheet,
                 modifier = Modifier.fillMaxWidth(),
                 ghost = true,
                 onClick = {
@@ -174,7 +181,7 @@ fun BackupScreen() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 @Composable
-private fun InfoCard(icon: ImageVector, text: String, color: Color) {
+private fun InfoCard(icon: FilmIconSpec, text: String, color: Color) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -184,16 +191,21 @@ private fun InfoCard(icon: ImageVector, text: String, color: Color) {
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(18.dp).padding(top = 1.dp))
+        DyeIcon(icon, null, size = 18.dp, tint = color, accent = color,
+            modifier = Modifier.padding(top = 1.dp))
         Text(text, color = FilmTheme.colors.dim, fontSize = 12.sp, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
-    val (bg, border, textColor, icon) = when (result) {
-        is BackupResult.Success -> listOf(FilmTheme.colors.cyan.copy(alpha = 0.1f), FilmTheme.colors.cyan.copy(alpha = 0.4f), FilmTheme.colors.cyan, "✓")
-        is BackupResult.Error   -> listOf(FilmTheme.colors.mask.copy(alpha = 0.1f),  FilmTheme.colors.mask.copy(alpha = 0.4f),  FilmTheme.colors.mask,  "⚠")
+    val (bg, border, textColor) = when (result) {
+        is BackupResult.Success -> Triple(FilmTheme.colors.cyan.copy(alpha = 0.1f), FilmTheme.colors.cyan.copy(alpha = 0.4f), FilmTheme.colors.cyan)
+        is BackupResult.Error   -> Triple(FilmTheme.colors.mask.copy(alpha = 0.1f), FilmTheme.colors.mask.copy(alpha = 0.4f), FilmTheme.colors.mask)
+    }
+    val icon = when (result) {
+        is BackupResult.Success -> FilmIcons.Check
+        is BackupResult.Error   -> FilmIcons.Warn
     }
     val message = when (result) {
         is BackupResult.Success -> result.message
@@ -203,15 +215,15 @@ private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             
-            .background(bg as Color)
-            .border(1.dp, border as Color)
+            .background(bg)
+            .border(1.dp, border)
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("$icon  $message", color = textColor as Color, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        IconLabel(icon, message, textColor, modifier = Modifier.weight(1f), fontSize = 13.sp)
         IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-            Icon(Icons.Default.Close, null, tint = textColor, modifier = Modifier.size(14.dp))
+            DyeIcon(FilmIcons.Close, null, size = 14.dp, tint = textColor, accent = textColor)
         }
     }
 }

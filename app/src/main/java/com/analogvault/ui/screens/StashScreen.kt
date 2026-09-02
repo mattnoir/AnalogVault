@@ -38,6 +38,8 @@ import com.analogvault.util.toDecimalOrNull
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
 
 // ─── Format options (replaces "shots") ───────────────────────────────────────
 val FILM_FORMATS_DISPLAY = listOf("135 (35mm)", "120", "220", "4x5", "8x10", "Super 8", "110", "126", "Instant")
@@ -148,8 +150,8 @@ private fun StashHeaderRow(
         }
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onToggleFilter, Modifier.size(36.dp)) {
-            Icon(
-                Icons.Default.FilterList, null, modifier = Modifier.size(18.dp),
+            DyeIcon(
+                FilmIcons.Filter, null, size = 18.dp,
                 tint = if (filterOpen || filterActive) FilmTheme.colors.cyan
                        else FilmTheme.colors.dim,
             )
@@ -250,10 +252,10 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(
-                        imageVector = if (bulkExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    DyeIcon(
+                        icon = if (bulkExpanded) FilmIcons.ChevronUp else FilmIcons.ChevronDown,
                         contentDescription = null, tint = FilmTheme.colors.dim,
-                        modifier = Modifier.size(18.dp)
+                        size = 18.dp,
                     )
                     Text("Bulk Film (${bulkRolls.size})", color = FilmTheme.colors.yellow, fontSize = 13.sp)
                 }
@@ -325,10 +327,10 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = if (depletedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    DyeIcon(
+                        icon = if (depletedExpanded) FilmIcons.ChevronUp else FilmIcons.ChevronDown,
                         contentDescription = null, tint = FilmTheme.colors.dim,
-                        modifier = Modifier.size(18.dp)
+                        size = 18.dp,
                     )
                     Text("Out of stock (${depleted.size})", color = FilmTheme.colors.dim, fontSize = 13.sp)
                 }
@@ -883,7 +885,7 @@ fun LoadFromBulkSheet(
         }
         if (overBudget) {
             Spacer(Modifier.height(4.dp))
-            Text("⚠ Exceeds available footage by ${totalFramesNeeded - remaining} frames",
+            Text("Exceeds available footage by ${totalFramesNeeded - remaining} frames",
                 color = FilmTheme.colors.mask, fontSize = 11.sp)
         }
         Spacer(Modifier.height(12.dp))
@@ -1012,7 +1014,7 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
                             VaultTag(cam.condition)
                             if (cam.mount.isNotBlank()) VaultTag(cam.mount)
                             VaultTag(cam.lensSystem)
-                            if (cam.id in busyCameraIds) VaultTag("📷 Film loaded", textColor = FilmTheme.colors.violet)
+                            if (cam.id in busyCameraIds) VaultTag("Film loaded", textColor = FilmTheme.colors.violet, icon = FilmIcons.LoadRoll)
                         }
                         cam.adapterMounts.take(3).let { if (it.isNotEmpty()) {
                             Spacer(Modifier.height(2.dp))
@@ -1022,8 +1024,8 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
                         }}
                     }
                     Row {
-                        IconButton(onClick = { editing = cam; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.dim) }
-                        IconButton(onClick = { confirmDelete = cam }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
+                        IconButton(onClick = { editing = cam; showSheet = true }, Modifier.size(32.dp)) { DyeIcon(FilmIcons.Edit, null, size = 16.dp, tint = FilmTheme.colors.dim) }
+                        IconButton(onClick = { confirmDelete = cam }, Modifier.size(32.dp)) { DyeIcon(FilmIcons.Trash, null, size = 16.dp, tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
                     }
                 }
             }
@@ -1094,9 +1096,9 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
                         }
                     }
                     Row {
-                        IconButton(onClick = { dofLens = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.CenterFocusStrong, "DOF calculator", modifier = Modifier.size(16.dp), tint = FilmTheme.colors.cyan) }
-                        IconButton(onClick = { editing = lens; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.dim) }
-                        IconButton(onClick = { confirmDelete = lens }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
+                        IconButton(onClick = { dofLens = lens }, Modifier.size(32.dp)) { DyeIcon(FilmIcons.Aperture, "DOF calculator", size = 16.dp, tint = FilmTheme.colors.cyan) }
+                        IconButton(onClick = { editing = lens; showSheet = true }, Modifier.size(32.dp)) { DyeIcon(FilmIcons.Edit, null, size = 16.dp, tint = FilmTheme.colors.dim) }
+                        IconButton(onClick = { confirmDelete = lens }, Modifier.size(32.dp)) { DyeIcon(FilmIcons.Trash, null, size = 16.dp, tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
                     }
                 }
             }
@@ -1230,8 +1232,8 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
                         }
                     }
                     Row {
-                        IconButton(onClick = { editing = acc; showSheet = true }, Modifier.size(32.dp)) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.dim) }
-                        IconButton(onClick = { confirmDelete = acc }, Modifier.size(32.dp)) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
+                        IconButton(onClick = { editing = acc; showSheet = true }, Modifier.size(32.dp)) { DyeIcon(FilmIcons.Edit, null, size = 16.dp, tint = FilmTheme.colors.dim) }
+                        IconButton(onClick = { confirmDelete = acc }, Modifier.size(32.dp)) { DyeIcon(FilmIcons.Trash, null, size = 16.dp, tint = FilmTheme.colors.mask.copy(alpha = 0.7f)) }
                     }
                 }
             }
@@ -1604,7 +1606,7 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
             if (mount.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = { showAdapters = !showAdapters }) {
-                    Text("🔧 ${if (showAdapters) "Hide" else "Add"} Adapter Mounts${if (adapters.isNotEmpty()) " (${adapters.size})" else ""}", color = FilmTheme.colors.cyan, fontSize = 12.sp)
+                    Text("${if (showAdapters) "Hide" else "Add"} Adapter Mounts${if (adapters.isNotEmpty()) " (${adapters.size})" else ""}", color = FilmTheme.colors.cyan, fontSize = 12.sp)
                 }
                 if (showAdapters) {
                     val options = Constants.MOUNT_GROUPS[mount]?.adapters ?: Constants.COMMON_MOUNTS.filter { it != mount }
@@ -1754,7 +1756,7 @@ fun FilmInfoDialog(film: FilmStock, onDismiss: () -> Unit, onEdit: () -> Unit,
         },
         confirmButton = { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (onLoad != null) VaultButton("Load Film", small = true, onClick = onLoad)
-            else VaultTag("📷 In Camera", textColor = FilmTheme.colors.violet)
+            else VaultTag("In Camera", textColor = FilmTheme.colors.violet, icon = FilmIcons.LoadRoll)
             VaultButton("Edit", small = true, ghost = true, onClick = onEdit)
         }},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = FilmTheme.colors.dim) } }

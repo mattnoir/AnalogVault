@@ -45,7 +45,7 @@ import com.analogvault.ui.theme.FilmTheme
 /** One destination in [FilmNavBar]. */
 data class FilmNavItem(
     val label: String,
-    val icon: ImageVector,
+    val icon: FilmIconSpec,
     /** Rendered as a small count above the icon. Null or 0 hides it. */
     val badge: Int? = null,
 )
@@ -127,12 +127,16 @@ private fun RowScope.NavButton(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(
+            DyeIcon(
                 item.icon,
                 contentDescription = null,
+                size = 21.dp,
                 tint = tint,
+                // The dye detail lights up only on the selected destination.
+                // Four accented icons in a row is a row of decorations; one is
+                // a state.
+                accent = if (selected) item.icon.dyeAccent() else tint,
                 modifier = Modifier
-                    .size(21.dp)
                     // Selection is a glow AND a colour change AND the label
                     // brightening. Glow alone would be the only cue for anyone
                     // who cannot separate cyan from grey.

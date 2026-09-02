@@ -18,7 +18,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.analogvault.data.model.FilmStock
 import com.analogvault.data.network.WeatherResponse
 import com.analogvault.ui.MainViewModel
@@ -32,6 +31,9 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
+import com.analogvault.ui.film.FilmIconSpec
 
 @Composable
 fun WeatherScreen(vm: MainViewModel) {
@@ -149,7 +151,7 @@ fun WeatherScreen(vm: MainViewModel) {
                         .border(1.dp, FilmTheme.colors.mask.copy(alpha = 0.3f))
                         .padding(14.dp)
                 ) {
-                    Text("⚠ ${state.message}", color = FilmTheme.colors.mask, fontSize = 13.sp)
+                    IconLabel(FilmIcons.Warn, state.message, FilmTheme.colors.mask, fontSize = 13.sp)
                 }
             }
             is WeatherState.Success -> {
@@ -216,11 +218,14 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
                     }
                     if (desc != null) {
                         Column(horizontalAlignment = Alignment.End) {
-                            AsyncImage(
-                                model = "https://openweathermap.org/img/wn/${desc.icon}@2x.png",
-                                contentDescription = null,
-                                modifier = Modifier.size(56.dp)
-                            )
+                            // OpenWeatherMap's own PNG used to go here. It is a
+                            // full-colour raster from someone else's design
+                            // language, it needs the network to draw a sky you
+                            // are already being told about in words, and it is
+                            // white in a mode whose whole point is that nothing
+                            // is. The set has the same conditions as vectors.
+                            DyeIcon(owmIcon(desc.icon), null, size = 48.dp,
+                                tint = FilmTheme.colors.halide)
                             Text(desc.description.replaceFirstChar { it.uppercase() },
                                 color = FilmTheme.colors.dim, fontSize = 11.sp)
                         }
@@ -229,7 +234,8 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
                 // Time-of-day indicator
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    VaultTag(light.timeLabel, textColor = FilmTheme.colors.yellow)
+                    VaultTag(light.timeLabel, textColor = FilmTheme.colors.yellow,
+                        icon = light.timeIcon)
                     VaultTag(light.lightQuality, textColor = FilmTheme.colors.cyan)
                 }
             }
@@ -264,7 +270,7 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
                 .border(1.dp, FilmTheme.colors.violet)
                 .padding(12.dp)
         ) {
-            Text("📸 ${light.shootingNote}", color = FilmTheme.colors.cyan, fontSize = 12.sp)
+            IconLabel(FilmIcons.Camera, light.shootingNote, FilmTheme.colors.cyan)
         }
 
         // Film recommendations from stash
@@ -279,9 +285,13 @@ fun WeatherDisplay(data: WeatherResponse, films: List<FilmStock>, isMetric: Bool
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                // Ranked by frame number, the way a contact
+                                // sheet is read, rather than by medal emoji.
                                 Text(
-                                    when (i) { 0 -> "🥇"; 1 -> "🥈"; else -> "🥉" },
-                                    fontSize = 14.sp
+                                    "%02d".format(i + 1),
+                                    style = FilmTheme.type.rebate,
+                                    color = if (i == 0) FilmTheme.colors.cyan
+                                            else FilmTheme.colors.dim,
                                 )
                                 Text(rec.film.name, color = FilmTheme.colors.halide, fontSize = 14.sp)
                             }
@@ -398,7 +408,8 @@ private fun PlacePicker(
         }
         Spacer(Modifier.height(10.dp))
         VaultButton(
-            text = if (gpsLoading) "Getting location…" else "📍 Use where I am",
+            text = if (gpsLoading) "Getting location…" else "Use where I am",
+                icon = if (gpsLoading) null else FilmIcons.Tripod,
             modifier = Modifier.fillMaxWidth(),
             ghost = pinnedName.isBlank(),
             onClick = onUseDevice,
@@ -406,10 +417,31 @@ private fun PlacePicker(
     }
 }
 
+/**
+ * OpenWeatherMap's icon code to an icon from the set.
+ *
+ * The codes are two digits plus `d` or `n`, and the digits are the condition:
+ * 01 clear, 02–04 increasing cloud, 09 shower, 10 rain, 11 thunder, 13 snow,
+ * 50 mist. Only clear sky cares about the day/night suffix — rain looks the
+ * same after dark.
+ */
+private fun owmIcon(code: String): FilmIconSpec = when (code.take(2)) {
+    "01" -> if (code.endsWith("n")) FilmIcons.Night else FilmIcons.Day
+    "02", "03", "04" -> FilmIcons.Cloudy
+    "09" -> FilmIcons.Drizzle
+    "10" -> FilmIcons.Rain
+    "11" -> FilmIcons.Thunder
+    "13" -> FilmIcons.Snow
+    "50" -> FilmIcons.Fog
+    else -> FilmIcons.Weather
+}
+
 // ─── Light condition analysis ─────────────────────────────────────────────────
 
 data class LightConditions(
     val timeLabel: String,
+    /** The phase's icon. Was an emoji inside [timeLabel] until the set existed. */
+    val timeIcon: FilmIconSpec,
     val lightQuality: String,
     val shootingNote: String,
     // Numeric signals for film scoring
@@ -485,11 +517,18 @@ internal fun analyzeLightConditions(data: WeatherResponse): LightConditions {
     }
 
     val timeLabel = when {
-        isNight     -> "🌙 Night"
-        isBlueHour  -> "🌆 Blue Hour"
-        isGoldenHour-> "🌅 Golden Hour"
-        isHighSun   -> "☀ Midday Sun"
-        else        -> "🌤 Daytime"
+        isNight     -> "Night"
+        isBlueHour  -> "Blue Hour"
+        isGoldenHour-> "Golden Hour"
+        isHighSun   -> "Midday Sun"
+        else        -> "Daytime"
+    }
+    val timeIcon = when {
+        isNight     -> FilmIcons.Night
+        isBlueHour  -> FilmIcons.BlueHour
+        isGoldenHour-> FilmIcons.GoldenHour
+        isHighSun   -> FilmIcons.Day
+        else        -> FilmIcons.Weather
     }
 
     val lightQuality = when {
@@ -519,7 +558,7 @@ internal fun analyzeLightConditions(data: WeatherResponse): LightConditions {
     }
 
     return LightConditions(
-        timeLabel, lightQuality, shootingNote,
+        timeLabel, timeIcon, lightQuality, shootingNote,
         isGoldenHour, isBlueHour, isNight, isHighSun, isOvercast, isRainy, isFoggy, baseEv
     )
 }

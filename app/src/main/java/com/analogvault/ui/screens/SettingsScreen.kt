@@ -22,6 +22,8 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.util.Constants
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -211,8 +213,7 @@ fun SettingsScreen(vm: MainViewModel) {
                             onClick = { vm.removeCustomIso(iso) },
                             label = { Text("ISO $iso", fontSize = 12.sp) },
                             trailingIcon = {
-                                Icon(Icons.Default.Delete, null,
-                                    tint = FilmTheme.colors.dim, modifier = Modifier.size(14.dp))
+                                DyeIcon(FilmIcons.Trash, null, size = 14.dp, tint = FilmTheme.colors.dim)
                             },
                             colors = InputChipDefaults.inputChipColors(
                                 containerColor = FilmTheme.colors.filmRaised,

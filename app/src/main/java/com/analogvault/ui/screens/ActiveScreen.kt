@@ -75,6 +75,9 @@ import java.util.*
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
+import androidx.compose.ui.graphics.graphicsLayer
 
 // ─── Active Screen ────────────────────────────────────────────────────────────
 
@@ -310,7 +313,7 @@ fun ActiveScreen(
             }
             if (subTab == 1 && awaitDev.isNotEmpty()) {
                 item {
-                    VaultButton("🧪 Open Darkroom / Develop Timers",
+                    VaultButton("Open Darkroom / Develop Timers", icon = FilmIcons.Darkroom,
                         modifier = Modifier.fillMaxWidth(),
                         ghost = true,
                         onClick = onNavigateToDarkroom)
@@ -410,8 +413,8 @@ private fun RollListCard(
             if (onQuickLog != null) {
                 // One-tap frame log — defaults from the last shot, edit later
                 IconButton(onClick = onQuickLog, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.PlusOne, "Quick-log frame",
-                        tint = colors.cyan, modifier = Modifier.size(20.dp))
+                    DyeIcon(FilmIcons.Plus, "Quick-log frame",
+                        size = 20.dp, tint = colors.cyan)
                 }
             }
         }
@@ -519,10 +522,10 @@ fun LoadRollSheet(
             Spacer(Modifier.height(10.dp))
         }
         VaultDropdown("Camera",
-            if (cameraName.isBlank()) "" else if (isBusy) "$cameraName 📷" else cameraName,
-            cameras.map { if (it.id in busyCameraIds) "${it.name} 📷" else it.name },
+            if (cameraName.isBlank()) "" else if (isBusy) "$cameraName (loaded)" else cameraName,
+            cameras.map { if (it.id in busyCameraIds) "${it.name} (loaded)" else it.name },
             { name ->
-                val cleanName = name.removeSuffix(" 📷")
+                val cleanName = name.removeSuffix(" (loaded)")
                 cameraId = cameras.find { it.name == cleanName }?.id ?: ""
                 lensId = ""
             })
@@ -576,8 +579,8 @@ fun LoadRollSheet(
         if (isBusy) {
             Text(
                 if (allowBusyLoad)
-                    "⚠ This camera already has a roll loaded. Load anyway for MF cameras with multiple backs."
-                else "⚠ This camera already has a roll loaded. Finish or remove it first.",
+                    "This camera already has a roll loaded. Load anyway for MF cameras with multiple backs."
+                else "This camera already has a roll loaded. Finish or remove it first.",
                 color = FilmTheme.colors.yellow, fontSize = 11.sp
             )
             Spacer(Modifier.height(8.dp))
@@ -660,7 +663,10 @@ fun RollDetailScreen(
     ) {
         item {
             TextButton(onClick = onBack, contentPadding = PaddingValues(0.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = FilmTheme.colors.cyan, modifier = Modifier.size(18.dp))
+                // The set has no back arrow: a chevron mirrored is the same glyph and
+                // keeps the row in one family.
+                DyeIcon(FilmIcons.ChevronRight, null, size = 18.dp, tint = FilmTheme.colors.cyan,
+                    modifier = Modifier.graphicsLayer { scaleX = -1f })
                 Text(" All Rolls", color = FilmTheme.colors.cyan, fontSize = 13.sp)
             }
         }
@@ -734,7 +740,7 @@ fun RollDetailScreen(
         roll.devLog?.let { log ->
             item {
                 VaultCard {
-                    Text("🧪 ${log.process}", color = FilmTheme.colors.halide, fontSize = 12.sp)
+                    IconLabel(FilmIcons.Darkroom, log.process, FilmTheme.colors.halide)
                     Spacer(Modifier.height(4.dp))
                     TagRow() {
                         VaultTag(log.developer); VaultTag("${log.temp}°C"); VaultTag("${log.devTime}min")
@@ -745,7 +751,7 @@ fun RollDetailScreen(
         roll.scanLog?.let { log ->
             item {
                 VaultCard {
-                    Text("🔍 ${log.method}", color = FilmTheme.colors.halide, fontSize = 12.sp)
+                    IconLabel(FilmIcons.Scan, log.method, FilmTheme.colors.halide)
                     if (log.dpi.isNotBlank()) { Spacer(Modifier.height(4.dp)); VaultTag("${log.dpi} DPI") }
                 }
             }
@@ -758,12 +764,13 @@ fun RollDetailScreen(
                 Text("Shot Log", color = FilmTheme.colors.cyan, fontSize = 16.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (roll.shots.isNotEmpty()) {
-                        VaultButton("⇪ Export", small = true, ghost = true,
+                        VaultButton("Export", small = true, ghost = true, icon = FilmIcons.Backup,
                             onClick = { showExportDialog = true })
                     }
                     val hasGps = roll.shots.any { it.location.contains(",") }
                     if (hasGps) {
-                        VaultButton(text = if (showMap) "📋 List" else "🗺 Map", small = true, ghost = true,
+                        VaultButton(text = if (showMap) "List" else "Map", small = true, ghost = true,
+                    icon = if (showMap) FilmIcons.ContactSheet else FilmIcons.Map,
                             onClick = { showMap = !showMap })
                     }
                     if (!roll.finished) {
@@ -814,9 +821,9 @@ fun RollDetailScreen(
                             if (shot.iso.isNotBlank())      VaultTag("ISO ${shot.iso}")
                         }
                         if (shot.lens.isNotBlank())     { Spacer(Modifier.height(2.dp)); Text(shot.lens, color = FilmTheme.colors.dim, fontSize = 11.sp) }
-                        if (shot.location.isNotBlank()) { Spacer(Modifier.height(2.dp)); Text("📍 ${shot.location}", color = FilmTheme.colors.violet, fontSize = 11.sp) }
+                        if (shot.location.isNotBlank()) { Spacer(Modifier.height(2.dp)); IconLabel(FilmIcons.Pin, shot.location, FilmTheme.colors.violet, fontSize = 11.sp) }
                         if (shot.notes.isNotBlank())    { Spacer(Modifier.height(2.dp)); Text(shot.notes, color = FilmTheme.colors.dim, fontSize = 11.sp) }
-                        if (shot.weather.isNotBlank())  { Spacer(Modifier.height(2.dp)); Text("🌤 ${shot.weather}", color = FilmTheme.colors.dim, fontSize = 10.sp) }
+                        if (shot.weather.isNotBlank())  { Spacer(Modifier.height(2.dp)); IconLabel(FilmIcons.Weather, shot.weather, FilmTheme.colors.dim, fontSize = 10.sp) }
                         Text(shot.date.ifBlank { "—" }, color = FilmTheme.colors.dim, fontSize = 10.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
@@ -833,12 +840,12 @@ fun RollDetailScreen(
                         Row {
                             IconButton(onClick = { editingShot = shot; showShotSheet = true },
                                 modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Edit, null, tint = FilmTheme.colors.dim, modifier = Modifier.size(14.dp))
+                                DyeIcon(FilmIcons.Edit, null, size = 14.dp, tint = FilmTheme.colors.dim)
                             }
                             IconButton(onClick = {
                                 confirmMsg = "Delete shot #$idx?" to { vm.deleteShot(roll.id, shot.id) }
                             }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Delete, null, tint = FilmTheme.colors.mask.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                                DyeIcon(FilmIcons.Trash, null, size = 14.dp, tint = FilmTheme.colors.mask.copy(alpha = 0.7f))
                             }
                         }
                     }
@@ -1110,7 +1117,7 @@ fun ShotSheet(
                     ))
                 }) {
                     if (gpsLoading) CircularProgressIndicator(Modifier.size(18.dp), color = FilmTheme.colors.cyan, strokeWidth = 2.dp)
-                    else Icon(Icons.Default.LocationOn, "GPS", tint = if (autoLocation) FilmTheme.colors.cyan else FilmTheme.colors.dim)
+                    else DyeIcon(FilmIcons.Pin, "GPS", tint = if (autoLocation) FilmTheme.colors.cyan else FilmTheme.colors.dim)
                 }
             }
         }
@@ -1142,7 +1149,7 @@ fun ShotSheet(
                 }
             }) {
                 if (weatherLoading) CircularProgressIndicator(Modifier.size(18.dp), color = FilmTheme.colors.cyan, strokeWidth = 2.dp)
-                else Icon(Icons.Default.Cloud, "Fetch weather", tint = FilmTheme.colors.cyan)
+                else DyeIcon(FilmIcons.Weather, "Fetch weather", tint = FilmTheme.colors.cyan)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -1160,11 +1167,13 @@ fun ShotSheet(
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VaultButton("📷 Camera", small = true, ghost = true,
+            VaultButton("Camera", small = true, ghost = true, icon = FilmIcons.Camera,
                 onClick = { cameraPermLauncher.launch(Manifest.permission.CAMERA) })
-            VaultButton("🖼 Gallery", small = true, ghost = true, onClick = { pickImage.launch("image/*") })
+            VaultButton("Gallery", small = true, ghost = true, icon = FilmIcons.ContactSheet,
+                    onClick = { pickImage.launch("image/*") })
             if (thumbPath.isNotBlank())
-                VaultButton("✕ Remove", small = true, ghost = true, onClick = { thumbPath = "" })
+                VaultButton("Remove", small = true, ghost = true, icon = FilmIcons.Close,
+                    onClick = { thumbPath = "" })
         }
         if (thumbPath.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
@@ -1226,7 +1235,7 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
             Box(Modifier.fillMaxSize().padding(bottom = 48.dp), contentAlignment = Alignment.BottomCenter) {
                 Row(horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = FilmTheme.colors.halide, modifier = Modifier.size(28.dp))
+                        DyeIcon(FilmIcons.Close, "Close", size = 28.dp, tint = FilmTheme.colors.halide)
                     }
                     Box(Modifier.size(72.dp).clip(CircleShape).background(FilmTheme.colors.cyan)
                         .clickable {
@@ -1245,7 +1254,8 @@ fun CameraXCaptureDialog(onCapture: (String) -> Unit, onDismiss: () -> Unit) {
                                 }
                             }
                         }, contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Default.Camera, contentDescription = "Capture", tint = FilmTheme.colors.void, modifier = Modifier.size(32.dp))
+                        DyeIcon(FilmIcons.Camera, "Capture", size = 32.dp, tint = FilmTheme.colors.void,
+                            accent = FilmTheme.colors.void)
                     }
                     Spacer(Modifier.size(48.dp))
                 }
