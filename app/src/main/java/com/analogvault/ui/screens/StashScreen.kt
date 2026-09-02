@@ -120,6 +120,44 @@ fun StashScreen(vm: MainViewModel) {
     }
 }
 
+/**
+ * The controls above a stash list.
+ *
+ * The section's name and its size live in the chip row at the top of the
+ * screen — "FILM 12" sitting directly above "Film Stash 12/20" was the same
+ * fact three times. What the chip cannot say is that a filter is hiding part
+ * of the list, so that is the only thing this line says, and only while it is
+ * true. The rest of the row is the two actions, which have nowhere else to be.
+ */
+@Composable
+private fun StashHeaderRow(
+    shown: Int,
+    total: Int,
+    filterOpen: Boolean,
+    filterActive: Boolean,
+    onToggleFilter: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (shown < total) {
+            Text(
+                "SHOWING $shown OF $total",
+                style = FilmTheme.type.eyebrow,
+                color = FilmTheme.colors.dim,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onToggleFilter, Modifier.size(36.dp)) {
+            Icon(
+                Icons.Default.FilterList, null, modifier = Modifier.size(18.dp),
+                tint = if (filterOpen || filterActive) FilmTheme.colors.cyan
+                       else FilmTheme.colors.dim,
+            )
+        }
+        VaultButton("+ Add", small = true, onClick = onAdd)
+    }
+}
+
 // ─── Film Stash ───────────────────────────────────────────────────────────────
 
 @Composable
@@ -189,17 +227,17 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     ) {
         // Header row with add + filter
         item(key = "header") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("Film Stash", color = FilmTheme.colors.cyan, fontSize = 18.sp)
-                Spacer(Modifier.width(6.dp))
-                Text("${displayFilms.size}/${films.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterType != "All" || filterExp) FilmTheme.colors.cyan else FilmTheme.colors.dim)
-                }
-                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
-            }
+            // Against the stash count, not films.size: the depleted films below
+            // are not part of what the chip counts, so counting them here would
+            // report a filter that is not hiding anything.
+            StashHeaderRow(
+                shown = displayFilms.size,
+                total = films.count { it.quantity > 0 },
+                filterOpen = showFilter,
+                filterActive = filterType != "All" || filterExp,
+                onToggleFilter = { showFilter = !showFilter },
+                onAdd = { editing = null; showSheet = true },
+            )
         }
 
         // ── Bulk Film section ──────────────────────────────────────────────
@@ -944,15 +982,14 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "header") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Cameras", color = FilmTheme.colors.cyan, fontSize = 18.sp)
-                Text("${displayCameras.size}/${cameras.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterFormat != "All") FilmTheme.colors.cyan else FilmTheme.colors.dim)
-                }
-                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
-            }
+            StashHeaderRow(
+                shown = displayCameras.size,
+                total = cameras.size,
+                filterOpen = showFilter,
+                filterActive = filterFormat != "All",
+                onToggleFilter = { showFilter = !showFilter },
+                onAdd = { editing = null; showSheet = true },
+            )
         }
         if (showFilter) item(key = "filter") {
             FilterBar(sortBy, listOf("Name", "Brand", "Format", "Condition"), { sortBy = it },
@@ -1024,15 +1061,14 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "header") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Lenses", color = FilmTheme.colors.cyan, fontSize = 18.sp)
-                Text("${displayLenses.size}/${lenses.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterMount != "All") FilmTheme.colors.cyan else FilmTheme.colors.dim)
-                }
-                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
-            }
+            StashHeaderRow(
+                shown = displayLenses.size,
+                total = lenses.size,
+                filterOpen = showFilter,
+                filterActive = filterMount != "All",
+                onToggleFilter = { showFilter = !showFilter },
+                onAdd = { editing = null; showSheet = true },
+            )
         }
         if (showFilter) item(key = "filter") {
             FilterBar(sortBy, listOf("Name", "Brand", "Focal", "Aperture", "Condition"), { sortBy = it },
@@ -1163,15 +1199,14 @@ fun AccessoryStashTab(accessories: List<Accessory>, vm: MainViewModel) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "header") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Accessories", color = FilmTheme.colors.cyan, fontSize = 18.sp)
-                Text("${displayAcc.size}/${accessories.size}", color = FilmTheme.colors.dim, fontSize = 10.sp)
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { showFilter = !showFilter }, Modifier.size(36.dp)) {
-                    Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp), tint = if (showFilter || filterType != "All") FilmTheme.colors.cyan else FilmTheme.colors.dim)
-                }
-                VaultButton("+ Add", small = true, onClick = { editing = null; showSheet = true })
-            }
+            StashHeaderRow(
+                shown = displayAcc.size,
+                total = accessories.size,
+                filterOpen = showFilter,
+                filterActive = filterType != "All",
+                onToggleFilter = { showFilter = !showFilter },
+                onAdd = { editing = null; showSheet = true },
+            )
         }
         if (showFilter) item(key = "filter") {
             FilterBar(sortBy, listOf("Name", "Brand", "Type", "Condition"), { sortBy = it },
