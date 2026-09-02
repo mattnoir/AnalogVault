@@ -20,6 +20,17 @@ data class MapShot(
     val rollName: String = ""
 )
 
+/**
+ * Below this, in degrees, a set of points is one place rather than an area.
+ *
+ * Roughly a metre of latitude — finer than any phone's fix and coarser than the
+ * rounding in a stored coordinate string.
+ */
+private const val DEGENERATE_SPAN = 1e-5
+
+/** Breathing room around a fitted bounding box, in pixels. */
+private const val MAP_FIT_PADDING_PX = 80
+
 /** Must call this before any MapView is created — do it in Application.onCreate or Activity.onCreate */
 fun initOsmdroid(context: Context) {
     Configuration.getInstance().apply {
@@ -115,24 +126,50 @@ private fun OsmMapViewInternal(
                 }
             }
 
+            val lats = mapShots.map { it.point.latitude }
+            val lons = mapShots.map { it.point.longitude }
+            val latSpan = lats.max() - lats.min()
+            val lonSpan = lons.max() - lons.min()
+
             when {
-                mapShots.size == 1 -> {
+                // One marker, or several that are effectively the same place.
+                //
+                // A zero-span bounding box is what hung the app: osmdroid solves
+                // for the zoom that fits the box, a box of zero degrees has no
+                // such zoom, and Projection.getCloserPixel then loops on the
+                // resulting infinity until the system kills the activity for not
+                // responding. It is easy to hit on real data — a roll shot on one
+                // afternoon in one garden is a single GPS fix repeated thirty
+                // times — so it is checked before the box is ever built.
+                //
+                // The threshold is about a metre of latitude, well below what any
+                // phone fix resolves and well above the rounding in the stored
+                // string.
+                mapShots.size == 1 || (latSpan < DEGENERATE_SPAN && lonSpan < DEGENERATE_SPAN) -> {
                     mv.controller.setCenter(mapShots.first().point)
                     mv.controller.setZoom(16.0)
                 }
                 else -> {
-                    try {
-                        val lats = mapShots.map { it.point.latitude }
-                        val lons = mapShots.map { it.point.longitude }
-                        val box = BoundingBox(
-                            lats.max(), lons.max(), lats.min(), lons.min()
-                        )
-                        mv.post {
-                            mv.zoomToBoundingBox(box.increaseByScale(1.4f), true, 80)
+                    val box = BoundingBox(lats.max(), lons.max(), lats.min(), lons.min())
+                        .increaseByScale(1.4f)
+                    mv.post {
+                        // Fitting a box needs the view's size, and post() can
+                        // still land before the first layout — osmdroid divides
+                        // by that size, so a zero here is the same infinity by
+                        // another route.
+                        if (mv.width == 0 || mv.height == 0) {
+                            mv.controller.setCenter(box.centerWithDateLine)
+                            mv.controller.setZoom(13.0)
+                            return@post
                         }
-                    } catch (e: Exception) {
-                        mv.controller.setCenter(mapShots.first().point)
-                        mv.controller.setZoom(13.0)
+                        try {
+                            mv.zoomToBoundingBox(box, true, MAP_FIT_PADDING_PX)
+                        } catch (e: Exception) {
+                            // The catch used to sit outside post(), where it
+                            // could only ever have caught the arithmetic above.
+                            mv.controller.setCenter(box.centerWithDateLine)
+                            mv.controller.setZoom(13.0)
+                        }
                     }
                 }
             }
