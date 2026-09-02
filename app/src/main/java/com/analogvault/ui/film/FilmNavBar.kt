@@ -165,6 +165,20 @@ private fun RowScope.NavButton(
             color = tint,
             textAlign = TextAlign.Center,
         )
+        // Selection under safelight is carried by a mark, not by colour.
+        //
+        // The glow above is disabled in that scheme, and once every hue in the
+        // app is a red, "cyan vs dim" collapses to two brightnesses of the same
+        // red — legible in daylight, not at the point of the screen you are
+        // glancing at with one hand in a tank. The bar restores the second cue
+        // the glow was providing.
+        if (selected && colors.safelight) {
+            Box(
+                Modifier
+                    .size(width = 18.dp, height = 2.dp)
+                    .background(colors.cyan)
+            )
+        }
     }
 }
 
@@ -237,7 +251,14 @@ private fun ShutterButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = FilmTheme.type.rebate, color = Color.White)
+        // White on the disc in the normal scheme; under safelight the label is
+        // punched out of the red instead, because a white glyph is white light
+        // however small it is.
+        Text(
+            label,
+            style = FilmTheme.type.rebate,
+            color = if (colors.safelight) colors.void else Color.White,
+        )
     }
 }
 
