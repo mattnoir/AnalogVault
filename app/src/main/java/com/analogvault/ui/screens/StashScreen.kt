@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +22,7 @@ import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
 import androidx.compose.ui.graphics.Color
 import com.analogvault.ui.film.FilmChip
+import com.analogvault.ui.film.FilmChipRow
 import com.analogvault.ui.film.FilmMeter
 import com.analogvault.ui.film.FilmStockCard
 import com.analogvault.ui.film.StockAccent
@@ -68,32 +68,42 @@ fun StashScreen(vm: MainViewModel) {
         derivedStateOf { rolls.filter { !it.finished && !it.developed }.map { it.cameraId }.toSet() }
     }
 
-    val tabs = listOf("Film", "Cameras", "Lenses", "Accessories")
+    val tabs = listOf(
+        "Film" to films.count { it.quantity > 0 },
+        "Cameras" to cameras.size,
+        "Lenses" to lenses.size,
+        "Accessories" to accessories.size,
+    )
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
-        // Scrollable, not fixed: four equal columns are narrower than the word
-        // "Accessories" at this size, and a fixed TabRow wraps it to "Accessorie / s"
-        // rather than shrinking or scrolling.
-        ScrollableTabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = FilmTheme.colors.void,
-            contentColor = FilmTheme.colors.cyan,
-            edgePadding = 14.dp,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                    color = FilmTheme.colors.cyan,
-                )
-            }
+        // Chips, not tabs.
+        //
+        // A ScrollableTabRow was the last Material component on the screen, and
+        // it showed: a sliding underline, a ripple and a horizontal scroll
+        // offset, none of which appear anywhere else in the app. These four are
+        // one property of one list — the same shape of choice the Rolls stage
+        // filter makes — so they get the same hairline chips, and Rolls and
+        // Stash stop being two different ideas of how to switch a list.
+        //
+        // Wrapping also fixes what forced the row to scroll in the first place:
+        // "Accessories" no longer has to fit a quarter of the width, so it can
+        // carry its count instead of being clipped or scrolled off the edge.
+        FilmChipRow(
+            Modifier
+                .fillMaxWidth()
+                .background(FilmTheme.colors.void)
+                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 8.dp)
         ) {
-            tabs.forEachIndexed { i, t ->
-                Tab(selected = pagerState.currentPage == i,
+            tabs.forEachIndexed { i, (label, count) ->
+                val selected = pagerState.currentPage == i
+                FilmChip(
+                    text = "$label $count",
+                    color = if (selected) FilmTheme.colors.cyan else FilmTheme.colors.dim,
+                    filled = selected,
                     onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
-                    text = { Text(t.uppercase(), style = FilmTheme.type.eyebrow) },
-                    selectedContentColor = FilmTheme.colors.cyan,
-                    unselectedContentColor = FilmTheme.colors.dim)
+                )
             }
         }
         HorizontalPager(
