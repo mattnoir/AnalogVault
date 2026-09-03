@@ -80,6 +80,8 @@ import com.analogvault.util.GearClamp
 import kotlin.math.abs
 import kotlin.math.log2
 import kotlin.math.roundToInt
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
@@ -887,8 +889,7 @@ private fun MeterStatusBar(
                 modifier = Modifier.clickable(onClick = onCycleRoll).padding(horizontal = 6.dp))
         }
         IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Default.Close, "Close the meter",
-                tint = colors.dim, modifier = Modifier.size(18.dp))
+            DyeIcon(FilmIcons.Close, "Close the meter", size = 18.dp, tint = colors.dim)
         }
     }
 }
@@ -908,7 +909,7 @@ private fun ClampBanner(advice: GearClamp.Advice) {
             .padding(horizontal = 14.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("⚠", style = FilmTheme.type.readout.copy(fontSize = 17.sp), color = colors.mask)
+        DyeIcon(FilmIcons.Warn, null, size = 20.dp, tint = colors.mask)
         Column {
             Text(advice.headline.uppercase(), style = FilmTheme.type.rebate, color = colors.mask)
             Spacer(Modifier.height(3.dp))
@@ -1391,12 +1392,10 @@ fun ZoomEditSheet(zoomLevels: List<ZoomLevel>, vm: MainViewModel, onDismiss: () 
                     Row {
                         IconButton(onClick = { editingId = z.id; editLabel = z.label; editMm = z.mm.toString() },
                             Modifier.size(28.dp)) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = null,
-                                modifier = Modifier.size(14.dp), tint = colors.dim)
+                            DyeIcon(FilmIcons.Edit, null, size = 14.dp, tint = colors.dim)
                         }
                         IconButton(onClick = { vm.deleteZoomLevel(z) }, Modifier.size(28.dp)) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = null,
-                                modifier = Modifier.size(14.dp), tint = colors.mask.copy(alpha = 0.55f))
+                            DyeIcon(FilmIcons.Trash, null, size = 14.dp, tint = colors.mask.copy(alpha = 0.55f))
                         }
                     }
                 }

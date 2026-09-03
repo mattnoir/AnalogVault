@@ -28,6 +28,10 @@ import com.analogvault.ui.theme.FilmTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
+import com.analogvault.ui.film.FilmIconSpec
+import androidx.compose.ui.unit.TextUnit
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -97,7 +101,9 @@ fun VaultTag(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
-    textColor: Color = Color.Unspecified
+    textColor: Color = Color.Unspecified,
+    /** Drawn before the label, in the tag's own colour. See [VaultButton]. */
+    icon: FilmIconSpec? = null,
 ) {
     val colors = FilmTheme.colors
     val accent = when {
@@ -105,12 +111,42 @@ fun VaultTag(
         color != Color.Unspecified     -> color
         else                           -> colors.dim
     }
-    Box(
+    Row(
         modifier = modifier
             .border(1.dp, accent)
-            .padding(horizontal = 6.dp, vertical = 3.dp)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        if (icon != null) {
+            DyeIcon(icon, null, size = 12.dp, tint = accent, accent = accent)
+        }
         Text(text.uppercase(), style = FilmTheme.type.data, color = accent, maxLines = 1)
+    }
+}
+
+/**
+ * An icon and a line of text, for the places that used to prefix a string with
+ * an emoji: a shot's location, the process a roll was developed in, a warning.
+ *
+ * The icon takes the text's colour rather than its own dye accent — at 12sp
+ * these read as one phrase, and a second colour inside a phrase is noise.
+ */
+@Composable
+fun IconLabel(
+    icon: FilmIconSpec,
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = 12.sp,
+) {
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        DyeIcon(icon, null, size = 13.dp, tint = color, accent = color)
+        Text(text, color = color, fontSize = fontSize)
     }
 }
 
@@ -152,7 +188,7 @@ fun SpinnerField(
         Text(label, color = FilmTheme.colors.dim, fontSize = 10.sp)
         Spacer(Modifier.height(2.dp))
         IconButton(onClick = onInc, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ExpandLess, null, tint = FilmTheme.colors.cyan, modifier = Modifier.size(20.dp))
+            DyeIcon(FilmIcons.ChevronUp, null, size = 20.dp, tint = FilmTheme.colors.cyan)
         }
         Box {
             Box(
@@ -183,7 +219,7 @@ fun SpinnerField(
             }
         }
         IconButton(onClick = onDec, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ExpandMore, null, tint = FilmTheme.colors.cyan, modifier = Modifier.size(20.dp))
+            DyeIcon(FilmIcons.ChevronDown, null, size = 20.dp, tint = FilmTheme.colors.cyan)
         }
     }
 }
@@ -647,8 +683,8 @@ fun VaultSheet(
                 Text(title.uppercase(), style = FilmTheme.type.stock.copy(fontSize = 22.sp),
                     color = colors.halide)
                 IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close",
-                        tint = colors.dim, modifier = Modifier.size(20.dp))
+                    DyeIcon(FilmIcons.Close, contentDescription = "Close",
+                        size = 20.dp, tint = colors.dim)
                 }
             }
             content()
@@ -699,7 +735,16 @@ fun VaultButton(
     ghost: Boolean = false,
     danger: Boolean = false,
     small: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    /**
+     * Drawn before the label, in the label's own colour.
+     *
+     * This exists because the labels used to carry emoji — "🧪 Open Darkroom",
+     * "⬆ Export Backup" — which render in the system font's colours, at the
+     * system's idea of the size, and stay bright green or blue when the app
+     * goes red. An icon from the set is none of those things.
+     */
+    icon: FilmIconSpec? = null,
 ) {
     // Filled magenta for the action that commits, hairline for everything else.
     // A screen where every button is filled has no primary action, which is the
@@ -721,13 +766,25 @@ fun VaultButton(
             .padding(horizontal = if (small) 10.dp else 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text.uppercase(),
-            style = FilmTheme.type.data.copy(fontSize = if (small) 11.sp else 13.sp),
-            color = if (filled) colors.void else accent,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-        )
+        val labelColor = if (filled) colors.void else accent
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (icon != null) {
+                // One tone, not the dye accent: on a filled button the accent
+                // would be the only thing not punched out of the fill.
+                DyeIcon(icon, null, size = if (small) 14.dp else 16.dp,
+                    tint = labelColor, accent = labelColor)
+            }
+            Text(
+                text.uppercase(),
+                style = FilmTheme.type.data.copy(fontSize = if (small) 11.sp else 13.sp),
+                color = labelColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

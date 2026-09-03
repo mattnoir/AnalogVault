@@ -28,6 +28,9 @@ import com.analogvault.ui.film.SprocketRail
 import com.analogvault.ui.film.rememberStockAccent
 import com.analogvault.ui.theme.FilmTheme
 import java.io.File
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
+import androidx.compose.ui.graphics.graphicsLayer
 
 /**
  * The roll as a contact sheet.
@@ -56,8 +59,9 @@ fun ContactSheetScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
-                Icon(Icons.Default.ArrowBack, "Back to rolls",
-                    tint = colors.dim, modifier = Modifier.size(20.dp))
+                DyeIcon(FilmIcons.ChevronRight, "Back to rolls",
+                    size = 20.dp, tint = colors.dim,
+                    modifier = Modifier.graphicsLayer { scaleX = -1f })
             }
             Column {
                 ChromaticText(

@@ -124,21 +124,22 @@ fun FilmStockCard(
                 Row {
                     if (onEdit != null) {
                         IconButton(onClick = onEdit, modifier = Modifier.size(34.dp)) {
-                            Icon(
-                                Icons.Default.Edit, "Edit $stockName",
-                                modifier = Modifier.size(16.dp), tint = colors.dim,
+                            DyeIcon(
+                                FilmIcons.Edit, "Edit $stockName",
+                                size = 16.dp, tint = colors.dim,
                             )
                         }
                     }
                     if (onDelete != null) {
                         IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
-                            Icon(
+                            DyeIcon(
                                 // Muted, not full mask orange: at full strength the
                                 // bin is the brightest thing on the card, which is
                                 // the wrong thing for the eye to land on in a list.
-                                Icons.Default.Delete, "Delete $stockName",
-                                modifier = Modifier.size(16.dp),
+                                FilmIcons.Trash, "Delete $stockName",
+                                size = 16.dp,
                                 tint = colors.mask.copy(alpha = 0.55f),
+                                accent = colors.mask.copy(alpha = 0.55f),
                             )
                         }
                     }

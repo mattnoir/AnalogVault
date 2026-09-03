@@ -101,22 +101,29 @@ val DyeLayerColors = FilmColors(
  * target, and the exception is the point. Safelight exists to preserve dark
  * adaptation, and the brightness that would carry a red label to 4.5:1 on black
  * is exactly the brightness that ruins the adaptation you turned it on for.
- * `dim` here is raised as far as that trade allows (about 3.6:1 rather than the
+ * `dim` here is raised as far as that trade allows (about 3.9:1 rather than the
  * 2.3:1 it started at) and no further.
+ *
+ * Every red here keeps blue below green. Lifting the two together is what makes
+ * a red look pink, and the first cut of this scheme did exactly that — #FF6B6B
+ * is a red with equal green and blue, which is a desaturated rose, not the
+ * long-wavelength red a safelight actually emits. Dropping blue under green
+ * pulls the whole scheme back toward the amber-red end of the spectrum, which
+ * is both more saturated on screen and closer to the real thing.
  */
 val SafelightColors = FilmColors(
-    cyan = Color(0xFFFF6B6B),
-    magenta = Color(0xFFFF3B30),
-    yellow = Color(0xFFFF8A80),
-    mask = Color(0xFFFF3B30),
-    violet = Color(0xFF7A1414),
+    cyan = Color(0xFFFF5233),
+    magenta = Color(0xFFE01200),
+    yellow = Color(0xFFFF7A33),
+    mask = Color(0xFFE01200),
+    violet = Color(0xFF4A0A00),
     void = Color(0xFF000000),
     film = Color(0xFF0C0000),
-    filmRaised = Color(0xFF160202),
-    edge = Color(0xFF3A0808),
-    halide = Color(0xFFFF7A70),
-    dim = Color(0xFFB85050),
-    dead = Color(0xFF4A0F0F),
+    filmRaised = Color(0xFF170300),
+    edge = Color(0xFF3D0900),
+    halide = Color(0xFFFF4B33),
+    dim = Color(0xFFC23A24),
+    dead = Color(0xFF4A0F00),
     safelight = true,
 )
 

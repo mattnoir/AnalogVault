@@ -3,6 +3,8 @@ package com.analogvault.ui.film
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import com.analogvault.ui.theme.FilmColors
 import com.analogvault.ui.theme.FilmTheme
 import java.util.Locale
 
@@ -89,6 +91,22 @@ fun rememberStockAccent(
     override: String = "",
 ): StockAccent {
     val colors = FilmTheme.colors
+    val accent = resolveAccent(colors, name, type, override)
+
+    // A stock accent is the one colour on screen that does not come from the
+    // scheme, so the safelight swap misses it: left alone, Tri-X's white and
+    // Vision 3's cyan go on throwing a second hue in the dark, which is the
+    // exact thing the mode exists to stop. Fold the accent into the red ramp
+    // instead of dropping it — brightness still tells the stocks apart.
+    return if (colors.safelight) accent.toSafelight(colors) else accent
+}
+
+private fun resolveAccent(
+    colors: FilmColors,
+    name: String,
+    type: String,
+    override: String,
+): StockAccent {
     parseAccentOverride(override)?.let { return it }
 
     val haystack = name.lowercase(Locale.ROOT)
@@ -110,6 +128,29 @@ fun rememberStockAccent(
             StockAccent(colors.mask, colors.magenta) // C-41 and anything unlabelled
     }
 }
+
+/**
+ * The same accent, rewritten in the safelight scheme's reds.
+ *
+ * Both ends are mapped, so a gradient spine keeps its direction and a
+ * white-to-grey stock still reads brighter than a dark one.
+ */
+fun StockAccent.toSafelight(colors: FilmColors): StockAccent =
+    StockAccent(colors.redAt(start), colors.redAt(end))
+
+/**
+ * A red of the same apparent brightness as [source].
+ *
+ * The scheme's own ramp is the anchor — `violet` is its darkest red and
+ * `halide` its brightest — so interpolating between them by luminance lands
+ * inside the four steps safelight is built around rather than inventing a red
+ * of its own.
+ */
+fun FilmColors.redAt(source: Color): Color =
+    lerp(violet, halide, luminanceOf(source))
+
+private fun luminanceOf(c: Color): Float =
+    (0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue).coerceIn(0f, 1f)
 
 /** "#RRGGBB" or "#RRGGBB,#RRGGBB". Returns null on anything unparseable. */
 fun parseAccentOverride(raw: String): StockAccent? {

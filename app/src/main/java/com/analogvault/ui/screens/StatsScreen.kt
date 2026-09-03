@@ -411,7 +411,7 @@ fun StatsMap(vm: MainViewModel) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("NO GPS DATA YET", style = FilmTheme.type.data, color = colors.dead)
                     Spacer(Modifier.height(8.dp))
-                    Text("WHEN LOGGING A FRAME, TAP 📍 TO CAPTURE LOCATION",
+                    Text("WHEN LOGGING A FRAME, TAP THE PIN TO CAPTURE LOCATION",
                         style = FilmTheme.type.rebate, color = colors.dim)
                 }
             }

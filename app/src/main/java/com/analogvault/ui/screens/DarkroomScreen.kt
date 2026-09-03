@@ -53,6 +53,8 @@ import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.uid
 import com.analogvault.util.Constants
 import com.analogvault.util.DevTime
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
@@ -133,8 +135,8 @@ fun ChemistryTab(vm: MainViewModel) {
                             color = FilmTheme.colors.dim, fontSize = 12.sp)
                     }
                     when (alert) {
-                        "exhausted" -> VaultTag("⚠ Exhausted", textColor = FilmTheme.colors.mask)
-                        "warn"      -> VaultTag("⚠ Near limit", textColor = FilmTheme.colors.yellow)
+                        "exhausted" -> VaultTag("Exhausted", textColor = FilmTheme.colors.mask, icon = FilmIcons.Warn)
+                        "warn"      -> VaultTag("Near limit", textColor = FilmTheme.colors.yellow, icon = FilmIcons.Warn)
                         else        -> if (maxR != null) VaultTag("OK", textColor = FilmTheme.colors.cyan)
                     }
                 }
@@ -157,7 +159,7 @@ fun ChemistryTab(vm: MainViewModel) {
                     Spacer(Modifier.height(4.dp))
                     val base = chem.baseDevTime.toDoubleOrNull() ?: 0.0
                     val diff = "%.2f".format(adjTime.toDouble() - base)
-                    Text("⏱ Adjusted dev time: $adjTime min (+$diff for $used rolls)",
+                    Text("Adjusted dev time: $adjTime min (+$diff for $used rolls)",
                         color = FilmTheme.colors.cyan, fontSize = 11.sp)
                 }
                 if (chem.notes.isNotBlank()) {
@@ -436,7 +438,7 @@ private fun PresetCard(preset: DevTimer, tempC: Double, onStart: () -> Unit) {
                     .padding(9.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("⚠", style = FilmTheme.type.data, color = colors.mask)
+                DyeIcon(FilmIcons.Warn, null, size = 15.dp, tint = colors.mask)
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.halide)
             }
         }
@@ -529,8 +531,7 @@ fun ActiveTimerScreen(state: DarkroomTimerState, vm: MainViewModel) {
                         style = FilmTheme.type.rebate, color = colors.dim)
                 }
                 IconButton(onClick = { vm.stopTimer() }, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Stop the timer",
-                        tint = colors.dim, modifier = Modifier.size(20.dp))
+                    DyeIcon(FilmIcons.Close, "Stop the timer", size = 20.dp, tint = colors.dim)
                 }
             }
 
@@ -765,7 +766,7 @@ fun CustomTimerSheet(onDismiss: () -> Unit, onStart: (DevTimer) -> Unit) {
                     if (steps.size > 1) {
                         IconButton(onClick = { steps = steps.toMutableList().also { it.removeAt(i) } },
                             Modifier.size(24.dp)) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = FilmTheme.colors.mask.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                            DyeIcon(FilmIcons.Close, null, size = 14.dp, tint = FilmTheme.colors.mask.copy(alpha = 0.7f))
                         }
                     }
                 }
