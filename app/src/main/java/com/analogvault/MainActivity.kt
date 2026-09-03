@@ -197,18 +197,34 @@ fun VaultApp() {
         currentTab = tab
     }
 
-    // The meter arrives and leaves through an iris.
+    // The iris belongs to the shutter release, not to the meter.
     //
-    // It is the only destination that is not a tab — it is the instrument the
-    // whole bar is arranged around — and it is the only one reached by pressing
-    // a shutter release, so it is the one that gets a shutter. Everything else
-    // keeps the slide-and-fade, which is what makes this read as different
-    // rather than as the app's usual noise.
+    // Pressing the big button in the middle of the bar is the gesture the
+    // animation is about — you press a shutter, a shutter fires. Reaching the
+    // same screen from the light card on Home is not that gesture, so it opens
+    // the way every other screen does. The transition marks the action, not the
+    // destination.
+    //
+    // It is also enter-only. A shutter firing on the way out would be a second
+    // exposure for a frame you did not take, and 680ms is a long time to spend
+    // leaving somewhere.
     val shutter = rememberShutterController()
     val shutterConfig = rememberShutterConfig()
 
-    fun openMeter() = shutter.play(shutterConfig) { navigateTo(Tab.METER) }
-    fun closeMeter() = shutter.play(shutterConfig) { currentTab = tabBeforeMeter }
+    /** True while the meter is on screen because the shutter release put it there. */
+    var meterViaShutter by remember { mutableStateOf(false) }
+
+    fun fireShutter() = shutter.play(shutterConfig) {
+        meterViaShutter = true
+        navigateTo(Tab.METER)
+    }
+
+    fun openMeterPlainly() {
+        meterViaShutter = false
+        navigateTo(Tab.METER)
+    }
+
+    fun closeMeter() { currentTab = tabBeforeMeter }
 
     fun openMap(rollId: String?) {
         mapRollId = rollId
@@ -219,7 +235,6 @@ fun VaultApp() {
     // More sub-screens → More, any other tab → Home, Home → exit.
     BackHandler(enabled = currentTab != Tab.DASH) {
         if (currentTab == Tab.METER) {
-            // Out through the shutter, the same way it came in.
             closeMeter()
         } else {
             currentTab = when {
@@ -251,7 +266,7 @@ fun VaultApp() {
                         .takeIf { it >= 0 }
                         ?: BOTTOM_TABS.indexOf(Tab.MORE).takeIf { isMoreSub },
                     onSelect = { navigateTo(BOTTOM_TABS[it]) },
-                    onShutter = { openMeter() },
+                    onShutter = { fireShutter() },
                     onShutterLongPress = { vm.toggleSafelight() },
                 )
             }
@@ -260,11 +275,22 @@ fun VaultApp() {
         AnimatedContent(
             targetState = currentTab,
             transitionSpec = {
-                // The meter is the one destination the shutter covers, and a
-                // screen sliding underneath a closed iris shows through the gap
-                // at its edge. Swap it instantly and let the blades do the work.
-                if (targetState == Tab.METER || initialState == Tab.METER) {
+                if (targetState == Tab.METER && meterViaShutter) {
+                    // The blades are covering this swap. A screen sliding
+                    // underneath a closed iris shows through the gap at its
+                    // edge, so nothing moves.
                     EnterTransition.None togetherWith ExitTransition.None
+                } else if (targetState == Tab.METER) {
+                    // Reached from somewhere other than the shutter: the
+                    // instrument rises into place.
+                    (fadeIn(tween(180)) + slideInVertically(tween(240)) { it / 5 }) togetherWith
+                    fadeOut(tween(140))
+                } else if (initialState == Tab.METER) {
+                    // And drops away again, however it arrived. The way out is
+                    // the same either way, which is what stops the iris reading
+                    // as a door you have to close behind you.
+                    fadeIn(tween(180)) togetherWith
+                    (fadeOut(tween(160)) + slideOutVertically(tween(240)) { it / 5 })
                 } else {
                     // Slide toward the side the target tab sits on: rightward tab → enter from right,
                     // leftward tab → enter from left. Gives a sense of where each tab lives.
@@ -285,7 +311,8 @@ fun VaultApp() {
                             4 -> Tab.METER;  5 -> Tab.WEATHER; 6 -> Tab.STATS
                             else -> Tab.DASH
                         }
-                        if (target == Tab.METER) openMeter() else navigateTo(target, subTab)
+                        if (target == Tab.METER) openMeterPlainly()
+                        else navigateTo(target, subTab)
                     })
                 Tab.STASH    -> StashScreen(vm)
                 Tab.ACTIVE   -> ActiveScreen(
