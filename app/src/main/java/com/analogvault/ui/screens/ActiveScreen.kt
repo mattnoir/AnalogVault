@@ -90,7 +90,8 @@ fun ActiveScreen(
     meterAperture: String = "",
     meterIso: String = "",
     onMeterConsumed: () -> Unit = {},
-    onNavigateToDarkroom: () -> Unit = {}
+    onNavigateToDarkroom: () -> Unit = {},
+    onOpenMap: (String) -> Unit = {},
 ) {
     val rolls   by vm.rolls.collectAsState()
     val films   by vm.films.collectAsState()
@@ -210,7 +211,8 @@ fun ActiveScreen(
                 pendingMeterShutter = ""
                 pendingMeterAperture = ""
                 pendingMeterIso = ""
-            }
+            },
+            onOpenMap = onOpenMap,
         )
         return
     }
@@ -612,7 +614,8 @@ fun RollDetailScreen(
     pendingMeterShutter: String = "",
     pendingMeterAperture: String = "",
     pendingMeterIso: String = "",
-    onMeterConsumed: () -> Unit = {}
+    onMeterConsumed: () -> Unit = {},
+    onOpenMap: (String) -> Unit = {},
 ) {
     val cam   = cameras.find { it.id == roll.cameraId }
     val lens  = lenses.find  { it.id == roll.cameraLensId }
@@ -638,7 +641,6 @@ fun RollDetailScreen(
     var showScanSheet  by remember { mutableStateOf(false) }
     var confirmMsg     by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var lightboxPath   by remember { mutableStateOf<String?>(null) }
-    var showMap        by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
 
     // Shot-log exports (SAF)
@@ -769,9 +771,13 @@ fun RollDetailScreen(
                     }
                     val hasGps = roll.shots.any { it.location.contains(",") }
                     if (hasGps) {
-                        VaultButton(text = if (showMap) "List" else "Map", small = true, ghost = true,
-                    icon = if (showMap) FilmIcons.ContactSheet else FilmIcons.Map,
-                            onClick = { showMap = !showMap })
+                        // Opens the map screen filtered to this roll, rather
+                        // than dropping a map panel into this list. A map inside
+                        // a LazyColumn owns the vertical drag it needs to pan,
+                        // which is the same drag the list needs to scroll — one
+                        // of them always loses, and here it was both.
+                        VaultButton("Map", small = true, ghost = true, icon = FilmIcons.Map,
+                            onClick = { onOpenMap(roll.id) })
                     }
                     if (!roll.finished) {
                         VaultButton("+1", small = true, ghost = true,
@@ -783,22 +789,6 @@ fun RollDetailScreen(
                                 showShotSheet = true
                             })
                     }
-                }
-            }
-        }
-
-        // Map view (toggled)
-        if (showMap) {
-            item(key = "map") {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(300.dp)
-                        
-                        .border(1.dp, FilmTheme.colors.edge)
-                ) {
-                    com.analogvault.ui.components.OsmMapView(
-                        shots = roll.shots,
-                        rollName = film?.name ?: ""
-                    )
                 }
             }
         }
