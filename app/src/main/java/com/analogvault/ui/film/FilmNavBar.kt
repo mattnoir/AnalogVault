@@ -74,7 +74,6 @@ fun FilmNavBar(
     onSelect: (Int) -> Unit,
     onShutter: () -> Unit,
     modifier: Modifier = Modifier,
-    shutterLabel: String = "LOG",
     /** Long-press the shutter. Wired to safelight — see [ShutterButton]. */
     onShutterLongPress: (() -> Unit)? = null,
 ) {
@@ -94,7 +93,6 @@ fun FilmNavBar(
             NavButton(items[0], selectedIndex == 0) { onSelect(0) }
             NavButton(items[1], selectedIndex == 1) { onSelect(1) }
             ShutterButton(
-                label = shutterLabel,
                 onClick = onShutter,
                 onLongClick = onShutterLongPress,
             )
@@ -202,7 +200,6 @@ private fun RowScope.NavButton(
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ShutterButton(
-    label: String,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -255,13 +252,25 @@ private fun ShutterButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        // White on the disc in the normal scheme; under safelight the label is
-        // punched out of the red instead, because a white glyph is white light
-        // however small it is.
-        Text(
-            label,
-            style = FilmTheme.type.rebate,
-            color = if (colors.safelight) colors.void else Color.White,
+        // An iris, not the word LOG.
+        //
+        // The shutter is the one control this app expects you to find without
+        // reading it, and a three-letter label is a thing you read. The iris
+        // says what the button is at a glance and in any language, and it is
+        // the only icon in the set drawn as a circle, which is what the shutter
+        // already was.
+        //
+        // White on the disc in the normal scheme; under safelight it is punched
+        // out of the red instead, because a white glyph is white light however
+        // small it is. Body and accent take the same colour: the dye detail
+        // would be a third tone on a two-tone button.
+        val glyph = if (colors.safelight) colors.void else Color.White
+        FilmIcon(
+            spec = FilmIcons.Aperture,
+            contentDescription = null,
+            size = 30.dp,
+            tint = glyph,
+            accent = glyph,
         )
     }
 }
