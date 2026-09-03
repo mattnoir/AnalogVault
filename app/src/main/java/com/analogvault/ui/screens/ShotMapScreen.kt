@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
+import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -83,8 +84,21 @@ data class MapCluster(
 /** About a metre. Below this, two fixes are the same place. */
 private const val SAME_PLACE = 1e-5
 
-/** How close two markers may sit before they merge, in dp. */
-private const val CLUSTER_RADIUS_DP = 44f
+/**
+ * Marker size.
+ *
+ * Big enough to read a two-digit frame number at arm's length and to hit with a
+ * thumb, which the first pass at 26dp was neither.
+ */
+private val MARKER_SIZE = 38.dp
+
+/**
+ * How close two markers may sit before they merge, in dp.
+ *
+ * Kept above [MARKER_SIZE]: a radius smaller than the markers themselves lets
+ * two ungrouped pins overlap, which looks like a bug in the grouping.
+ */
+private const val CLUSTER_RADIUS_DP = 52f
 
 /** Individual buildings are legible from here down. */
 private const val STREET_ZOOM = 16.5
@@ -153,6 +167,26 @@ fun ShotMapScreen(
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
         }
     }
+    // The map goes inside a FrameLayout that clips, because Compose's host view
+    // does not: AndroidComposeView sets clipChildren = false so its own drawing
+    // works, which lets a native child paint outside the bounds Compose gave it.
+    // osmdroid draws whole tiles, so the edge ones spilled past the map — over
+    // the header, and up behind the transparent status bar. A container with
+    // clipChildren = true is the only thing that stops it, since the spill is
+    // the view system drawing, not anything Compose can clip.
+    val mapContainer = remember(mapView) {
+        FrameLayout(context).apply {
+            clipChildren = true
+            clipToPadding = true
+            addView(
+                mapView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        }
+    }
     DisposableEffect(mapView) {
         val listener = object : MapListener {
             override fun onZoom(event: ZoomEvent?): Boolean {
@@ -189,8 +223,9 @@ fun ShotMapScreen(
             }
         } else {
             AndroidView(
-                factory = { mapView },
-                update = { mv ->
+                factory = { mapContainer },
+                update = {
+                    val mv = mapView
                     mv.overlays.clear()
 
                     // A single roll gets its frames joined in the order they
@@ -213,11 +248,12 @@ fun ShotMapScreen(
                             Marker(mv).apply {
                                 position = cluster.point
                                 icon = frameMarker(
+                                    res = context.resources,
                                     label = if (cluster.frames.size > 1) "${cluster.frames.size}"
                                             else "${cluster.frames.first().frameNumber}",
                                     accent = cluster.accent,
                                     onAccent = colors.void,
-                                    sizePx = with(density) { 26.dp.toPx() }.toInt(),
+                                    sizePx = with(density) { MARKER_SIZE.toPx() }.toInt(),
                                     stacked = cluster.frames.size > 1,
                                 )
                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -276,7 +312,13 @@ fun ShotMapScreen(
             Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
+                // Background first, inset second, so the void is painted behind
+                // the status bar and the content starts below it. The app draws
+                // edge to edge, and the map is the first screen with something
+                // opaque at the top — every other one starts with black, which
+                // is why nothing needed this until now.
                 .background(colors.void)
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(bottom = 8.dp),
         ) {
             Row(
@@ -539,6 +581,15 @@ private fun fit(mv: MapView, clusters: List<MapCluster>) {
  * asset cannot follow the safelight swap.
  */
 private fun frameMarker(
+    /**
+     * The device's resources, not null.
+     *
+     * A BitmapDrawable built with null resources targets density 160, so its
+     * intrinsic size comes out scaled by 160/deviceDensity — on this phone a
+     * bitmap asked to be 38dp wide reported itself as about 14dp, which is why
+     * the pins were tiny however large the bitmap was drawn.
+     */
+    res: android.content.res.Resources,
     label: String,
     accent: Color,
     onAccent: Color,
@@ -590,5 +641,5 @@ private fun frameMarker(
     val cx = inset + (sizePx - inset * 2) / 2f
     val cy = inset + offset + (sizePx - inset * 2) / 2f
     canvas.drawText(label, cx, cy - (text.descent() + text.ascent()) / 2f, text)
-    return BitmapDrawable(null, bmp)
+    return BitmapDrawable(res, bmp)
 }
