@@ -38,6 +38,9 @@ import com.analogvault.ui.film.FilmIconSpec
 import com.analogvault.ui.film.FilmIcons
 import com.analogvault.ui.film.FilmNavBar
 import com.analogvault.ui.film.FilmNavItem
+import com.analogvault.ui.film.ShutterOverlay
+import com.analogvault.ui.film.rememberShutterConfig
+import com.analogvault.ui.film.rememberShutterController
 import com.analogvault.ui.film.ChromaticText
 import com.analogvault.ui.film.filmGrain
 import com.analogvault.ui.screens.*
@@ -194,6 +197,19 @@ fun VaultApp() {
         currentTab = tab
     }
 
+    // The meter arrives and leaves through an iris.
+    //
+    // It is the only destination that is not a tab — it is the instrument the
+    // whole bar is arranged around — and it is the only one reached by pressing
+    // a shutter release, so it is the one that gets a shutter. Everything else
+    // keeps the slide-and-fade, which is what makes this read as different
+    // rather than as the app's usual noise.
+    val shutter = rememberShutterController()
+    val shutterConfig = rememberShutterConfig()
+
+    fun openMeter() = shutter.play(shutterConfig) { navigateTo(Tab.METER) }
+    fun closeMeter() = shutter.play(shutterConfig) { currentTab = tabBeforeMeter }
+
     fun openMap(rollId: String?) {
         mapRollId = rollId
         navigateTo(Tab.SHOTMAP)
@@ -202,11 +218,15 @@ fun VaultApp() {
     // Back: walk up one level — meter → wherever the shutter was pressed,
     // More sub-screens → More, any other tab → Home, Home → exit.
     BackHandler(enabled = currentTab != Tab.DASH) {
-        currentTab = when {
-            currentTab == Tab.METER   -> tabBeforeMeter
-            currentTab == Tab.SHOTMAP -> tabBeforeMap
-            currentTab in MORE_TABS   -> Tab.MORE
-            else                      -> Tab.DASH
+        if (currentTab == Tab.METER) {
+            // Out through the shutter, the same way it came in.
+            closeMeter()
+        } else {
+            currentTab = when {
+                currentTab == Tab.SHOTMAP -> tabBeforeMap
+                currentTab in MORE_TABS   -> Tab.MORE
+                else                      -> Tab.DASH
+            }
         }
     }
 
@@ -231,7 +251,7 @@ fun VaultApp() {
                         .takeIf { it >= 0 }
                         ?: BOTTOM_TABS.indexOf(Tab.MORE).takeIf { isMoreSub },
                     onSelect = { navigateTo(BOTTOM_TABS[it]) },
-                    onShutter = { navigateTo(Tab.METER) },
+                    onShutter = { openMeter() },
                     onShutterLongPress = { vm.toggleSafelight() },
                 )
             }
@@ -240,11 +260,18 @@ fun VaultApp() {
         AnimatedContent(
             targetState = currentTab,
             transitionSpec = {
-                // Slide toward the side the target tab sits on: rightward tab → enter from right,
-                // leftward tab → enter from left. Gives a sense of where each tab lives.
-                val dir = if (tabOrder(targetState) >= tabOrder(initialState)) 1 else -1
-                (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { dir * it / 6 }) togetherWith
-                (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { -dir * it / 6 })
+                // The meter is the one destination the shutter covers, and a
+                // screen sliding underneath a closed iris shows through the gap
+                // at its edge. Swap it instantly and let the blades do the work.
+                if (targetState == Tab.METER || initialState == Tab.METER) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    // Slide toward the side the target tab sits on: rightward tab → enter from right,
+                    // leftward tab → enter from left. Gives a sense of where each tab lives.
+                    val dir = if (tabOrder(targetState) >= tabOrder(initialState)) 1 else -1
+                    (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { dir * it / 6 }) togetherWith
+                    (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { -dir * it / 6 })
+                }
             },
             label = "tab",
             modifier = Modifier.padding(padding)
@@ -258,7 +285,7 @@ fun VaultApp() {
                             4 -> Tab.METER;  5 -> Tab.WEATHER; 6 -> Tab.STATS
                             else -> Tab.DASH
                         }
-                        navigateTo(target, subTab)
+                        if (target == Tab.METER) openMeter() else navigateTo(target, subTab)
                     })
                 Tab.STASH    -> StashScreen(vm)
                 Tab.ACTIVE   -> ActiveScreen(
@@ -281,7 +308,7 @@ fun VaultApp() {
                 Tab.METER    -> Box(Modifier.fillMaxSize()) {
                     MeterScreen(
                         vm = vm,
-                        onClose = { currentTab = tabBeforeMeter },
+                        onClose = { closeMeter() },
                         onUseInShot = { sh, ap, iso ->
                             meterShutter = sh; meterAperture = ap; meterIso = iso
                             navigateTo(Tab.ACTIVE, 0)
@@ -307,6 +334,11 @@ fun VaultApp() {
             }
         }
     }
+    // Drawn last, as a sibling of the Scaffold rather than inside its content,
+    // so the blades cover the nav bar and the system bars as well. At rest it
+    // composes nothing at all.
+    ShutterOverlay(shutter, shutterConfig)
+
 }
 
 @Composable
