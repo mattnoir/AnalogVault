@@ -76,6 +76,15 @@ data class ShutterConfig(
     val chromatic: Float = 0.60f,
     val seams: Boolean = true,
     val flash: Boolean = true,
+    /**
+     * How long the exposure flash lasts.
+     *
+     * Kept at or under [holdMs] on purpose: a flash still fading while the
+     * blades part is not a flash, it is a veil over the opening. The first cut
+     * ran for holdMs + 140 and read as a grey screen between the two halves of
+     * the transition rather than as a click of light.
+     */
+    val flashMs: Int = 90,
     val haptics: Boolean = true,
     /** Pure black, which costs nothing on an OLED panel. */
     val bladeColor: Color = Color.Black,
@@ -94,17 +103,33 @@ data class ShutterConfig(
  * motion stays.
  */
 @Composable
-fun rememberShutterConfig(blades: Int = 8): ShutterConfig {
+fun rememberShutterConfig(
+    blades: Int = 8,
+    /**
+     * Off by default.
+     *
+     * The plan's expose phase washes the whole screen while the blades are shut,
+     * and with nothing else on screen at that moment a wash is all you see: it
+     * reads as a grey plate dropped between the closing and the opening rather
+     * than as a click of light. The haptic already marks the exposure, and it
+     * marks it in the sense that is actually free at that instant. Turn it back
+     * on here if a future screen gives the flash something to light.
+     */
+    flash: Boolean = false,
+): ShutterConfig {
     val colors = FilmTheme.colors
-    return remember(colors, blades) {
+    return remember(colors, blades, flash) {
         ShutterConfig(
             blades = blades,
             glow = if (colors.safelight) 0.35f else 0.85f,
-            flash = !colors.safelight,
+            flash = flash && !colors.safelight,
             rimCyan = colors.cyan,
             rimMagenta = colors.magenta,
             rimCore = if (colors.safelight) colors.halide else colors.yellow,
-            flashColor = colors.halide,
+            // Not a palette colour: this is light coming through a lens, and
+            // the palette's near-white is a cool silver that washes the black
+            // blades grey rather than reading as an exposure.
+            flashColor = Color(0xFFFFF6D8),
         )
     }
 }
@@ -213,7 +238,10 @@ class ShutterController internal constructor(
 
     private suspend fun runFlash(config: ShutterConfig) {
         val f = Animatable(1f)
-        f.animateTo(0f, tween(config.holdMs + 140)) { flash = value }
+        // Bright immediately, then most of the way gone within a couple of
+        // frames — the shape of a light that was let in and shut off, not a
+        // fade.
+        f.animateTo(0f, tween(config.flashMs, easing = FlashDecay)) { flash = value }
         flash = 0f
     }
 }
@@ -236,6 +264,9 @@ fun rememberShutterController(): ShutterController {
 /** AccelerateInterpolator(0.9f) is x^1.8; DecelerateInterpolator(0.85f) is 1−(1−x)^1.7. */
 private val AccelerateEasing = Easing { it.coerceIn(0f, 1f).pow(1.8f) }
 private val DecelerateEasing = Easing { 1f - (1f - it.coerceIn(0f, 1f)).pow(1.7f) }
+
+/** Most of the drop in the first quarter of the duration. */
+private val FlashDecay = Easing { sqrt(it.coerceIn(0f, 1f)) }
 
 // ─── Overlay ──────────────────────────────────────────────────────────────────
 
