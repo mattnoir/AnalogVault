@@ -90,14 +90,30 @@ fun rememberStockAccent(
     type: String,
     override: String = "",
 ): StockAccent {
-    val colors = FilmTheme.colors
-    val accent = resolveAccent(colors, name, type, override)
-
     // A stock accent is the one colour on screen that does not come from the
     // scheme, so the safelight swap misses it: left alone, Tri-X's white and
     // Vision 3's cyan go on throwing a second hue in the dark, which is the
-    // exact thing the mode exists to stop. Fold the accent into the red ramp
-    // instead of dropping it — brightness still tells the stocks apart.
+    // exact thing the mode exists to stop. [stockAccentFor] folds the accent
+    // into the red ramp instead of dropping it — brightness still tells the
+    // stocks apart.
+    return stockAccentFor(FilmTheme.colors, name, type, override)
+}
+
+/**
+ * The same resolution as [rememberStockAccent], for callers outside composition
+ * — building a list of map markers, say, where the accent is one field of a data
+ * object rather than something being drawn.
+ *
+ * Takes the palette as a parameter because [FilmTheme] is a CompositionLocal.
+ * Read it once at the call site and pass it in.
+ */
+fun stockAccentFor(
+    colors: FilmColors,
+    name: String,
+    type: String,
+    override: String = "",
+): StockAccent {
+    val accent = resolveAccent(colors, name, type, override)
     return if (colors.safelight) accent.toSafelight(colors) else accent
 }
 

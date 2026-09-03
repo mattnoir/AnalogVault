@@ -1,6 +1,7 @@
 package com.analogvault.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -23,16 +24,23 @@ import androidx.compose.ui.unit.sp
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.Stats
 import com.analogvault.ui.components.*
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
 import com.analogvault.ui.theme.FilmTheme
 import kotlinx.coroutines.launch
 
 @Composable
-fun StatsScreen(vm: MainViewModel) {
+fun StatsScreen(vm: MainViewModel, onOpenMap: () -> Unit = {}) {
     val colors   = FilmTheme.colors
     val stats    by vm.stats.collectAsState()
     val currency by vm.currency.collectAsState()
+    val rolls    by vm.rolls.collectAsState()
 
-    val tabs = listOf("Numbers", "Habits", "Map")
+    // Two tabs, not three. The map was the third, and a pager is the one parent
+    // a map cannot live inside: the drag that pans it is the same drag that
+    // turns the page, so every attempt to move west went to Habits instead. It
+    // is a screen of its own now, entered from the row at the end of Numbers.
+    val tabs = listOf("Numbers", "Habits")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
@@ -57,11 +65,14 @@ fun StatsScreen(vm: MainViewModel) {
             }
         }
 
+        val framesWithGps = remember(rolls) {
+            rolls.sumOf { roll -> roll.shots.count { parseLatLon(it.location) != null } }
+        }
+
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
-                0    -> StatsNumbers(stats, currency)
-                1    -> StatsHabits(stats)
-                else -> StatsMap(vm)
+                0    -> StatsNumbers(stats, currency, framesWithGps, onOpenMap)
+                else -> StatsHabits(stats)
             }
         }
     }
@@ -70,13 +81,44 @@ fun StatsScreen(vm: MainViewModel) {
 // ─── Numbers tab ──────────────────────────────────────────────────────────────
 
 @Composable
-fun StatsNumbers(stats: Stats, currency: String = "€") {
+fun StatsNumbers(
+    stats: Stats,
+    currency: String = "€",
+    framesWithGps: Int = 0,
+    onOpenMap: () -> Unit = {},
+) {
     val colors = FilmTheme.colors
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
+        if (framesWithGps > 0) {
+            item(key = "map_link") {
+                Row(
+                    Modifier
+                        .padding(horizontal = 14.dp)
+                        .padding(top = 12.dp)
+                        .fillMaxWidth()
+                        .background(colors.film)
+                        .border(1.dp, colors.edge)
+                        .clickable(onClick = onOpenMap)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    DyeIcon(FilmIcons.Map, null, size = 20.dp, tint = colors.halide)
+                    Column(Modifier.weight(1f)) {
+                        Text("SHOT MAP", style = FilmTheme.type.stock.copy(fontSize = 17.sp),
+                            color = colors.halide)
+                        Spacer(Modifier.height(2.dp))
+                        Text("$framesWithGps FRAME${if (framesWithGps == 1) "" else "S"} WITH GPS",
+                            style = FilmTheme.type.rebate, color = colors.dim)
+                    }
+                    DyeIcon(FilmIcons.ChevronRight, null, size = 18.dp, tint = colors.dim)
+                }
+            }
+        }
         item {
             Row(
                 Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -364,60 +406,6 @@ private fun HabitSummary(buckets: List<Pair<String, Int>>, label: String, prefix
 private fun HabitStat(text: String, color: Color) {
     Box(Modifier.border(1.dp, color).padding(horizontal = 6.dp, vertical = 3.dp)) {
         Text(text, style = FilmTheme.type.data, color = color, maxLines = 1)
-    }
-}
-
-// ─── Map tab ──────────────────────────────────────────────────────────────────
-
-@Composable
-fun StatsMap(vm: MainViewModel) {
-    val colors = FilmTheme.colors
-    val rolls by vm.rolls.collectAsState()
-    val films by vm.films.collectAsState()
-
-    // Build all MapShot entries from all rolls
-    val allMapShots = remember(rolls, films) {
-        rolls.flatMap { roll ->
-            val filmName = films.find { it.id == roll.filmId }?.name ?: "Unknown"
-            roll.shots.mapNotNull { shot ->
-                com.analogvault.ui.components.parseLatLon(shot.location)?.let { (lat, lon) ->
-                    com.analogvault.ui.components.MapShot(
-                        shot = shot,
-                        point = org.osmdroid.util.GeoPoint(lat, lon),
-                        rollName = filmName
-                    )
-                }
-            }
-        }
-    }
-
-    val totalWithGps = allMapShots.size
-    val totalShots   = rolls.sumOf { it.shots.size }
-
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().background(colors.void).padding(horizontal = 14.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("$totalWithGps FRAMES WITH GPS", style = FilmTheme.type.rebate, color = colors.halide)
-            if (totalShots > 0) {
-                Text("${totalWithGps * 100 / totalShots}%", style = FilmTheme.type.rebate, color = colors.dim)
-            }
-        }
-
-        if (allMapShots.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("NO GPS DATA YET", style = FilmTheme.type.data, color = colors.dead)
-                    Spacer(Modifier.height(8.dp))
-                    Text("WHEN LOGGING A FRAME, TAP THE PIN TO CAPTURE LOCATION",
-                        style = FilmTheme.type.rebate, color = colors.dim)
-                }
-            }
-        } else {
-            OsmMapViewMulti(mapShots = allMapShots, modifier = Modifier.fillMaxSize())
-        }
     }
 }
 

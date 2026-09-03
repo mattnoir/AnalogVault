@@ -137,7 +137,10 @@ private enum class Tab(val label: String, val icon: FilmIconSpec) {
     HOMELAYOUT("Home layout", FilmIcons.ContactSheet),
     WEATHER ("Weather", FilmIcons.Weather),
     BACKUP  ("Backup",  FilmIcons.Backup),
-    SETTINGS("Settings",FilmIcons.Settings)
+    SETTINGS("Settings",FilmIcons.Settings),
+    // Not in the bar and not under More: the map is opened from the thing it is
+    // about — Stats for all rolls, a roll for one — and back returns there.
+    SHOTMAP ("Shot map", FilmIcons.Map)
 }
 
 // Four destinations, two either side of the shutter.
@@ -156,6 +159,7 @@ private fun tabOrder(tab: Tab): Int = when (tab) {
     Tab.DARK -> 4; Tab.STATS -> 5; Tab.WEATHER -> 6; Tab.HOMELAYOUT -> 7
     Tab.BACKUP -> 8; Tab.SETTINGS -> 9
     Tab.METER -> 10
+    Tab.SHOTMAP -> 11
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,20 +181,32 @@ fun VaultApp() {
     // Where the shutter was pressed from, so closing the meter returns there
     // rather than dumping the user on Home mid-task.
     var tabBeforeMeter by remember { mutableStateOf(Tab.DASH) }
+    // Same for the map, which is opened from two places and has to go back to
+    // whichever one asked for it.
+    var tabBeforeMap by remember { mutableStateOf(Tab.STATS) }
+    // Null means every roll; a roll id opens the map filtered to it.
+    var mapRollId by remember { mutableStateOf<String?>(null) }
 
     fun navigateTo(tab: Tab, subTab: Int = 0) {
         if (tab == Tab.ACTIVE) activeSubTab = subTab
         if (tab == Tab.METER && currentTab != Tab.METER) tabBeforeMeter = currentTab
+        if (tab == Tab.SHOTMAP && currentTab != Tab.SHOTMAP) tabBeforeMap = currentTab
         currentTab = tab
+    }
+
+    fun openMap(rollId: String?) {
+        mapRollId = rollId
+        navigateTo(Tab.SHOTMAP)
     }
 
     // Back: walk up one level — meter → wherever the shutter was pressed,
     // More sub-screens → More, any other tab → Home, Home → exit.
     BackHandler(enabled = currentTab != Tab.DASH) {
         currentTab = when {
-            currentTab == Tab.METER -> tabBeforeMeter
-            currentTab in MORE_TABS -> Tab.MORE
-            else                    -> Tab.DASH
+            currentTab == Tab.METER   -> tabBeforeMeter
+            currentTab == Tab.SHOTMAP -> tabBeforeMap
+            currentTab in MORE_TABS   -> Tab.MORE
+            else                      -> Tab.DASH
         }
     }
 
@@ -253,7 +269,8 @@ fun VaultApp() {
                     meterAperture = meterAperture,
                     meterIso      = meterIso,
                     onMeterConsumed      = { meterShutter = ""; meterAperture = ""; meterIso = "" },
-                    onNavigateToDarkroom = { navigateTo(Tab.DARK) }
+                    onNavigateToDarkroom = { navigateTo(Tab.DARK) },
+                    onOpenMap            = { rollId -> openMap(rollId) },
                 )
                 // The meter owns its whole frame, status line and close button
                 // included — the readouts sit on the preview and the commit bar
@@ -274,7 +291,16 @@ fun VaultApp() {
                 Tab.WEATHER  -> WeatherScreen(vm)
                 Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
                 Tab.DARK     -> DarkroomScreen(vm)
-                Tab.STATS    -> StatsScreen(vm)
+                Tab.STATS    -> StatsScreen(vm, onOpenMap = { openMap(null) })
+                Tab.SHOTMAP  -> ShotMapScreen(
+                    vm = vm,
+                    initialRollId = mapRollId,
+                    onBack = { currentTab = tabBeforeMap },
+                    onOpenRoll = { rollId ->
+                        initialRollId = rollId
+                        navigateTo(Tab.ACTIVE, 0)
+                    },
+                )
                 Tab.HOMELAYOUT -> HomeLayoutScreen(vm)
                 Tab.BACKUP   -> BackupScreen()
                 Tab.SETTINGS -> SettingsScreen(vm)
