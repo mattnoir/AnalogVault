@@ -12,6 +12,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -240,6 +241,30 @@ private val FilmShapes = Shapes(
     large = NoCorners,
     extraLarge = NoCorners,
 )
+
+/**
+ * The colour to draw *on* an accent — a label inside a filled button, the glyph
+ * on the shutter disc.
+ *
+ * A guard, not a rule. [preferred] is what the design asks for and what it
+ * returns whenever that still reads: black on a magenta button, white on the
+ * shutter's magenta disc. It swaps only when the pair falls under 3:1, which is
+ * what happens once the accent saturation slider pulls an accent toward the
+ * middle greys and the intended colour starts sinking into its own background.
+ *
+ * 3:1 rather than 4.5:1 because everything this covers is either a large glyph
+ * or short caps at button size — the WCAG large-text threshold.
+ */
+fun FilmColors.onAccent(accent: Color, preferred: Color = halide): Color {
+    val alternative = if (preferred == void) halide else void
+    return if (contrastRatio(preferred, accent) >= 3f) preferred else alternative
+}
+
+private fun contrastRatio(a: Color, b: Color): Float {
+    val la = a.luminance() + 0.05f
+    val lb = b.luminance() + 0.05f
+    return if (la > lb) la / lb else lb / la
+}
 
 private fun FilmColors.withSaturation(factor: Float): FilmColors = copy(
     cyan = cyan.withSaturation(factor),

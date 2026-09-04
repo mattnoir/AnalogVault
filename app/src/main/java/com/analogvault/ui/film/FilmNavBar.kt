@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.analogvault.ui.theme.onAccent
 import com.analogvault.ui.theme.FilmTheme
 
 /** One destination in [FilmNavBar]. */
@@ -156,7 +157,7 @@ private fun RowScope.NavButton(
                     Text(
                         item.badge.toString(),
                         style = FilmTheme.type.rebate,
-                        color = colors.void,
+                        color = colors.onAccent(colors.magenta, preferred = colors.void),
                     )
                 }
             }
@@ -260,11 +261,13 @@ private fun ShutterButton(
         // the only icon in the set drawn as a circle, which is what the shutter
         // already was.
         //
-        // White on the disc in the normal scheme; under safelight it is punched
-        // out of the red instead, because a white glyph is white light however
-        // small it is. Body and accent take the same colour: the dye detail
-        // would be a third tone on a two-tone button.
-        val glyph = if (colors.safelight) colors.void else Color.White
+        // Read off the disc rather than fixed white: the disc is magenta, and
+        // magenta at low accent saturation is a pale grey that a white iris
+        // disappears into. Under safelight this lands on void anyway, which is
+        // what that scheme wants — a white glyph is white light however small.
+        // Body and accent take the same colour: the dye detail would be a third
+        // tone on a two-tone button.
+        val glyph = colors.onAccent(colors.magenta, preferred = Color.White)
         FilmIcon(
             spec = FilmIcons.Aperture,
             contentDescription = null,

@@ -148,19 +148,30 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             Spacer(Modifier.height(12.dp))
             Column {
+                // Null except while a drag is in flight.
+                var draggedSaturation by remember { mutableStateOf<Float?>(null) }
+                val shownSaturation = draggedSaturation ?: saturation
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Accent saturation", color = FilmTheme.colors.dim, fontSize = 13.sp,
                         modifier = Modifier.weight(1f))
-                    Text("${(saturation * 100).roundToInt()}%",
+                    Text("${(shownSaturation * 100).roundToInt()}%",
                         color = FilmTheme.colors.halide, fontSize = 13.sp)
                 }
                 Text("Mutes the cyan/magenta/yellow/orange/violet accents for eye comfort. " +
                     "No effect while Safelight is on.",
                     color = FilmTheme.colors.dim, fontSize = 11.sp)
                 Slider(
-                    value = saturation,
-                    onValueChange = { vm.setSaturation(it) },
+                    // Dragging is local; the write happens when the finger
+                    // lifts. Persisting on every value change wrote to Room on
+                    // every frame of the drag, which showed up in logcat as a
+                    // stream of SQLITE_IOERR_LOCK from the settings table.
+                    value = draggedSaturation ?: saturation,
+                    onValueChange = { draggedSaturation = it },
+                    onValueChangeFinished = {
+                        draggedSaturation?.let { vm.setSaturation(it) }
+                        draggedSaturation = null
+                    },
                     valueRange = 0f..1f,
                     enabled = !safelight,
                     colors = SliderDefaults.colors(

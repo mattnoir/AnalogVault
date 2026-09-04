@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.analogvault.ui.theme.onAccent
 import com.analogvault.ui.theme.FilmTheme
 
 /**
@@ -44,7 +45,8 @@ fun FilmChip(
         Text(
             text = text.uppercase(),
             style = FilmTheme.type.data,
-            color = if (filled) FilmTheme.colors.void else color,
+            color = if (filled) FilmTheme.colors.onAccent(color, preferred = FilmTheme.colors.void)
+                    else color,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
