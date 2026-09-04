@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
             val safelight by vm.safelight.collectAsState()
             val saturation by vm.saturation.collectAsState()
             val legacyAmber by vm.legacyAmber.collectAsState()
+            val themeReady by vm.themeReady.collectAsState()
             FilmTheme(
                 safelight = safelight,
                 legacyAmber = legacyAmber,
@@ -124,7 +125,11 @@ class MainActivity : ComponentActivity() {
                         .background(FilmTheme.colors.void)
                         .filmGrain()
                 ) {
-                    VaultApp()
+                    // Nothing until the palette is known. The window background
+                    // is black, this container is black, and every scheme starts
+                    // from black — so the wait is invisible, where drawing first
+                    // and correcting afterwards was not.
+                    if (themeReady) VaultApp()
                 }
             }
         }

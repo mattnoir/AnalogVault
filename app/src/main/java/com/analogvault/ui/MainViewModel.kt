@@ -139,15 +139,25 @@ class MainViewModel @Inject constructor(
     init {
         viewModelScope.launch(Dispatchers.IO) { migratePhotosFromCache() }
         viewModelScope.launch {
+            // The palette first, and nothing before it.
+            //
+            // These three decide what colour the app is, and the UI waits on
+            // themeReady before it draws anything (see MainActivity). Read
+            // anywhere further down this block and the first frame is the
+            // default scheme, with the real one arriving a beat later — which
+            // is exactly what the amber theme looked like: a second of neon,
+            // then a swap.
+            _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
+            _legacyAmber.value = (repo.getSetting("legacy_amber") ?: "false") == "true"
+            _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
+            _themeReady.value = true
+
             _owmKey.value   = repo.getSetting("owm_key") ?: ""
             _currency.value = repo.getSetting("currency") ?: "€"
             _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
             _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
-            _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
-            _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
-            _legacyAmber.value = (repo.getSetting("legacy_amber") ?: "false") == "true"
             _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
             _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
             _placeName.value = repo.getSetting("place_name").orEmpty()
@@ -555,6 +565,17 @@ class MainViewModel @Inject constructor(
         _safelight.value = on; repo.setSetting("safelight", on.toString())
     }
     fun toggleSafelight() = setSafelight(!_safelight.value)
+
+    /**
+     * False until the palette settings have been read.
+     *
+     * The window background is already black, so holding the first frame until
+     * this flips costs a few milliseconds of the black the app starts on
+     * anyway — and it is the difference between opening in your theme and
+     * opening in someone else's.
+     */
+    private val _themeReady = MutableStateFlow(false)
+    val themeReady: StateFlow<Boolean> = _themeReady.asStateFlow()
 
     /**
      * The palette the app wore before the Dye Layer redesign — same design,
