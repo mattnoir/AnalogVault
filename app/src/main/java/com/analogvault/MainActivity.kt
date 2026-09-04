@@ -109,7 +109,12 @@ class MainActivity : ComponentActivity() {
             // you were not looking at still burning white.
             val safelight by vm.safelight.collectAsState()
             val saturation by vm.saturation.collectAsState()
-            FilmTheme(safelight = safelight, saturation = saturation) {
+            val legacyAmber by vm.legacyAmber.collectAsState()
+            FilmTheme(
+                safelight = safelight,
+                legacyAmber = legacyAmber,
+                saturation = saturation,
+            ) {
                 // The grain is applied exactly once, here, on the root container —
                 // one tiled draw for the whole tree. Never per screen and never
                 // per list item; see FilmModifiers.filmGrain.

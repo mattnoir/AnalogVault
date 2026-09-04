@@ -35,6 +35,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val highRefresh by vm.highRefresh.collectAsState()
     val safelight by vm.safelight.collectAsState()
     val saturation by vm.saturation.collectAsState()
+    val legacyAmber by vm.legacyAmber.collectAsState()
     val remindersEnabled  by vm.remindersEnabled.collectAsState()
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
@@ -105,6 +106,23 @@ fun SettingsScreen(vm: MainViewModel) {
                 Switch(
                     checked = highRefresh,
                     onCheckedChange = { vm.saveHighRefresh(it) },
+                    colors = settingsSwitchColors(),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Legacy amber", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                    Text("The palette from before the redesign — amber, brown and " +
+                        "orange. Same layouts, film strips and type; only the " +
+                        "colours change. Safelight overrides it.",
+                        color = FilmTheme.colors.dim, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = legacyAmber,
+                    onCheckedChange = { vm.setLegacyAmber(it) },
+                    enabled = !safelight,
                     colors = settingsSwitchColors(),
                 )
             }

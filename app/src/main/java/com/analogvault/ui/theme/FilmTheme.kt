@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
@@ -126,6 +127,47 @@ val SafelightColors = FilmColors(
     dim = Color(0xFFC23A24),
     dead = Color(0xFF4A0F00),
     safelight = true,
+)
+
+/**
+ * The palette the app wore before the Dye Layer redesign, kept as a third
+ * scheme rather than as a fork of the design.
+ *
+ * Only the colours come back. Square corners, hairline borders, mono numerals,
+ * the film-strip cards and the sprocket rails all stay — this is the same app
+ * in its old coat, not the old app. Everything is read through
+ * [FilmTheme.colors], so restoring the palette is a matter of filling the same
+ * twelve roles with the values from `master`'s `Theme.kt`.
+ *
+ * The roles are what took the thinking. The old scheme was one accent and a
+ * pile of greys, and this design needs five accents that are distinguishable at
+ * a glance, so the mapping spreads the warm end of the old palette across them
+ * by brightness — bright amber for live, plain amber for the action that
+ * commits (which is what its filled buttons were), the warn orange for waiting,
+ * the error red for decay and out-of-range, and the dark brown for structure.
+ */
+val LegacyAmberColors = FilmColors(
+    // AmberBright — loaded, live, selected.
+    cyan = Color(0xFFF0B06A),
+    // Amber — the old filled button, so it keeps being the commit colour.
+    magenta = Color(0xFFD4935A),
+    // OrangeWarn — waiting, attention, metered light.
+    yellow = Color(0xFFE0A952),
+    // RedErr — expiry, out-of-range, latent-image decay.
+    mask = Color(0xFFC45050),
+    // AmberDark — structural accent, archive.
+    violet = Color(0xFF7A5030),
+    void = Color(0xFF0E0C0A),
+    film = Color(0xFF181512),
+    filmRaised = Color(0xFF221E18),
+    edge = Color(0xFF3A3228),
+    // TextPrimary / TextSecondary / TextTertiary, unchanged: 15:1 and 5.9:1 on
+    // the card colour, with the tertiary left below the floor as the disabled
+    // tone, exactly as `dead` is in the Dye Layer scheme.
+    halide = Color(0xFFE8DDD0),
+    dim = Color(0xFFA09080),
+    dead = Color(0xFF6A5A4A),
+    safelight = false,
 )
 
 val LocalFilmColors = staticCompositionLocalOf { DyeLayerColors }
@@ -295,13 +337,22 @@ private fun FilmColors.toMaterialScheme(): ColorScheme = darkColorScheme(
 @Composable
 fun FilmTheme(
     safelight: Boolean = false,
+    legacyAmber: Boolean = false,
     saturation: Float = 1f,
     content: @Composable () -> Unit,
 ) {
-    val colors = when {
+    // Safelight outranks everything: it is a working mode, not a preference,
+    // and a red darkroom is the only thing it is allowed to be. Below that,
+    // the chosen palette, then the saturation slider applied on top of
+    // whichever one is in play — muting amber works exactly as muting the dyes
+    // does, and both are read through the same five accent roles.
+    val base = when {
         safelight -> SafelightColors
-        saturation == 1f -> DyeLayerColors
-        else -> DyeLayerColors.withSaturation(saturation)
+        legacyAmber -> LegacyAmberColors
+        else -> DyeLayerColors
+    }
+    val colors = remember(base, saturation) {
+        if (safelight || saturation == 1f) base else base.withSaturation(saturation)
     }
     CompositionLocalProvider(
         LocalFilmColors provides colors,

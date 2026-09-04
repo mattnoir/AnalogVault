@@ -147,6 +147,7 @@ class MainViewModel @Inject constructor(
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
             _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
             _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
+            _legacyAmber.value = (repo.getSetting("legacy_amber") ?: "false") == "true"
             _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
             _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
             _placeName.value = repo.getSetting("place_name").orEmpty()
@@ -554,6 +555,17 @@ class MainViewModel @Inject constructor(
         _safelight.value = on; repo.setSetting("safelight", on.toString())
     }
     fun toggleSafelight() = setSafelight(!_safelight.value)
+
+    /**
+     * The palette the app wore before the Dye Layer redesign — same design,
+     * amber instead of dyes. Ignored while safelight is on, which is its own
+     * scheme (see FilmTheme.kt).
+     */
+    private val _legacyAmber = MutableStateFlow(false)
+    val legacyAmber: StateFlow<Boolean> = _legacyAmber.asStateFlow()
+    fun setLegacyAmber(on: Boolean) = viewModelScope.launch {
+        _legacyAmber.value = on; repo.setSetting("legacy_amber", on.toString())
+    }
 
     /**
      * Saturation of the cyan/magenta/yellow/mask/violet accent colors, 0f
