@@ -24,6 +24,7 @@ import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.util.Constants
 import com.analogvault.ui.film.DyeIcon
 import com.analogvault.ui.film.FilmIcons
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -33,6 +34,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val customIsos by vm.customIsos.collectAsState()
     val highRefresh by vm.highRefresh.collectAsState()
     val safelight by vm.safelight.collectAsState()
+    val saturation by vm.saturation.collectAsState()
     val remindersEnabled  by vm.remindersEnabled.collectAsState()
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
@@ -142,6 +144,30 @@ fun SettingsScreen(vm: MainViewModel) {
                         uncheckedThumbColor = FilmTheme.colors.dim,
                         uncheckedTrackColor = FilmTheme.colors.film,
                     )
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Accent saturation", color = FilmTheme.colors.dim, fontSize = 13.sp,
+                        modifier = Modifier.weight(1f))
+                    Text("${(saturation * 100).roundToInt()}%",
+                        color = FilmTheme.colors.halide, fontSize = 13.sp)
+                }
+                Text("Mutes the cyan/magenta/yellow/orange/violet accents for eye comfort. " +
+                    "No effect while Safelight is on.",
+                    color = FilmTheme.colors.dim, fontSize = 11.sp)
+                Slider(
+                    value = saturation,
+                    onValueChange = { vm.setSaturation(it) },
+                    valueRange = 0f..1f,
+                    enabled = !safelight,
+                    colors = SliderDefaults.colors(
+                        thumbColor = FilmTheme.colors.cyan,
+                        activeTrackColor = FilmTheme.colors.cyan,
+                        inactiveTrackColor = FilmTheme.colors.film,
+                    ),
                 )
             }
         }

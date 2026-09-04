@@ -241,6 +241,14 @@ private val FilmShapes = Shapes(
     extraLarge = NoCorners,
 )
 
+private fun FilmColors.withSaturation(factor: Float): FilmColors = copy(
+    cyan = cyan.withSaturation(factor),
+    magenta = magenta.withSaturation(factor),
+    yellow = yellow.withSaturation(factor),
+    mask = mask.withSaturation(factor),
+    violet = violet.withSaturation(factor),
+)
+
 private fun FilmColors.toMaterialScheme(): ColorScheme = darkColorScheme(
     primary = cyan, onPrimary = void,
     secondary = magenta, onSecondary = void,
@@ -262,9 +270,14 @@ private fun FilmColors.toMaterialScheme(): ColorScheme = darkColorScheme(
 @Composable
 fun FilmTheme(
     safelight: Boolean = false,
+    saturation: Float = 1f,
     content: @Composable () -> Unit,
 ) {
-    val colors = if (safelight) SafelightColors else DyeLayerColors
+    val colors = when {
+        safelight -> SafelightColors
+        saturation == 1f -> DyeLayerColors
+        else -> DyeLayerColors.withSaturation(saturation)
+    }
     CompositionLocalProvider(
         LocalFilmColors provides colors,
         LocalFilmTextStyles provides DyeLayerTextStyles,

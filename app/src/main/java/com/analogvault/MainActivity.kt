@@ -108,7 +108,8 @@ class MainActivity : ComponentActivity() {
             // screen at once. A per-screen toggle would leave whichever surface
             // you were not looking at still burning white.
             val safelight by vm.safelight.collectAsState()
-            FilmTheme(safelight = safelight) {
+            val saturation by vm.saturation.collectAsState()
+            FilmTheme(safelight = safelight, saturation = saturation) {
                 // The grain is applied exactly once, here, on the root container —
                 // one tiled draw for the whole tree. Never per screen and never
                 // per list item; see FilmModifiers.filmGrain.

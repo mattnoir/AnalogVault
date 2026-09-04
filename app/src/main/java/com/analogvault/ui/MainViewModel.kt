@@ -146,6 +146,7 @@ class MainViewModel @Inject constructor(
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
             _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
+            _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
             _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
             _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
             _placeName.value = repo.getSetting("place_name").orEmpty()
@@ -553,6 +554,18 @@ class MainViewModel @Inject constructor(
         _safelight.value = on; repo.setSetting("safelight", on.toString())
     }
     fun toggleSafelight() = setSafelight(!_safelight.value)
+
+    /**
+     * Saturation of the cyan/magenta/yellow/mask/violet accent colors, 0f
+     * (grayscale) to 1f (full dye-layer saturation, the default). Mutes the
+     * high-contrast accents for eye comfort; has no effect while safelight is
+     * active (see FilmTheme.kt).
+     */
+    private val _saturation = MutableStateFlow(1f)
+    val saturation: StateFlow<Float> = _saturation.asStateFlow()
+    fun setSaturation(value: Float) = viewModelScope.launch {
+        _saturation.value = value; repo.setSetting("saturation", value.toString())
+    }
 
     private val _devTempC = MutableStateFlow(20.0)
     val devTempC: StateFlow<Double> = _devTempC.asStateFlow()
