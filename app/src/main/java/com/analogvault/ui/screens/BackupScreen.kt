@@ -24,12 +24,17 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.analogvault.data.backup.BackupResult
 import com.analogvault.ui.BackupViewModel
+import com.analogvault.ui.components.IconLabel
 import com.analogvault.ui.components.SectionCard
 import com.analogvault.ui.components.SectionTitle
 import com.analogvault.ui.components.VaultButton
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import java.text.SimpleDateFormat
 import java.util.*
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
+import com.analogvault.ui.film.FilmIconSpec
 
 @Composable
 fun BackupScreen() {
@@ -62,11 +67,11 @@ fun BackupScreen() {
 
         // Info card
         InfoCard(
-            icon = Icons.Default.Info,
+            icon = FilmIcons.Bulb,
             text = "Backup saves all your film stocks, cameras, lenses, rolls, shot logs, " +
                     "chemicals, and settings to a single .avault file you can store anywhere. " +
                     "Shot photos are included when the toggle below is on.",
-            color = BlueInfo
+            color = FilmTheme.colors.violet
         )
 
         Spacer(Modifier.height(24.dp))
@@ -76,7 +81,7 @@ fun BackupScreen() {
             Text(
                 "Creates a .avault file (ZIP containing your data + photos). " +
                 "Store it anywhere — Downloads, Google Drive, a USB drive.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             Row(
@@ -87,19 +92,22 @@ fun BackupScreen() {
                     checked = includePhotos,
                     onCheckedChange = { includePhotos = it },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Amber,
-                        checkedTrackColor = AmberDark
+                        checkedThumbColor = FilmTheme.colors.void,
+                        checkedTrackColor = FilmTheme.colors.cyan,
+                        uncheckedThumbColor = FilmTheme.colors.dim,
+                        uncheckedTrackColor = FilmTheme.colors.film,
                     )
                 )
                 androidx.compose.material3.Text(
                     if (includePhotos) "Include shot photos (larger file)" else "Exclude photos (smaller file)",
-                    color = TextSecondary,
+                    color = FilmTheme.colors.dim,
                     fontSize = 12.sp
                 )
             }
             Spacer(Modifier.height(10.dp))
             VaultButton(
-                text = if (busy) "Exporting…" else "⬆  Export Backup",
+                text = if (busy) "Exporting…" else "Export Backup",
+            icon = if (busy) null else FilmIcons.Backup,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
@@ -116,11 +124,12 @@ fun BackupScreen() {
                 "Opens a .avault backup file, or an older .json export. " +
                 "Existing records with the same ID are overwritten; " +
                 "everything else is merged in — nothing is deleted.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(14.dp))
             VaultButton(
-                text = if (busy) "Importing…" else "⬇  Import Backup",
+                text = if (busy) "Importing…" else "Import Backup",
+            icon = if (busy) null else FilmIcons.LoadRoll,
                 modifier = Modifier.fillMaxWidth(),
                 ghost = true,
                 onClick = { importLauncher.launch(arrayOf("application/zip", "application/json", "*/*")) }
@@ -134,11 +143,12 @@ fun BackupScreen() {
             Text(
                 "Every shot from every roll as one CSV — film, camera, exposure, " +
                 "location, notes. Per-roll CSV/PDF exports are on each roll's detail screen.",
-                color = TextSecondary, fontSize = 12.sp
+                color = FilmTheme.colors.dim, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             VaultButton(
-                text = "📄  Export All Shot Logs (CSV)",
+                text = "Export All Shot Logs (CSV)",
+            icon = FilmIcons.ContactSheet,
                 modifier = Modifier.fillMaxWidth(),
                 ghost = true,
                 onClick = {
@@ -171,26 +181,31 @@ fun BackupScreen() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 @Composable
-private fun InfoCard(icon: ImageVector, text: String, color: Color) {
+private fun InfoCard(icon: FilmIconSpec, text: String, color: Color) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            
             .background(color.copy(alpha = 0.08f))
-            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+            .border(1.dp, color.copy(alpha = 0.3f))
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(18.dp).padding(top = 1.dp))
-        Text(text, color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        DyeIcon(icon, null, size = 18.dp, tint = color, accent = color,
+            modifier = Modifier.padding(top = 1.dp))
+        Text(text, color = FilmTheme.colors.dim, fontSize = 12.sp, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
-    val (bg, border, textColor, icon) = when (result) {
-        is BackupResult.Success -> listOf(GreenOk.copy(alpha = 0.1f), GreenOk.copy(alpha = 0.4f), GreenOk, "✓")
-        is BackupResult.Error   -> listOf(RedErr.copy(alpha = 0.1f),  RedErr.copy(alpha = 0.4f),  RedErr,  "⚠")
+    val (bg, border, textColor) = when (result) {
+        is BackupResult.Success -> Triple(FilmTheme.colors.cyan.copy(alpha = 0.1f), FilmTheme.colors.cyan.copy(alpha = 0.4f), FilmTheme.colors.cyan)
+        is BackupResult.Error   -> Triple(FilmTheme.colors.mask.copy(alpha = 0.1f), FilmTheme.colors.mask.copy(alpha = 0.4f), FilmTheme.colors.mask)
+    }
+    val icon = when (result) {
+        is BackupResult.Success -> FilmIcons.Check
+        is BackupResult.Error   -> FilmIcons.Warn
     }
     val message = when (result) {
         is BackupResult.Success -> result.message
@@ -199,16 +214,16 @@ private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg as Color)
-            .border(1.dp, border as Color, RoundedCornerShape(10.dp))
+            
+            .background(bg)
+            .border(1.dp, border)
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("$icon  $message", color = textColor as Color, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        IconLabel(icon, message, textColor, modifier = Modifier.weight(1f), fontSize = 13.sp)
         IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-            Icon(Icons.Default.Close, null, tint = textColor, modifier = Modifier.size(14.dp))
+            DyeIcon(FilmIcons.Close, null, size = 14.dp, tint = textColor, accent = textColor)
         }
     }
 }
@@ -219,8 +234,8 @@ private fun NoteRow(label: String, value: String) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, color = TextTertiary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-        Text(value, color = TextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f, fill = false),
+        Text(label, color = FilmTheme.colors.dim, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        Text(value, color = FilmTheme.colors.dim, fontSize = 11.sp, modifier = Modifier.weight(1f, fill = false),
             textAlign = androidx.compose.ui.text.style.TextAlign.End)
     }
 }

@@ -11,9 +11,14 @@ import androidx.lifecycle.viewModelScope
 import com.analogvault.data.export.ExportResult
 import com.analogvault.data.export.RollExporter
 import com.analogvault.data.model.*
+import com.analogvault.data.network.GeoPlace
 import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.ui.screens.DEFAULT_HOME_ORDER
 import com.analogvault.ui.screens.DevTimer
+import com.analogvault.ui.screens.HomeSection
+import com.analogvault.ui.screens.parseHomeHidden
+import com.analogvault.ui.screens.parseHomeOrder
 import com.analogvault.ui.screens.MeterReading
 import com.analogvault.ui.screens.formatLatLon
 import com.analogvault.ui.screens.formatWeatherString
@@ -74,11 +79,10 @@ class MainViewModel @Inject constructor(
     val meterShutter: StateFlow<String> = _meterShutter.asStateFlow()
     private val _meterMetering = MutableStateFlow(Constants.METERING_TYPES[0])
     val meterMetering: StateFlow<String> = _meterMetering.asStateFlow()
-    /** "shutter" (fix shutter → solve aperture), "aperture" (fix aperture → solve shutter), "table" */
-    private val _meterMode = MutableStateFlow("shutter")
-    val meterMode: StateFlow<String> = _meterMode.asStateFlow()
-    private val _meterAperture = MutableStateFlow(8.0)
-    val meterAperture: StateFlow<Double> = _meterAperture.asStateFlow()
+    // The priority-mode selector and its fixed aperture are gone: the exposure
+    // ladder shows every equivalent pair and lets you pick one, which is both
+    // priorities at once. Their settings rows are left in the database rather
+    // than deleted, so downgrading an install does not lose them.
     private val _recipFilm = MutableStateFlow("Other B&W (generic)")
     val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
 
@@ -98,6 +102,19 @@ class MainViewModel @Inject constructor(
     val meterShadowEv: StateFlow<Double?> = _meterShadowEv.asStateFlow()
     private val _meterHighlightEv = MutableStateFlow<Double?>(null)
     val meterHighlightEv: StateFlow<Double?> = _meterHighlightEv.asStateFlow()
+    /**
+     * The roll the meter is metering for. It supplies the film speed, the gear
+     * to clamp against and the frame the commit bar logs to.
+     *
+     * Deliberately not persisted: which roll is in your hands is a fact about
+     * right now, and a stale value restored a week later would clamp the meter
+     * against a camera sitting in a drawer. Null means "no roll" — the meter
+     * still works, it just stops clamping and hands its reading to the shot
+     * sheet instead of logging a frame.
+     */
+    private val _meterRollId = MutableStateFlow<String?>(null)
+    val meterRollId: StateFlow<String?> = _meterRollId.asStateFlow()
+    fun setMeterRoll(rollId: String?) { _meterRollId.value = rollId }
 
     /** Called from the Camera2 capture callback (already throttled there). */
     fun onMeterReading(iso: Int, shutterSec: Double, aperture: Double) {
@@ -122,11 +139,33 @@ class MainViewModel @Inject constructor(
     init {
         viewModelScope.launch(Dispatchers.IO) { migratePhotosFromCache() }
         viewModelScope.launch {
+            // The palette first, and nothing before it.
+            //
+            // These three decide what colour the app is, and the UI waits on
+            // themeReady before it draws anything (see MainActivity). Read
+            // anywhere further down this block and the first frame is the
+            // default scheme, with the real one arriving a beat later — which
+            // is exactly what the amber theme looked like: a second of neon,
+            // then a swap.
+            _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
+            _legacyAmber.value = (repo.getSetting("legacy_amber") ?: "false") == "true"
+            _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
+            _themeReady.value = true
+
             _owmKey.value   = repo.getSetting("owm_key") ?: ""
             _currency.value = repo.getSetting("currency") ?: "€"
             _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
             _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
+            _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
+            _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
+            _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
+            _placeName.value = repo.getSetting("place_name").orEmpty()
+            placeLat = repo.getSetting("place_lat")?.toDoubleOrNull()
+            placeLon = repo.getSetting("place_lon")?.toDoubleOrNull()
+            // Pinned places do not need the device, so the fetch can start here
+            // rather than waiting for a screen to ask for a location permission.
+            pinnedLatLon()?.let { (la, lo) -> fetchWeather(la, lo) }
             _remindersEnabled.value   = repo.getSetting("reminders_enabled") == "true"
             _remindExpiry.value       = (repo.getSetting("remind_expiry") ?: "true") == "true"
             _remindUndeveloped.value  = (repo.getSetting("remind_undeveloped") ?: "true") == "true"
@@ -136,9 +175,7 @@ class MainViewModel @Inject constructor(
             _meterCalibThirds.value = repo.getSetting("meter_calib_thirds")?.toIntOrNull() ?: 0
             _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
-            _meterMetering.value = repo.getSetting("meter_metering") ?: Constants.METERING_TYPES[0]
-            _meterMode.value     = repo.getSetting("meter_mode") ?: "shutter"
-            _meterAperture.value = repo.getSetting("meter_aperture")?.toDoubleOrNull() ?: 8.0
+            _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
@@ -178,12 +215,6 @@ class MainViewModel @Inject constructor(
     }
     fun saveMeterMetering(m: String) = viewModelScope.launch {
         _meterMetering.value = m; repo.setSetting("meter_metering", m)
-    }
-    fun saveMeterMode(m: String) = viewModelScope.launch {
-        _meterMode.value = m; repo.setSetting("meter_mode", m)
-    }
-    fun saveMeterAperture(a: Double) = viewModelScope.launch {
-        _meterAperture.value = a; repo.setSetting("meter_aperture", a.toString())
     }
     fun saveRecipFilm(name: String) = viewModelScope.launch {
         _recipFilm.value = name; repo.setSetting("recip_film", name)
@@ -278,17 +309,26 @@ class MainViewModel @Inject constructor(
      * shot's exposure, now, cached weather) so the frame counter keeps up with
      * shooting; GPS is filled in asynchronously afterwards if permission is
      * already granted (never prompts). Details can be edited later.
+     *
+     * The meter passes the exposure it just solved; everything else still comes
+     * from the roll, so committing a reading and tapping a frame on Home write
+     * the same shape of shot.
      */
-    fun quickLogShot(rollId: String) = viewModelScope.launch {
+    fun quickLogShot(
+        rollId: String,
+        shutter: String? = null,
+        aperture: String? = null,
+        iso: String? = null,
+    ) = viewModelScope.launch {
         val roll = repo.rolls.first().find { it.id == rollId } ?: return@launch
         if (roll.finished || roll.developed) return@launch
         val last = roll.shots.lastOrNull()
         val film = films.value.find { it.id == roll.filmId }
         val shot = Shot(
             id       = uid(),
-            shutter  = last?.shutter ?: "",
-            aperture = last?.aperture ?: "",
-            iso      = last?.iso ?: roll.pushIso.ifBlank { film?.iso?.toString() ?: "" },
+            shutter  = shutter ?: last?.shutter ?: "",
+            aperture = aperture ?: last?.aperture ?: "",
+            iso      = iso ?: last?.iso ?: roll.pushIso.ifBlank { film?.iso?.toString() ?: "" },
             lens     = last?.lens ?: lenses.value.find { it.id == roll.cameraLensId }?.name.orEmpty(),
             weather  = (weatherState.value as? WeatherState.Success)?.data
                 ?.let { formatWeatherString(it, isMetric.value) } ?: "",
@@ -353,6 +393,42 @@ class MainViewModel @Inject constructor(
     fun cutFromBulk(bulk: BulkRoll, frames: Int, quantity: Int, expiryDate: String) =
         viewModelScope.launch { repo.cutFromBulk(bulk, frames, quantity, expiryDate) }
 
+    // ─── Home layout ─────────────────────────────────────────────────────────
+    //
+    // Which rows Home is built from, in which order. Persisted as two CSVs of
+    // enum names rather than indices: indices would silently reshuffle
+    // everyone's layout the day a section is inserted into the middle of the
+    // enum, and names simply keep pointing at the same row.
+
+    private val _homeOrder = MutableStateFlow(DEFAULT_HOME_ORDER)
+    val homeOrder: StateFlow<List<HomeSection>> = _homeOrder.asStateFlow()
+    private val _homeHidden = MutableStateFlow(emptySet<HomeSection>())
+    val homeHidden: StateFlow<Set<HomeSection>> = _homeHidden.asStateFlow()
+
+    fun moveHomeSection(section: HomeSection, delta: Int) = viewModelScope.launch {
+        val current = _homeOrder.value.toMutableList()
+        val from = current.indexOf(section)
+        val to = from + delta
+        if (from < 0 || to !in current.indices) return@launch
+        current.removeAt(from)
+        current.add(to, section)
+        _homeOrder.value = current
+        repo.setSetting("home_order", current.joinToString(",") { it.name })
+    }
+
+    fun setHomeSectionVisible(section: HomeSection, visible: Boolean) = viewModelScope.launch {
+        val next = if (visible) _homeHidden.value - section else _homeHidden.value + section
+        _homeHidden.value = next
+        repo.setSetting("home_hidden", next.joinToString(",") { it.name })
+    }
+
+    fun resetHomeLayout() = viewModelScope.launch {
+        _homeOrder.value = DEFAULT_HOME_ORDER
+        _homeHidden.value = emptySet()
+        repo.setSetting("home_order", "")
+        repo.setSetting("home_hidden", "")
+    }
+
     // ─── Weather ─────────────────────────────────────────────────────────────
     private val _weatherState = MutableStateFlow<WeatherState>(WeatherState.Idle)
     val weatherState: StateFlow<WeatherState> = _weatherState
@@ -367,6 +443,66 @@ class MainViewModel @Inject constructor(
         } catch (e: Exception) {
             _weatherState.value = WeatherState.Error(e.message ?: "Network error")
         }
+    }
+
+    // ─── Chosen place ────────────────────────────────────────────────────────
+    //
+    // A pinned place overrides the device's location everywhere weather is used.
+    // Planning a shoot somewhere you are not is the normal case for this app —
+    // you check the light for the coast on Thursday from your kitchen — and a
+    // forecast that silently snaps back to where the phone is would be useless
+    // for it. Persisted as three settings rather than a table: it is one value,
+    // and a table for one row is a migration nobody needed.
+
+    private val _placeName = MutableStateFlow("")
+    /** Blank when following the device's location. */
+    val placeName: StateFlow<String> = _placeName.asStateFlow()
+    private var placeLat: Double? = null
+    private var placeLon: Double? = null
+
+    private val _placeResults = MutableStateFlow<List<GeoPlace>>(emptyList())
+    val placeResults: StateFlow<List<GeoPlace>> = _placeResults.asStateFlow()
+    private val _placeSearching = MutableStateFlow(false)
+    val placeSearching: StateFlow<Boolean> = _placeSearching.asStateFlow()
+
+    /** Coordinates to use, or null to fall back to the device. */
+    fun pinnedLatLon(): Pair<Double, Double>? {
+        val la = placeLat; val lo = placeLon
+        return if (la != null && lo != null) la to lo else null
+    }
+
+    fun searchPlaces(query: String) = viewModelScope.launch {
+        val key = _owmKey.value
+        if (key.isBlank() || query.isBlank()) { _placeResults.value = emptyList(); return@launch }
+        _placeSearching.value = true
+        try {
+            _placeResults.value = weatherApi.searchPlaces(query.trim(), key)
+        } catch (_: Exception) {
+            _placeResults.value = emptyList()
+        } finally {
+            _placeSearching.value = false
+        }
+    }
+    fun clearPlaceResults() { _placeResults.value = emptyList() }
+
+    fun pinPlace(place: GeoPlace) = viewModelScope.launch {
+        placeLat = place.lat; placeLon = place.lon
+        _placeName.value = place.label
+        repo.setSetting("place_name", place.label)
+        repo.setSetting("place_lat", place.lat.toString())
+        repo.setSetting("place_lon", place.lon.toString())
+        _placeResults.value = emptyList()
+        fetchWeather(place.lat, place.lon)
+    }
+
+    /** Back to wherever the phone is. */
+    fun unpinPlace() = viewModelScope.launch {
+        placeLat = null; placeLon = null
+        _placeName.value = ""
+        repo.setSetting("place_name", "")
+        repo.setSetting("place_lat", "")
+        repo.setSetting("place_lon", "")
+        _weatherState.value = WeatherState.Idle
     }
 
     // ─── Roll exports ────────────────────────────────────────────────────────
@@ -399,11 +535,75 @@ class MainViewModel @Inject constructor(
     private var timerEndElapsedMs = 0L
     private var lastAgitationCueSec = -1
 
-    // Classic agitation rhythm: initial agitation, then ~10 s at each minute mark
+    // Haptic pulse at the start of each agitation window. The rhythm itself is a
+    // property of the step (see DevTime.Agitation), not a fixed minute mark —
+    // stand development agitates once in an hour and a rotary processor never
+    // stops, and a pulse every sixty seconds is wrong for both.
     private val _agitationCues = MutableStateFlow(true)
     val agitationCues: StateFlow<Boolean> = _agitationCues.asStateFlow()
     fun saveAgitationCues(on: Boolean) = viewModelScope.launch {
         _agitationCues.value = on; repo.setSetting("agitation_cues", on.toString())
+    }
+
+    /**
+     * Working temperature of the chemistry, in °C.
+     *
+     * Persisted because it is a property of the room and the tap, not of one
+     * session: whatever the darkroom ran at last night is the best guess for
+     * tonight, and being asked for it every time is how it ends up ignored.
+     */
+    /**
+     * Safelight mode: the whole app swaps to the red scheme.
+     *
+     * Persisted, because it is turned on when you walk into a dark room and off
+     * when you leave, and losing it on a process death mid-development would
+     * blind you at the worst moment.
+     */
+    private val _safelight = MutableStateFlow(false)
+    val safelight: StateFlow<Boolean> = _safelight.asStateFlow()
+    fun setSafelight(on: Boolean) = viewModelScope.launch {
+        _safelight.value = on; repo.setSetting("safelight", on.toString())
+    }
+    fun toggleSafelight() = setSafelight(!_safelight.value)
+
+    /**
+     * False until the palette settings have been read.
+     *
+     * The window background is already black, so holding the first frame until
+     * this flips costs a few milliseconds of the black the app starts on
+     * anyway — and it is the difference between opening in your theme and
+     * opening in someone else's.
+     */
+    private val _themeReady = MutableStateFlow(false)
+    val themeReady: StateFlow<Boolean> = _themeReady.asStateFlow()
+
+    /**
+     * The palette the app wore before the Dye Layer redesign — same design,
+     * amber instead of dyes. Ignored while safelight is on, which is its own
+     * scheme (see FilmTheme.kt).
+     */
+    private val _legacyAmber = MutableStateFlow(false)
+    val legacyAmber: StateFlow<Boolean> = _legacyAmber.asStateFlow()
+    fun setLegacyAmber(on: Boolean) = viewModelScope.launch {
+        _legacyAmber.value = on; repo.setSetting("legacy_amber", on.toString())
+    }
+
+    /**
+     * Saturation of the cyan/magenta/yellow/mask/violet accent colors, 0f
+     * (grayscale) to 1f (full dye-layer saturation, the default). Mutes the
+     * high-contrast accents for eye comfort; has no effect while safelight is
+     * active (see FilmTheme.kt).
+     */
+    private val _saturation = MutableStateFlow(1f)
+    val saturation: StateFlow<Float> = _saturation.asStateFlow()
+    fun setSaturation(value: Float) = viewModelScope.launch {
+        _saturation.value = value; repo.setSetting("saturation", value.toString())
+    }
+
+    private val _devTempC = MutableStateFlow(20.0)
+    val devTempC: StateFlow<Double> = _devTempC.asStateFlow()
+    fun saveDevTempC(t: Double) = viewModelScope.launch {
+        _devTempC.value = t; repo.setSetting("dev_temp_c", t.toString())
     }
 
     // ─── Reminders (daily WorkManager check) ─────────────────────────────────
@@ -491,12 +691,14 @@ class MainViewModel @Inject constructor(
                 if (!s.running) return@launch
                 val left = timerRemainingSeconds()
                 if (left <= 0) { onTimerStepFinished(); return@launch }
-                // Agitation cue at each whole minute of elapsed step time
-                // (skip when the step is about to finish — that gets its own alert)
-                val elapsed = s.timer.steps[s.currentStep].durationSec - left
-                if (_agitationCues.value && elapsed > 0 && elapsed % 60 == 0 &&
-                    lastAgitationCueSec != elapsed && left > 5
-                ) {
+                // Pulse on the leading edge of an agitation window, not through
+                // it: buzzing once a second for ten seconds is an alarm, and the
+                // cue only has to say "now".
+                val step = s.timer.steps[s.currentStep]
+                val elapsed = step.durationSec - left
+                val startsNow = step.agitation.isAgitating(elapsed) &&
+                    !step.agitation.isAgitating(elapsed - 1)
+                if (_agitationCues.value && startsNow && lastAgitationCueSec != elapsed && left > 3) {
                     lastAgitationCueSec = elapsed
                     vibrateAgitation()
                 }
@@ -550,6 +752,9 @@ class MainViewModel @Inject constructor(
         val byProc = r.filter { it.devLog != null }
             .groupBy { it.devLog!!.process.ifBlank { "Unknown" } }
             .mapValues { it.value.size }.entries.sortedByDescending { it.value }
+        val allShots = r.flatMap { it.shots }
+        val byAperture = com.analogvault.util.Habits.apertureHistogram(allShots.map { it.aperture })
+        val byShutter  = com.analogvault.util.Habits.shutterHistogram(allShots.map { it.shutter })
         // Film cost = per-roll film cost of shot rolls (stash films + bulk-cut rolls carry an
         // amortised costPerRoll) PLUS the value of bulk film not yet cut into rolls. Counting
         // only the uncut remainder avoids double-counting frames already cut into stash/rolls.
@@ -583,7 +788,11 @@ class MainViewModel @Inject constructor(
             byCam = byCam,
             byMonth = byMonth,
             byProc = byProc,
+            byAperture = byAperture,
+            byShutter = byShutter,
             totalFilmCost = filmRollCost + bulkRemaining,
+            filmCostOnRolls = filmRollCost,
+            uncutBulkValue = bulkRemaining,
             totalDevCost  = r.sumOf { it.devCost },
             totalScanCost = r.sumOf { it.scanCost },
             selfDevRolls  = r.count { it.isSelfDev && it.developed },
@@ -626,8 +835,19 @@ data class Stats(
     val byCam: List<Map.Entry<String, Int>> = emptyList(),
     val byMonth: List<Map.Entry<String, Int>> = emptyList(),
     val byProc: List<Map.Entry<String, Int>> = emptyList(),
+    /** Whole-stop histograms of the shot log, in scale order. See util/Habits. */
+    val byAperture: List<Pair<String, Int>> = emptyList(),
+    val byShutter: List<Pair<String, Int>> = emptyList(),
     // Cost totals
     val totalFilmCost: Double = 0.0,
+    /**
+     * Film cost of the rolls actually loaded, without the value of bulk stock
+     * still on the spool. [totalFilmCost] answers "what is my film worth"; this
+     * answers "what did these frames cost", and only the second one divides
+     * sensibly by a frame count.
+     */
+    val filmCostOnRolls: Double = 0.0,
+    val uncutBulkValue: Double = 0.0,
     val totalDevCost: Double = 0.0,
     val totalScanCost: Double = 0.0,
     val selfDevRolls: Int = 0,

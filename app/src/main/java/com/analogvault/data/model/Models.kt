@@ -53,7 +53,13 @@ data class FilmStock(
     val storage: String = "Shelf",
     val quantity: Int = 1,
     val notes: String = "",
-    val costPerRoll: Double = 0.0  // purchase price per roll; 0 = gifted / unknown
+    val costPerRoll: Double = 0.0,  // purchase price per roll; 0 = gifted / unknown
+    /**
+     * Override for the stock's accent colour, as "#RRGGBB" or "#RRGGBB,#RRGGBB"
+     * for a gradient. Blank means "derive it" — see StockAccent, which knows the
+     * box art of the common stocks and falls back to the process otherwise.
+     */
+    val stockAccent: String = ""
 )
 
 // ─── Camera ──────────────────────────────────────────────────────────────────
@@ -70,7 +76,18 @@ data class Camera(
     val condition: String = "Good",
     val mount: String = "",
     val adapterMounts: List<String> = emptyList(),
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * The shutter range this body can actually be set to, as SHUTTER_SPEEDS
+     * strings ("1/500", "1s"). Blank means unknown, and unknown means unclamped —
+     * the meter suggests whatever the light asks for, which is what it did before
+     * these columns existed. A Zenit E carries "1/500" and "1/30"; a Nikon F5
+     * carries "1/8000" and "30s".
+     */
+    val fastestShutter: String = "",
+    val slowestShutter: String = "",
+    /** Bulb lets the body go past [slowestShutter] on a cable release. */
+    val hasBulb: Boolean = false
 )
 
 // ─── Lens ─────────────────────────────────────────────────────────────────────
@@ -81,7 +98,15 @@ data class Lens(
     val name: String = "",
     val brand: String = "",
     val focalLength: String = "50",
+    /** Widest opening — the number on the barrel, so the *smallest* f-number. */
     val maxAperture: String = "1.8",
+    /**
+     * Narrowest opening, the far end of the aperture ring ("16", "22"). Blank
+     * means unknown, and unknown means that end is unclamped. Most lenses stop
+     * down to f/16 or f/22, but guessing would put a hazard stripe on a rung the
+     * lens can reach, which is worse than not clamping at all.
+     */
+    val minAperture: String = "",
     val mount: String = "",
     val condition: String = "Good"
 )
@@ -139,6 +164,11 @@ data class Roll(
     @PrimaryKey val id: String,
     val filmId: String = "",
     val cameraId: String = "",
+    /**
+     * The lens mounted for this roll. Blank on fixed-lens bodies, and blank on
+     * rolls loaded before the field was asked for — the meter treats both as
+     * "no lens known" and clamps on the body alone.
+     */
     val cameraLensId: String = "",
     val startDate: String = "",
     val finished: Boolean = false,

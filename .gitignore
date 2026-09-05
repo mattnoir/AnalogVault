@@ -38,3 +38,7 @@ app/generated/
 # Secrets (NEVER commit these)
 keystore.properties
 google-services.json
+# Local test fixtures — a seeded copy of the app database plus the script that
+# pushes it to a device. Deliberately untracked: it is scratch data for driving
+# the UI during development, not something the repo should carry.
+/devdata/

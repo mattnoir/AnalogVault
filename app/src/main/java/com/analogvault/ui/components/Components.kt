@@ -15,14 +15,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import com.analogvault.ui.theme.onAccent
 import com.analogvault.ui.theme.*
+import com.analogvault.ui.theme.FilmTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIcons
+import com.analogvault.ui.film.FilmIconSpec
+import androidx.compose.ui.unit.TextUnit
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -35,14 +45,25 @@ fun formatDate(iso: String): String {
     } catch (e: Exception) { iso }
 }
 
-fun expiryStatus(rawDate: String): Triple<String, Color, Boolean> {
-    if (rawDate.isBlank()) return Triple("", Color.Transparent, false)
+/**
+ * How close a stock is to its expiry date.
+ *
+ * Returns a level rather than a colour. Colour is a property of the theme and
+ * this is pure date arithmetic — mixing them meant a non-composable function
+ * reaching for a palette, which is also what stopped it following the safelight
+ * swap. Callers map the level with [expiryColor].
+ */
+enum class ExpiryLevel { NONE, OK, SOON, EXPIRED }
+
+/** Label, level, and whether it is already past. */
+fun expiryStatus(rawDate: String): Triple<String, ExpiryLevel, Boolean> {
+    if (rawDate.isBlank()) return Triple("", ExpiryLevel.NONE, false)
     // Support both "yyyy-MM" (month-only) and "yyyy-MM-dd" formats
     val isMonthOnly = rawDate.length == 7
     val dateStr = if (isMonthOnly) "$rawDate-01" else rawDate
     return try {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val date = sdf.parse(dateStr) ?: return Triple(rawDate, TextSecondary, false)
+        val date = sdf.parse(dateStr) ?: return Triple(rawDate, ExpiryLevel.NONE, false)
         val days = ((date.time - Date().time) / 86400000).toInt()
         val displayLabel = if (isMonthOnly) {
             SimpleDateFormat("MMM yyyy", Locale.US).format(date)
@@ -50,30 +71,83 @@ fun expiryStatus(rawDate: String): Triple<String, Color, Boolean> {
             formatDate(dateStr)
         }
         when {
-            days < 0  -> Triple("Expired", RedErr, true)
-            days < 90 -> Triple("Exp. in ${days}d", OrangeWarn, false)
-            else      -> Triple(displayLabel, GreenOk, false)
+            days < 0  -> Triple("Expired", ExpiryLevel.EXPIRED, true)
+            days < 90 -> Triple("Exp. in ${days}d", ExpiryLevel.SOON, false)
+            else      -> Triple(displayLabel, ExpiryLevel.OK, false)
         }
-    } catch (e: Exception) { Triple(rawDate, TextSecondary, false) }
+    } catch (e: Exception) { Triple(rawDate, ExpiryLevel.NONE, false) }
 }
 
-// ─── Amber chip / tag ─────────────────────────────────────────────────────────
+/** Mask for gone, yellow for a decision to make, dim for fine. */
+@Composable
+fun expiryColor(level: ExpiryLevel): Color = when (level) {
+    ExpiryLevel.EXPIRED -> FilmTheme.colors.mask
+    ExpiryLevel.SOON    -> FilmTheme.colors.yellow
+    else                -> FilmTheme.colors.dim
+}
 
+// ─── Data chip ────────────────────────────────────────────────────────────────
+
+/**
+ * A hairline data chip.
+ *
+ * Same name and signature the screens already call, drawn in the Dye Layer
+ * language: one border, no radius, mono caps, no fill. [textColor] is the
+ * semantic colour — it now drives the border as well as the text, since a chip
+ * with a filled background and a differently coloured label was two signals for
+ * one fact.
+ */
 @Composable
 fun VaultTag(
     text: String,
     modifier: Modifier = Modifier,
-    color: Color = Border,
-    textColor: Color = TextSecondary
+    color: Color = Color.Unspecified,
+    textColor: Color = Color.Unspecified,
+    /** Drawn before the label, in the tag's own colour. See [VaultButton]. */
+    icon: FilmIconSpec? = null,
 ) {
-    Box(
+    val colors = FilmTheme.colors
+    val accent = when {
+        textColor != Color.Unspecified -> textColor
+        color != Color.Unspecified     -> color
+        else                           -> colors.dim
+    }
+    Row(
         modifier = modifier
-            .drawBehind {
-                drawRoundRect(color = color, cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()))
-            }
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .border(1.dp, accent)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(text, color = textColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        if (icon != null) {
+            DyeIcon(icon, null, size = 12.dp, tint = accent, accent = accent)
+        }
+        Text(text.uppercase(), style = FilmTheme.type.data, color = accent, maxLines = 1)
+    }
+}
+
+/**
+ * An icon and a line of text, for the places that used to prefix a string with
+ * an emoji: a shot's location, the process a roll was developed in, a warning.
+ *
+ * The icon takes the text's colour rather than its own dye accent — at 12sp
+ * these read as one phrase, and a second colour inside a phrase is noise.
+ */
+@Composable
+fun IconLabel(
+    icon: FilmIconSpec,
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = 12.sp,
+) {
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        DyeIcon(icon, null, size = 13.dp, tint = color, accent = color)
+        Text(text, color = color, fontSize = fontSize)
     }
 }
 
@@ -112,33 +186,33 @@ fun SpinnerField(
     var expanded by remember { mutableStateOf(false) }
     val tappable = onValueClick != null || (pickerOptions != null && onPick != null)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = TextTertiary, fontSize = 10.sp)
+        Text(label, color = FilmTheme.colors.dim, fontSize = 10.sp)
         Spacer(Modifier.height(2.dp))
         IconButton(onClick = onInc, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ExpandLess, null, tint = Amber, modifier = Modifier.size(20.dp))
+            DyeIcon(FilmIcons.ChevronUp, null, size = 20.dp, tint = FilmTheme.colors.cyan)
         }
         Box {
             Box(
-                Modifier.background(if (tappable) Bg3 else Bg4, RoundedCornerShape(6.dp))
-                    .border(1.dp, if (tappable) Amber.copy(alpha = 0.45f) else Border, RoundedCornerShape(6.dp))
+                Modifier.background(if (tappable) FilmTheme.colors.filmRaised else FilmTheme.colors.filmRaised)
+                    .border(1.dp, if (tappable) FilmTheme.colors.cyan.copy(alpha = 0.45f) else FilmTheme.colors.edge)
                     .then(if (tappable) Modifier.clickable {
                         if (onValueClick != null) onValueClick() else expanded = true
                     } else Modifier)
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(value, color = TextPrimary, fontSize = 16.sp)
+                Text(value, color = FilmTheme.colors.halide, fontSize = 16.sp)
             }
             if (pickerOptions != null && onPick != null) {
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
-                    containerColor = Bg3,
+                    containerColor = FilmTheme.colors.filmRaised,
                     modifier = Modifier.heightIn(max = 280.dp)
                 ) {
                     pickerOptions.forEach { (lbl, v) ->
                         DropdownMenuItem(
-                            text = { Text(lbl, color = if (lbl == value) Amber else TextPrimary, fontSize = 14.sp) },
+                            text = { Text(lbl, color = if (lbl == value) FilmTheme.colors.cyan else FilmTheme.colors.halide, fontSize = 14.sp) },
                             onClick = { onPick(v); expanded = false }
                         )
                     }
@@ -146,7 +220,7 @@ fun SpinnerField(
             }
         }
         IconButton(onClick = onDec, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ExpandMore, null, tint = Amber, modifier = Modifier.size(20.dp))
+            DyeIcon(FilmIcons.ChevronDown, null, size = 20.dp, tint = FilmTheme.colors.cyan)
         }
     }
 }
@@ -161,29 +235,29 @@ private fun ClockTimeDialog(
     val state = rememberTimePickerState(initialHour = hour, initialMinute = minute, is24Hour = true)
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        title = { Text("Pick Time", color = AmberBright) },
+        containerColor = FilmTheme.colors.filmRaised,
+        title = { Text("Pick Time", color = FilmTheme.colors.yellow) },
         text = {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 TimePicker(
                     state = state,
                     colors = TimePickerDefaults.colors(
-                        clockDialColor = Bg4,
-                        clockDialSelectedContentColor = Bg,
-                        clockDialUnselectedContentColor = TextPrimary,
-                        selectorColor = Amber,
-                        timeSelectorSelectedContainerColor = AmberDark,
-                        timeSelectorSelectedContentColor = AmberBright,
-                        timeSelectorUnselectedContainerColor = Bg4,
-                        timeSelectorUnselectedContentColor = TextSecondary
+                        clockDialColor = FilmTheme.colors.filmRaised,
+                        clockDialSelectedContentColor = FilmTheme.colors.void,
+                        clockDialUnselectedContentColor = FilmTheme.colors.halide,
+                        selectorColor = FilmTheme.colors.cyan,
+                        timeSelectorSelectedContainerColor = FilmTheme.colors.violet,
+                        timeSelectorSelectedContentColor = FilmTheme.colors.yellow,
+                        timeSelectorUnselectedContainerColor = FilmTheme.colors.filmRaised,
+                        timeSelectorUnselectedContentColor = FilmTheme.colors.dim
                     )
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(state.hour, state.minute) }) { Text("Set", color = Amber) }
+            TextButton(onClick = { onConfirm(state.hour, state.minute) }) { Text("Set", color = FilmTheme.colors.cyan) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = FilmTheme.colors.dim) } }
     )
 }
 
@@ -236,8 +310,8 @@ fun FullDatePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        title = { Text(if (includeTime) "Date & Time" else "Select Date", color = AmberBright) },
+        containerColor = FilmTheme.colors.filmRaised,
+        title = { Text(if (includeTime) "Date & Time" else "Select Date", color = FilmTheme.colors.yellow) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // Date row: Day | Month | Year
@@ -273,7 +347,7 @@ fun FullDatePickerDialog(
                 }
                 if (includeTime) {
                     Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(color = Border)
+                    HorizontalDivider(color = FilmTheme.colors.edge)
                     Spacer(Modifier.height(12.dp))
                     // Time row: Hour | : | Minute — tap a value to open the round clock
                     Row(
@@ -289,7 +363,7 @@ fun FullDatePickerDialog(
                             onValueClick = { showClock = true },
                             modifier = Modifier.weight(1f)
                         )
-                        Text(":", color = Amber, fontSize = 24.sp,
+                        Text(":", color = FilmTheme.colors.cyan, fontSize = 24.sp,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 32.dp))
                         SpinnerField(
                             label = "Min",
@@ -301,7 +375,7 @@ fun FullDatePickerDialog(
                         )
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("Tap the time to open the clock", color = TextTertiary, fontSize = 10.sp)
+                    Text("Tap the time to open the clock", color = FilmTheme.colors.dim, fontSize = 10.sp)
                 }
             }
         },
@@ -312,10 +386,10 @@ fun FullDatePickerDialog(
                 else
                     "%04d-%02d-%02d".format(selYear, selMonth, selDay)
                 onConfirm(result)
-            }) { Text("Set", color = Amber) }
+            }) { Text("Set", color = FilmTheme.colors.cyan) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = FilmTheme.colors.dim) }
         }
     )
 }
@@ -323,16 +397,20 @@ fun FullDatePickerDialog(
 
 @Composable
 fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    val colors = FilmTheme.colors
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Bg2)
-            .border(1.dp, Border, RoundedCornerShape(10.dp))
+            .background(colors.film)
+            .border(1.dp, colors.edge)
             .padding(14.dp)
     ) {
-        Text(title, color = Amber, fontSize = 14.sp)
-        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title.uppercase(), style = FilmTheme.type.eyebrow, color = colors.dim)
+            Spacer(Modifier.width(8.dp))
+            HorizontalDivider(color = colors.edge)
+        }
+        Spacer(Modifier.height(12.dp))
         content()
     }
 }
@@ -341,9 +419,18 @@ fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 fun SectionTitle(text: String, badge: String? = null) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp)) {
-        Text(text, color = Amber, fontSize = 18.sp, modifier = Modifier.weight(1f))
-        if (badge != null) Text(badge, color = TextTertiary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+    val colors = FilmTheme.colors
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier.padding(bottom = 14.dp)
+    ) {
+        Text(text.uppercase(), style = FilmTheme.type.display.copy(fontSize = 30.sp),
+            color = colors.halide)
+        if (badge != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(badge.uppercase(), style = FilmTheme.type.rebate, color = colors.dim,
+                modifier = Modifier.padding(bottom = 4.dp))
+        }
     }
 }
 
@@ -355,7 +442,9 @@ fun VaultCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val bgColor = Bg2
+    val colors = FilmTheme.colors
+    val bgColor = colors.film
+    val borderColor = colors.edge
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -367,16 +456,14 @@ fun VaultCard(
             // off-screen buffer (that only happens when alpha/clip/renderEffect are set).
             .graphicsLayer {}
             .drawBehind {
-                // drawBehind avoids clip() save/restore — much faster on Mali GPU
-                drawRoundRect(
-                    color = bgColor,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())
-                )
-                // Border drawn here (not via .border()) to stay inside the same
+                // Square, not rounded: everything in this design is a rectangle
+                // except the shutter. drawBehind still avoids the clip()
+                // save/restore, which is the reason this was hand-drawn.
+                drawRect(color = bgColor)
+                // FilmTheme.colors.edge drawn here (not via .border()) to stay inside the same
                 // RenderNode and avoid an extra save/restore layer.
-                drawRoundRect(
-                    color = Border,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+                drawRect(
+                    color = borderColor,
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
                 )
             }
@@ -400,22 +487,30 @@ fun VaultTextField(
     placeholder: String = "",
     enabled: Boolean = true
 ) {
+    val colors = FilmTheme.colors
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         enabled = enabled,
-        label = { Text(label, color = TextTertiary, fontSize = 11.sp) },
-        placeholder = if (placeholder.isNotBlank()) {{ Text(placeholder, color = TextTertiary, fontSize = 12.sp) }} else null,
+        shape = RectangleShape,
+        label = { Text(label.uppercase(), style = FilmTheme.type.rebate, color = colors.dim) },
+        placeholder = if (placeholder.isNotBlank()) {{
+            Text(placeholder, style = FilmTheme.type.data, color = colors.dead)
+        }} else null,
         singleLine = singleLine,
         minLines = minLines,
+        textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Amber,
-            unfocusedBorderColor = Border,
-            focusedTextColor = TextPrimary,
-            unfocusedTextColor = TextPrimary,
-            cursorColor = Amber,
-            focusedLabelColor = Amber,
+            focusedBorderColor = colors.cyan,
+            unfocusedBorderColor = colors.edge,
+            focusedTextColor = colors.halide,
+            unfocusedTextColor = colors.halide,
+            cursorColor = colors.cyan,
+            focusedLabelColor = colors.cyan,
+            focusedContainerColor = colors.film,
+            unfocusedContainerColor = colors.film,
+            disabledContainerColor = colors.film,
         ),
         modifier = modifier.fillMaxWidth()
     )
@@ -432,28 +527,41 @@ fun VaultDropdown(
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = FilmTheme.colors
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
         OutlinedTextField(
             value = selected,
             onValueChange = {},
             readOnly = true,
-            label = { Text(label, color = TextTertiary, fontSize = 11.sp) },
+            // The field is never taller than one line. Without this a value that
+            // does not fit the column — "1/125" in the meter's shutter dropdown —
+            // wraps mid-token to "1/1 / 25" instead of staying on one row.
+            singleLine = true,
+            // Slightly smaller than body text so the longest values these fields
+            // hold — "135 (35mm)", "Color Negative (C-41)" — fit a half-width
+            // column instead of being clipped by the single-line constraint.
+            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+            shape = RectangleShape,
+            label = { Text(label.uppercase(), style = FilmTheme.type.rebate, color = colors.dim, maxLines = 1) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Amber, unfocusedBorderColor = Border,
-                focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary,
-                focusedLabelColor = Amber
+                focusedBorderColor = colors.cyan, unfocusedBorderColor = colors.edge,
+                focusedTextColor = colors.halide, unfocusedTextColor = colors.halide,
+                focusedLabelColor = colors.cyan,
+                focusedContainerColor = colors.film, unfocusedContainerColor = colors.film,
+                focusedTrailingIconColor = colors.cyan, unfocusedTrailingIconColor = colors.dim,
             ),
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
-            containerColor = Bg3) {
+            containerColor = colors.filmRaised, shape = RectangleShape,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.edge)) {
             options.forEach { opt ->
                 DropdownMenuItem(
-                    text = { Text(opt, color = TextPrimary, fontSize = 13.sp) },
+                    text = { Text(opt, style = FilmTheme.type.data, color = colors.halide) },
                     onClick = { onSelected(opt); expanded = false },
-                    colors = MenuDefaults.itemColors(textColor = TextPrimary)
+                    colors = MenuDefaults.itemColors(textColor = colors.halide)
                 )
             }
         }
@@ -485,20 +593,20 @@ fun AutoCompleteField(
             placeholder = placeholder
         )
         if (filtered.isNotEmpty()) {
+            val colors = FilmTheme.colors
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
-                    .background(Bg3)
-                    .border(1.dp, Border, RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+                    .background(colors.filmRaised)
+                    .border(1.dp, colors.edge)
             ) {
                 filtered.forEach { s ->
                     Text(
-                        s, color = TextPrimary, fontSize = 13.sp,
+                        s, style = FilmTheme.type.data, color = colors.halide,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { lastConfirmed = s; onValueChange(s) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .padding(horizontal = 12.dp, vertical = 9.dp)
                     )
                 }
             }
@@ -507,6 +615,32 @@ fun AutoCompleteField(
 }
 
 // ─── Modal bottom sheet wrapper ───────────────────────────────────────────────
+
+/**
+ * Paint a dialog window's system bars void black with light icons.
+ *
+ * Sheets and dialogs live in their own window. That window inherits neither the
+ * activity's `enableEdgeToEdge` treatment nor the `android:statusBarColor` /
+ * `android:navigationBarColor` declared on the activity theme — it comes up with
+ * the platform defaults instead, which on a light-themed device means a white
+ * plate under the gesture bar and a see-through status bar that a full-height
+ * sheet's content scrolls beneath. Call this from inside the sheet's content,
+ * where the dialog window exists.
+ */
+@Composable
+@Suppress("DEPRECATION") // statusBarColor/navigationBarColor: no replacement below API 35
+private fun VoidSystemBars() {
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+        window.statusBarColor = android.graphics.Color.BLACK
+        window.navigationBarColor = android.graphics.Color.BLACK
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -524,14 +658,17 @@ fun VaultSheet(
         skipPartiallyExpanded = true,
         confirmValueChange    = { it != SheetValue.Hidden }
     )
+    val colors = FilmTheme.colors
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState       = sheetState,
-        containerColor   = Bg2,
+        containerColor   = colors.film,
+        shape            = RectangleShape,
         tonalElevation   = 0.dp,
         // Remove the default drag handle — we show our own title row with X button
         dragHandle       = null
     ) {
+        VoidSystemBars()
         Column(modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
@@ -544,10 +681,11 @@ fun VaultSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                Text(title, color = AmberBright, fontSize = 18.sp)
+                Text(title.uppercase(), style = FilmTheme.type.stock.copy(fontSize = 22.sp),
+                    color = colors.halide)
                 IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close",
-                        tint = TextSecondary, modifier = Modifier.size(20.dp))
+                    DyeIcon(FilmIcons.Close, contentDescription = "Close",
+                        size = 20.dp, tint = colors.dim)
                 }
             }
             content()
@@ -564,23 +702,31 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = FilmTheme.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Bg3,
-        titleContentColor = TextPrimary,
-        textContentColor = TextSecondary,
-        title = { Text("Confirm", color = AmberBright) },
-        text = { Text(message, color = TextSecondary) },
+        containerColor = colors.filmRaised,
+        shape = RectangleShape,
+        titleContentColor = colors.halide,
+        textContentColor = colors.dim,
+        title = {
+            Text("CONFIRM", style = FilmTheme.type.stock.copy(fontSize = 20.sp), color = colors.halide)
+        },
+        text = { Text(message, color = colors.halide) },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(confirmLabel, color = RedErr) }
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel.uppercase(), style = FilmTheme.type.data, color = colors.mask)
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) }
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", style = FilmTheme.type.data, color = colors.dim)
+            }
         }
     )
 }
 
-// ─── Amber button ─────────────────────────────────────────────────────────────
+// ─── FilmTheme.colors.cyan button ─────────────────────────────────────────────────────────────
 
 @Composable
 fun VaultButton(
@@ -590,63 +736,90 @@ fun VaultButton(
     ghost: Boolean = false,
     danger: Boolean = false,
     small: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    /**
+     * Drawn before the label, in the label's own colour.
+     *
+     * This exists because the labels used to carry emoji — "🧪 Open Darkroom",
+     * "⬆ Export Backup" — which render in the system font's colours, at the
+     * system's idea of the size, and stay bright green or blue when the app
+     * goes red. An icon from the set is none of those things.
+     */
+    icon: FilmIconSpec? = null,
 ) {
-    val bg = when {
-        !enabled -> Bg3
-        danger -> RedErr.copy(alpha = 0.15f)
-        ghost  -> Bg3
-        else   -> AmberDark
+    // Filled magenta for the action that commits, hairline for everything else.
+    // A screen where every button is filled has no primary action, which is the
+    // state the amber build was in.
+    val colors = FilmTheme.colors
+    val accent = when {
+        !enabled -> colors.dead
+        danger   -> colors.mask
+        ghost    -> colors.dim
+        else     -> colors.magenta
     }
-    val fg = when {
-        !enabled -> TextTertiary
-        danger -> RedErr
-        ghost  -> TextSecondary
-        else   -> TextPrimary
-    }
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(if (small) 34.dp else 44.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = bg, contentColor = fg,
-            disabledContainerColor = Bg3, disabledContentColor = TextTertiary
-        ),
-        contentPadding = PaddingValues(horizontal = if (small) 10.dp else 14.dp, vertical = 0.dp)
+    val filled = enabled && !ghost && !danger
+    Box(
+        modifier
+            .height(if (small) 36.dp else 46.dp)
+            .background(if (filled) accent else colors.film)
+            .border(1.dp, accent)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = if (small) 10.dp else 14.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = if (small) 11.sp else 13.sp)
+        // A filled button is the accent, so its label has to be legible on
+        // whatever the accent currently is — see FilmColors.onAccent.
+        val labelColor = if (filled) colors.onAccent(accent, preferred = colors.void) else accent
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (icon != null) {
+                // One tone, not the dye accent: on a filled button the accent
+                // would be the only thing not punched out of the fill.
+                DyeIcon(icon, null, size = if (small) 14.dp else 16.dp,
+                    tint = labelColor, accent = labelColor)
+            }
+            Text(
+                text.uppercase(),
+                style = FilmTheme.type.data.copy(fontSize = if (small) 11.sp else 13.sp),
+                color = labelColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
 @Composable
-fun VaultProgressBar(fraction: Float, color: Color = Amber) {
+fun VaultProgressBar(fraction: Float, color: Color = Color.Unspecified) {
+    val colors = FilmTheme.colors
+    val fill = if (color != Color.Unspecified) color else colors.cyan
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(4.dp)
-            .drawBehind {
-                drawRoundRect(color = Bg4, cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
-            }
+            .height(3.dp)
+            .drawBehind { drawRect(color = colors.filmRaised) }
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth(fraction.coerceIn(0f, 1f))
                 .fillMaxHeight()
-                .drawBehind {
-                    drawRoundRect(color = color, cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
-                }
+                .drawBehind { drawRect(color = fill) }
         )
     }
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
+/**
+ * Kept as the name every screen already calls; the drawing lives in
+ * [com.analogvault.ui.film.UnexposedFrames] so the empty state and the film
+ * language stay one thing.
+ */
 @Composable
-fun EmptyState(text: String) {
-    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = TextTertiary, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
-    }
+fun EmptyState(text: String, verb: String? = null, onVerb: (() -> Unit)? = null) {
+    com.analogvault.ui.film.UnexposedFrames(text = text, verb = verb, onVerb = onVerb)
 }

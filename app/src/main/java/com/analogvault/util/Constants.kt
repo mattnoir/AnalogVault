@@ -50,8 +50,45 @@ object Constants {
         "8s","10s","13s",
         "15s","20s","25s","30s","B"
     )
+    /**
+     * The whole-stop subset of [SHUTTER_SPEEDS], in the same order.
+     *
+     * A film body's dial has whole stops; the third-stops in the full list exist
+     * so a reading can be recorded precisely, not so they can be offered as
+     * choices. The exposure ladder shows these, which is the difference between
+     * a ten-rung ladder and a thirty-rung scroll.
+     */
+    val WHOLE_STOP_SHUTTERS = listOf(
+        "1/8000","1/4000","1/2000","1/1000","1/500","1/250","1/125","1/60","1/30",
+        "1/15","1/8","1/4","1/2","1s","2s","4s","8s","15s","30s"
+    )
     val APERTURES = listOf(0.95,1.0,1.1,1.2,1.4,1.6,1.8,2.0,2.2,2.5,2.8,3.2,3.5,4.0,4.5,5.0,5.6,6.3,7.1,8.0,9.0,10.0,11.0,13.0,14.0,16.0,18.0,20.0,22.0,25.0,29.0,32.0)
-    val METERING_TYPES = listOf("Evaluative/Matrix","Center-Weighted","Spot","Highlight-Weighted")
+    // Short, single-word labels. The old names ("Evaluative/Matrix",
+    // "Center-Weighted") were wider than the dropdown they live in and wrapped
+    // mid-word to "Evaluativ / e/Matrix". These are also the words the labels on
+    // an actual camera use, so nothing is lost by shortening them.
+    const val METERING_MATRIX    = "MATRIX"
+    const val METERING_CENTRE    = "CENTRE"
+    const val METERING_SPOT      = "SPOT"
+    const val METERING_HIGHLIGHT = "HIGHLIGHT"
+    val METERING_TYPES = listOf(METERING_MATRIX, METERING_CENTRE, METERING_SPOT, METERING_HIGHLIGHT)
+
+    /**
+     * Map a persisted metering setting onto the current vocabulary.
+     *
+     * Installs from before the rename hold the old long names; without this the
+     * dropdown would show a value that is not in its own option list and the
+     * overlay would silently fall through to the matrix grid.
+     */
+    fun normaliseMetering(stored: String?): String = when (stored) {
+        null, "" -> METERING_MATRIX
+        "Evaluative/Matrix"  -> METERING_MATRIX
+        "Center-Weighted"    -> METERING_CENTRE
+        "Spot"               -> METERING_SPOT
+        "Highlight-Weighted" -> METERING_HIGHLIGHT
+        in METERING_TYPES    -> stored
+        else                 -> METERING_MATRIX
+    }
     val DEVELOP_PROCESSES = listOf("C-41 (Color)","B&W (Standard)","B&W (Stand)","B&W (Semi-Stand)","E-6 (Slide)","Custom")
     val SCAN_METHODS = listOf("Flatbed Scanner","DSLR/Mirrorless","Phone Scan","Lab Scan","Drum Scan")
     val ACCESSORY_TYPES = listOf("Filter","Flash","Tripod","Cable Release","Light Meter","Film Changing Bag","Darkroom Equipment","Bag/Case","Strap","Lens Hood","Other")
