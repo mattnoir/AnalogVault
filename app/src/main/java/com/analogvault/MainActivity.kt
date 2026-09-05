@@ -108,7 +108,14 @@ class MainActivity : ComponentActivity() {
             // screen at once. A per-screen toggle would leave whichever surface
             // you were not looking at still burning white.
             val safelight by vm.safelight.collectAsState()
-            FilmTheme(safelight = safelight) {
+            val saturation by vm.saturation.collectAsState()
+            val legacyAmber by vm.legacyAmber.collectAsState()
+            val themeReady by vm.themeReady.collectAsState()
+            FilmTheme(
+                safelight = safelight,
+                legacyAmber = legacyAmber,
+                saturation = saturation,
+            ) {
                 // The grain is applied exactly once, here, on the root container —
                 // one tiled draw for the whole tree. Never per screen and never
                 // per list item; see FilmModifiers.filmGrain.
@@ -118,7 +125,11 @@ class MainActivity : ComponentActivity() {
                         .background(FilmTheme.colors.void)
                         .filmGrain()
                 ) {
-                    VaultApp()
+                    // Nothing until the palette is known. The window background
+                    // is black, this container is black, and every scheme starts
+                    // from black — so the wait is invisible, where drawing first
+                    // and correcting afterwards was not.
+                    if (themeReady) VaultApp()
                 }
             }
         }

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import com.analogvault.ui.theme.onAccent
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
 import java.text.SimpleDateFormat
@@ -766,7 +767,9 @@ fun VaultButton(
             .padding(horizontal = if (small) 10.dp else 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        val labelColor = if (filled) colors.void else accent
+        // A filled button is the accent, so its label has to be legible on
+        // whatever the accent currently is — see FilmColors.onAccent.
+        val labelColor = if (filled) colors.onAccent(accent, preferred = colors.void) else accent
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),

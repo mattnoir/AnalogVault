@@ -35,6 +35,7 @@ import com.analogvault.ui.film.FilmChip
 import com.analogvault.ui.film.FilmChipRow
 import com.analogvault.ui.film.FilmIcons
 import com.analogvault.ui.film.stockAccentFor
+import com.analogvault.ui.theme.onAccent
 import com.analogvault.ui.theme.FilmTheme
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
@@ -252,7 +253,7 @@ fun ShotMapScreen(
                                     label = if (cluster.frames.size > 1) "${cluster.frames.size}"
                                             else "${cluster.frames.first().frameNumber}",
                                     accent = cluster.accent,
-                                    onAccent = colors.void,
+                                    onAccent = colors.onAccent(cluster.accent, preferred = colors.void),
                                     sizePx = with(density) { MARKER_SIZE.toPx() }.toInt(),
                                     stacked = cluster.frames.size > 1,
                                 )

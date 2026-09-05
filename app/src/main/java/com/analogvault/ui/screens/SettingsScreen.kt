@@ -24,6 +24,7 @@ import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.util.Constants
 import com.analogvault.ui.film.DyeIcon
 import com.analogvault.ui.film.FilmIcons
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -33,6 +34,8 @@ fun SettingsScreen(vm: MainViewModel) {
     val customIsos by vm.customIsos.collectAsState()
     val highRefresh by vm.highRefresh.collectAsState()
     val safelight by vm.safelight.collectAsState()
+    val saturation by vm.saturation.collectAsState()
+    val legacyAmber by vm.legacyAmber.collectAsState()
     val remindersEnabled  by vm.remindersEnabled.collectAsState()
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
@@ -57,25 +60,13 @@ fun SettingsScreen(vm: MainViewModel) {
     ) {
         SectionTitle("Settings")
 
-        // ── Weather ──────────────────────────────────────────────────────────
-        SectionCard("Weather (OpenWeatherMap)") {
-            Text(
-                "Get a free API key at openweathermap.org/api — paste it here to enable the weather screen and auto weather in shot logs.",
-                color = FilmTheme.colors.dim, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                VaultTextField(
-                    owmDraft, { owmDraft = it }, "OWM API Key",
-                    modifier = Modifier.weight(1f)
-                )
-                VaultButton("Save", small = true, onClick = { vm.saveOwmKey(owmDraft) })
-            }
-        }
+        // Ordered by how often a setting is touched, not by how it is stored:
+        // units and display are read at a glance, ISO is occasional, reminders
+        // are set once, and the API key is pasted once in the app's lifetime —
+        // so it sits at the bottom rather than greeting you at the top.
 
-        // ── Display ──────────────────────────────────────────────────────────
-        SectionCard("Display & Units") {
+        // ── Units ────────────────────────────────────────────────────────────
+        SectionCard("Units") {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Currency symbol", color = FilmTheme.colors.dim, fontSize = 13.sp,
@@ -89,22 +80,22 @@ fun SettingsScreen(vm: MainViewModel) {
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Units", color = FilmTheme.colors.dim, fontSize = 13.sp,
+                Text("Measurements", color = FilmTheme.colors.dim, fontSize = 13.sp,
                     modifier = Modifier.weight(1f))
                 Text(if (isMetric) "Metric" else "Imperial",
                     color = FilmTheme.colors.halide, fontSize = 13.sp)
                 Switch(
                     checked = isMetric,
                     onCheckedChange = { vm.saveMetric(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = FilmTheme.colors.void,
-                        checkedTrackColor = FilmTheme.colors.cyan,
-                        uncheckedThumbColor = FilmTheme.colors.dim,
-                        uncheckedTrackColor = FilmTheme.colors.film,
-                    )
+                    colors = settingsSwitchColors(),
                 )
             }
-            Spacer(Modifier.height(12.dp))
+        }
+
+        // ── Display ──────────────────────────────────────────────────────────
+        // How the app looks, which is a different question from what its
+        // numbers are measured in.
+        SectionCard("Display") {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
@@ -115,12 +106,24 @@ fun SettingsScreen(vm: MainViewModel) {
                 Switch(
                     checked = highRefresh,
                     onCheckedChange = { vm.saveHighRefresh(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = FilmTheme.colors.void,
-                        checkedTrackColor = FilmTheme.colors.cyan,
-                        uncheckedThumbColor = FilmTheme.colors.dim,
-                        uncheckedTrackColor = FilmTheme.colors.film,
-                    )
+                    colors = settingsSwitchColors(),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Legacy amber", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                    Text("The palette from before the redesign — amber, brown and " +
+                        "orange. Same layouts, film strips and type; only the " +
+                        "colours change. Safelight overrides it.",
+                        color = FilmTheme.colors.dim, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = legacyAmber,
+                    onCheckedChange = { vm.setLegacyAmber(it) },
+                    enabled = !safelight,
+                    colors = settingsSwitchColors(),
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -136,66 +139,68 @@ fun SettingsScreen(vm: MainViewModel) {
                 Switch(
                     checked = safelight,
                     onCheckedChange = { vm.setSafelight(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = FilmTheme.colors.void,
-                        checkedTrackColor = FilmTheme.colors.cyan,
-                        uncheckedThumbColor = FilmTheme.colors.dim,
-                        uncheckedTrackColor = FilmTheme.colors.film,
-                    )
+                    colors = settingsSwitchColors(),
                 )
             }
-        }
-
-        // ── Reminders ────────────────────────────────────────────────────────
-        SectionCard("Reminders") {
-            Text(
-                "A daily check that notifies you about film nearing expiry, finished " +
-                "rolls sitting undeveloped, and ageing mixed chemistry.",
-                color = FilmTheme.colors.dim, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Enable reminders", color = FilmTheme.colors.dim, fontSize = 13.sp,
-                    modifier = Modifier.weight(1f))
-                Switch(
-                    checked = remindersEnabled,
-                    onCheckedChange = { on ->
-                        if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            vm.saveRemindersEnabled(on)
-                        }
+            Spacer(Modifier.height(12.dp))
+            Column {
+                // Null except while a drag is in flight.
+                var draggedSaturation by remember { mutableStateOf<Float?>(null) }
+                val shownSaturation = draggedSaturation ?: saturation
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Accent saturation", color = FilmTheme.colors.dim, fontSize = 13.sp,
+                        modifier = Modifier.weight(1f))
+                    Text("${(shownSaturation * 100).roundToInt()}%",
+                        color = FilmTheme.colors.halide, fontSize = 13.sp)
+                }
+                Text("Mutes the cyan/magenta/yellow/orange/violet accents for eye comfort. " +
+                    "No effect while Safelight is on.",
+                    color = FilmTheme.colors.dim, fontSize = 11.sp)
+                Slider(
+                    // Dragging is local; the write happens when the finger
+                    // lifts. Persisting on every value change wrote to Room on
+                    // every frame of the drag, which showed up in logcat as a
+                    // stream of SQLITE_IOERR_LOCK from the settings table.
+                    value = shownSaturation,
+                    onValueChange = { draggedSaturation = it },
+                    onValueChangeFinished = {
+                        draggedSaturation?.let { vm.setSaturation(it) }
+                        draggedSaturation = null
                     },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = FilmTheme.colors.void,
-                        checkedTrackColor = FilmTheme.colors.cyan,
-                        uncheckedThumbColor = FilmTheme.colors.dim,
-                        uncheckedTrackColor = FilmTheme.colors.film,
-                    )
+                    valueRange = 0f..1f,
+                    enabled = !safelight,
+                    colors = SliderDefaults.colors(
+                        thumbColor = FilmTheme.colors.cyan,
+                        activeTrackColor = FilmTheme.colors.cyan,
+                        // edge, not film: the track has to be visible against
+                        // the card it sits on, and at low saturation the thumb
+                        // was the only part of the control you could find.
+                        inactiveTrackColor = FilmTheme.colors.edge,
+                    ),
                 )
-            }
-            if (remindersEnabled) {
-                ReminderToggle("Film expiry (60-day warning)", remindExpiry) { vm.saveRemindExpiry(it) }
-                ReminderToggle("Undeveloped rolls (3+ weeks)", remindUndeveloped) { vm.saveRemindUndeveloped(it) }
-                ReminderToggle("Chemistry age (60+ days mixed)", remindChemicals) { vm.saveRemindChemicals(it) }
             }
         }
 
-        // ── Custom ISOs ──────────────────────────────────────────────────────
-        SectionCard("Custom ISO Values") {
+        // ── ISO ──────────────────────────────────────────────────────────────
+        // One section, because they are one subject: what the range is, then
+        // what you can add to it. The built-in range comes first — it answers
+        // "do I even need a custom value" before offering the field.
+        SectionCard("ISO") {
             Text(
-                "Add non-standard ISO values (e.g. 1000, 3400) for unusual films. " +
-                "These appear alongside standard values in shot and film ISO pickers.",
+                "Built-in range: ${Constants.ISOS.first()}–${Constants.ISOS.last()}. " +
+                "Add anything outside it below — non-standard values like 1000 or " +
+                "3400 for unusual films. Custom values appear alongside the " +
+                "built-in ones in every shot and film ISO picker.",
                 color = FilmTheme.colors.dim, fontSize = 12.sp
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 VaultTextField(
                     customIsoInput,
                     { customIsoInput = it.filter(Char::isDigit) },
-                    "ISO (e.g. 1000)",
+                    "Custom ISO (e.g. 1000)",
                     keyboardType = KeyboardType.Number,
                     modifier = Modifier.weight(1f)
                 )
@@ -226,33 +231,84 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
-        // ── Standard ISOs reminder ───────────────────────────────────────────
-        SectionCard("Standard ISOs") {
+        // ── Reminders ────────────────────────────────────────────────────────
+        SectionCard("Reminders") {
             Text(
-                "Built-in ISO range: ${Constants.ISOS.first()}–${Constants.ISOS.last()}. " +
-                "Add custom values above for anything outside this range.",
+                "A daily check that notifies you about film nearing expiry, finished " +
+                "rolls sitting undeveloped, and ageing mixed chemistry.",
                 color = FilmTheme.colors.dim, fontSize = 12.sp
             )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Enable reminders", color = FilmTheme.colors.dim, fontSize = 13.sp,
+                    modifier = Modifier.weight(1f))
+                Switch(
+                    checked = remindersEnabled,
+                    onCheckedChange = { on ->
+                        if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            vm.saveRemindersEnabled(on)
+                        }
+                    },
+                    colors = settingsSwitchColors(),
+                )
+            }
+            if (remindersEnabled) {
+                // The three below belong to the switch above, so they are
+                // indented under it and spaced by the column rather than by a
+                // leading spacer inside each row — which is what left them
+                // bunched against each other and against the enable row.
+                Column(
+                    Modifier.padding(top = 14.dp, start = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    ReminderToggle("Film expiry (60-day warning)", remindExpiry) { vm.saveRemindExpiry(it) }
+                    ReminderToggle("Undeveloped rolls (3+ weeks)", remindUndeveloped) { vm.saveRemindUndeveloped(it) }
+                    ReminderToggle("Chemistry age (60+ days mixed)", remindChemicals) { vm.saveRemindChemicals(it) }
+                }
+            }
+        }
+
+        // ── Weather ──────────────────────────────────────────────────────────
+        // Last: pasted once, then never touched again.
+        SectionCard("Weather (OpenWeatherMap)") {
+            Text(
+                "Get a free API key at openweathermap.org/api — paste it here to enable the weather screen and auto weather in shot logs.",
+                color = FilmTheme.colors.dim, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                VaultTextField(
+                    owmDraft, { owmDraft = it }, "OWM API Key",
+                    modifier = Modifier.weight(1f)
+                )
+                VaultButton("Save", small = true, onClick = { vm.saveOwmKey(owmDraft) })
+            }
         }
     }
 }
 
+/** One switch palette, so a new toggle cannot drift from the rest. */
+@Composable
+private fun settingsSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = FilmTheme.colors.void,
+    checkedTrackColor = FilmTheme.colors.cyan,
+    uncheckedThumbColor = FilmTheme.colors.dim,
+    uncheckedTrackColor = FilmTheme.colors.film,
+)
+
 @Composable
 private fun ReminderToggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(label, color = FilmTheme.colors.dim, fontSize = 12.sp, modifier = Modifier.weight(1f))
         Switch(
             checked = checked,
             onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(
-                        checkedThumbColor = FilmTheme.colors.void,
-                        checkedTrackColor = FilmTheme.colors.cyan,
-                        uncheckedThumbColor = FilmTheme.colors.dim,
-                        uncheckedTrackColor = FilmTheme.colors.film,
-                    ),
-            modifier = Modifier.height(24.dp)
+            colors = settingsSwitchColors(),
         )
     }
 }

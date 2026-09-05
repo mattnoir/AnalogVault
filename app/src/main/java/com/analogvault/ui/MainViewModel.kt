@@ -139,13 +139,25 @@ class MainViewModel @Inject constructor(
     init {
         viewModelScope.launch(Dispatchers.IO) { migratePhotosFromCache() }
         viewModelScope.launch {
+            // The palette first, and nothing before it.
+            //
+            // These three decide what colour the app is, and the UI waits on
+            // themeReady before it draws anything (see MainActivity). Read
+            // anywhere further down this block and the first frame is the
+            // default scheme, with the real one arriving a beat later — which
+            // is exactly what the amber theme looked like: a second of neon,
+            // then a swap.
+            _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
+            _legacyAmber.value = (repo.getSetting("legacy_amber") ?: "false") == "true"
+            _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
+            _themeReady.value = true
+
             _owmKey.value   = repo.getSetting("owm_key") ?: ""
             _currency.value = repo.getSetting("currency") ?: "€"
             _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
             _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
-            _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
             _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
             _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
             _placeName.value = repo.getSetting("place_name").orEmpty()
@@ -553,6 +565,40 @@ class MainViewModel @Inject constructor(
         _safelight.value = on; repo.setSetting("safelight", on.toString())
     }
     fun toggleSafelight() = setSafelight(!_safelight.value)
+
+    /**
+     * False until the palette settings have been read.
+     *
+     * The window background is already black, so holding the first frame until
+     * this flips costs a few milliseconds of the black the app starts on
+     * anyway — and it is the difference between opening in your theme and
+     * opening in someone else's.
+     */
+    private val _themeReady = MutableStateFlow(false)
+    val themeReady: StateFlow<Boolean> = _themeReady.asStateFlow()
+
+    /**
+     * The palette the app wore before the Dye Layer redesign — same design,
+     * amber instead of dyes. Ignored while safelight is on, which is its own
+     * scheme (see FilmTheme.kt).
+     */
+    private val _legacyAmber = MutableStateFlow(false)
+    val legacyAmber: StateFlow<Boolean> = _legacyAmber.asStateFlow()
+    fun setLegacyAmber(on: Boolean) = viewModelScope.launch {
+        _legacyAmber.value = on; repo.setSetting("legacy_amber", on.toString())
+    }
+
+    /**
+     * Saturation of the cyan/magenta/yellow/mask/violet accent colors, 0f
+     * (grayscale) to 1f (full dye-layer saturation, the default). Mutes the
+     * high-contrast accents for eye comfort; has no effect while safelight is
+     * active (see FilmTheme.kt).
+     */
+    private val _saturation = MutableStateFlow(1f)
+    val saturation: StateFlow<Float> = _saturation.asStateFlow()
+    fun setSaturation(value: Float) = viewModelScope.launch {
+        _saturation.value = value; repo.setSetting("saturation", value.toString())
+    }
 
     private val _devTempC = MutableStateFlow(20.0)
     val devTempC: StateFlow<Double> = _devTempC.asStateFlow()
