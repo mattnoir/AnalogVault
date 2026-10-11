@@ -27,6 +27,12 @@ fun daysUntilDate(raw: String): Int? {
 }
 
 object Constants {
+    /**
+     * Settings key holding the user's saved darkroom timers, as a JSON array.
+     * Shared by the Darkroom (which reads and writes it) and the backup (which
+     * carries it), so the two cannot drift onto different keys.
+     */
+    const val SAVED_TIMERS_SETTING = "saved_timers"
     val STORAGE_TYPES = listOf("Shelf","Fridge","Freezer","Cool Dark Place","Custom")
     val FILM_TYPES = listOf("Color Negative (C-41)","Black & White","Slide (E-6)","Infrared","Instant")
     val ISOS = listOf(25,32,40,50,64,80,100,125,160,200,250,320,400,500,640,800,1000,1250,1600,2000,2500,3200,4000,5000,6400,12800,25600)

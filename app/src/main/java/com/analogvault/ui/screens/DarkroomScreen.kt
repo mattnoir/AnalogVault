@@ -55,6 +55,9 @@ import com.analogvault.util.Constants
 import com.analogvault.util.DevTime
 import com.analogvault.ui.film.DyeIcon
 import com.analogvault.ui.film.FilmIcons
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
@@ -251,6 +254,72 @@ fun DevTimer.atTemperature(tempC: Double): DevTimer {
     })
 }
 
+// ─── Saved timer storage ──────────────────────────────────────────────────────
+//
+// Written field by field rather than through Gson reflection: release builds
+// are minified, and a reflected DevTimer would be stored under whatever names
+// R8 picked for that build — so the next update would read every saved timer
+// back as garbage. Literal keys are a format; field names are not.
+
+fun encodeTimers(timers: List<DevTimer>): String {
+    val arr = JsonArray()
+    timers.forEach { t ->
+        arr.add(JsonObject().apply {
+            addProperty("id", t.id)
+            addProperty("name", t.name)
+            add("steps", JsonArray().apply {
+                t.steps.forEach { s ->
+                    add(JsonObject().apply {
+                        addProperty("id", s.id)
+                        addProperty("name", s.name)
+                        addProperty("durationSec", s.durationSec)
+                        addProperty("role", s.role.name)
+                        addProperty("agitationInitialSec", s.agitation.initialSec)
+                        addProperty("agitationEverySec", s.agitation.everySec)
+                        addProperty("agitationBurstSec", s.agitation.burstSec)
+                    })
+                }
+            })
+        })
+    }
+    return arr.toString()
+}
+
+/**
+ * The inverse of [encodeTimers]. Forgiving on purpose: a timer that cannot be
+ * read is dropped rather than failing the whole list, because one bad entry
+ * should not cost someone every other process they saved.
+ */
+fun decodeTimers(stored: String?): List<DevTimer> {
+    if (stored.isNullOrBlank()) return emptyList()
+    val arr = runCatching { JsonParser.parseString(stored).asJsonArray }.getOrNull() ?: return emptyList()
+    return arr.mapNotNull { el ->
+        runCatching {
+            val o = el.asJsonObject
+            val steps = o.getAsJsonArray("steps").mapNotNull { se ->
+                runCatching {
+                    val s = se.asJsonObject
+                    val default = DevTime.Agitation.STANDARD
+                    DevStep(
+                        id = s.get("id")?.asString ?: uid(),
+                        name = s.get("name").asString,
+                        durationSec = s.get("durationSec").asInt,
+                        role = runCatching { StepRole.valueOf(s.get("role").asString) }
+                            .getOrDefault(StepRole.DEVELOP),
+                        agitation = DevTime.Agitation(
+                            initialSec = s.get("agitationInitialSec")?.asInt ?: default.initialSec,
+                            everySec = s.get("agitationEverySec")?.asInt ?: default.everySec,
+                            burstSec = s.get("agitationBurstSec")?.asInt ?: default.burstSec,
+                        ),
+                    )
+                }.getOrNull()
+            }
+            if (steps.isEmpty()) null
+            else DevTimer(id = o.get("id").asString, name = o.get("name").asString, steps = steps)
+        }.getOrNull()
+    }
+}
+
 // Preset processes. B&W times are at 20 °C, colour at the kit's own 38 °C.
 val DEV_PRESETS = listOf(
     DevTimer("preset_c41", "C-41 Color", listOf(
@@ -311,7 +380,10 @@ fun TimersTab(vm: MainViewModel) {
     val chemicals by vm.chemicals.collectAsState()
     val timerState by vm.timerState.collectAsState()
     val tempC by vm.devTempC.collectAsState()
+    val savedTimers by vm.savedTimers.collectAsState()
     var showCustom by remember { mutableStateOf(false) }
+    // Null with showCustom set means a new timer; otherwise the saved one being edited.
+    var editingTimer by remember { mutableStateOf<DevTimer?>(null) }
 
     timerState?.let { state ->
         ActiveTimerScreen(state = state, vm = vm)
@@ -334,6 +406,18 @@ fun TimersTab(vm: MainViewModel) {
                 style = FilmTheme.type.rebate, color = colors.dim,
                 modifier = Modifier.padding(horizontal = 14.dp),
             )
+        }
+
+        // Yours before the stock ones: a process someone took the trouble to
+        // save is the one they came back to run.
+        if (savedTimers.isNotEmpty()) {
+            item { DarkroomEyebrow("Your timers") }
+            items(savedTimers, key = { it.id }) { saved ->
+                PresetCard(
+                    saved, tempC,
+                    onEdit = { editingTimer = saved; showCustom = true },
+                ) { vm.startTimer(saved.atTemperature(tempC)) }
+            }
         }
 
         item { DarkroomEyebrow("Process presets") }
@@ -378,20 +462,30 @@ fun TimersTab(vm: MainViewModel) {
             Spacer(Modifier.height(14.dp))
             Box(Modifier.padding(horizontal = 14.dp)) {
                 DarkroomSegment("+ CUSTOM TIMER", selected = false, accent = colors.cyan,
-                    modifier = Modifier.fillMaxWidth()) { showCustom = true }
+                    modifier = Modifier.fillMaxWidth()) { editingTimer = null; showCustom = true }
             }
         }
     }
 
     if (showCustom) {
-        CustomTimerSheet(onDismiss = { showCustom = false }) { timer ->
-            vm.startTimer(timer.atTemperature(tempC)); showCustom = false
-        }
+        val close = { showCustom = false; editingTimer = null }
+        CustomTimerSheet(
+            initial = editingTimer,
+            onDismiss = close,
+            onSave = { timer -> vm.saveCustomTimer(timer); close() },
+            onDelete = editingTimer?.let { t -> { vm.deleteCustomTimer(t.id); close() } },
+            onStart = { timer -> vm.startTimer(timer.atTemperature(tempC)); close() },
+        )
     }
 }
 
 @Composable
-private fun PresetCard(preset: DevTimer, tempC: Double, onStart: () -> Unit) {
+private fun PresetCard(
+    preset: DevTimer,
+    tempC: Double,
+    onEdit: (() -> Unit)? = null,
+    onStart: () -> Unit,
+) {
     val colors = FilmTheme.colors
     val adjusted = preset.atTemperature(tempC)
     val warning = DevTime.warning(preset.process, tempC)
@@ -407,6 +501,12 @@ private fun PresetCard(preset: DevTimer, tempC: Double, onStart: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(preset.name.uppercase(), style = FilmTheme.type.stock.copy(fontSize = 20.sp),
                 color = colors.halide, modifier = Modifier.weight(1f))
+            onEdit?.let {
+                IconButton(onClick = it, modifier = Modifier.size(32.dp)) {
+                    DyeIcon(FilmIcons.Edit, "Edit ${preset.name}", size = 16.dp, tint = colors.dim)
+                }
+                Spacer(Modifier.width(6.dp))
+            }
             Text("▶", style = FilmTheme.type.data, color = colors.magenta)
         }
         Spacer(Modifier.height(6.dp))
@@ -742,64 +842,175 @@ private fun agitationCue(
 
 // ─── Custom timer sheet ───────────────────────────────────────────────────────
 
-@Composable
-fun CustomTimerSheet(onDismiss: () -> Unit, onStart: (DevTimer) -> Unit) {
-    var name   by remember { mutableStateOf("") }
-    // Each step: name, minutes, seconds
-    var steps  by remember { mutableStateOf(listOf(Triple("", "8", "0"))) }
+/** A step as typed: the time fields stay text until the sheet is committed. */
+private data class StepDraft(
+    val id: String = uid(),
+    val name: String = "",
+    val mins: String = "0",
+    val secs: String = "0",
+    val role: StepRole = StepRole.DEVELOP,
+    val agitation: DevTime.Agitation = defaultAgitation(StepRole.DEVELOP),
+) {
+    val durationSec: Int get() = (mins.toIntOrNull() ?: 0) * 60 + (secs.toIntOrNull() ?: 0)
+    fun toStep() = DevStep(id = id, name = name.trim(), durationSec = durationSec,
+        role = role, agitation = agitation)
+}
 
-    VaultSheet("Custom Timer", onDismiss) {
+private fun DevStep.toDraft() = StepDraft(
+    id = id, name = name,
+    mins = (durationSec / 60).toString(), secs = (durationSec % 60).toString(),
+    role = role, agitation = agitation,
+)
+
+/**
+ * What a fresh step of each role usually wants, matching the B&W preset. Only a
+ * starting point — picking a role resets it, and the agitation row overrides it.
+ */
+private fun defaultAgitation(role: StepRole): DevTime.Agitation = when (role) {
+    StepRole.DEVELOP, StepRole.FIX -> DevTime.Agitation.STANDARD
+    StepRole.STOP                  -> DevTime.Agitation.CONTINUOUS
+    StepRole.WASH, StepRole.FINISH -> DevTime.Agitation.NONE
+}
+
+private val ROLE_LABELS = listOf(
+    StepRole.DEVELOP to "Develop", StepRole.STOP to "Stop", StepRole.FIX to "Fix",
+    StepRole.WASH to "Wash", StepRole.FINISH to "Finish",
+)
+
+private val AGITATION_CHOICES = listOf(
+    "Standard" to DevTime.Agitation.STANDARD,
+    "Stand" to DevTime.Agitation.STAND,
+    "Continuous" to DevTime.Agitation.CONTINUOUS,
+    "None" to DevTime.Agitation.NONE,
+)
+
+/**
+ * Builds a timer to run now, to keep, or both.
+ *
+ * Each step carries a role because the role is what decides whether the
+ * working temperature scales it (only the developer does) and what colour it
+ * draws in; a custom timer whose wash was silently treated as a developer would
+ * stretch the wash on a warm night.
+ *
+ * @param initial the saved timer being edited, or null for a new one.
+ * @param onDelete shown only when editing.
+ */
+@Composable
+fun CustomTimerSheet(
+    initial: DevTimer?,
+    onDismiss: () -> Unit,
+    onSave: (DevTimer) -> Unit,
+    onDelete: (() -> Unit)?,
+    onStart: (DevTimer) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    // Kept across recompositions so saving a new timer twice cannot mint two ids.
+    val timerId = remember { initial?.id ?: uid() }
+    var name  by remember { mutableStateOf(initial?.name ?: "") }
+    var steps by remember {
+        mutableStateOf(initial?.steps?.map { it.toDraft() } ?: listOf(StepDraft(mins = "8")))
+    }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    fun update(i: Int, change: (StepDraft) -> StepDraft) {
+        steps = steps.toMutableList().also { it[i] = change(it[i]) }
+    }
+
+    // A step with no name or no time is a row the user has not filled in yet,
+    // not a mistake, so it is left out rather than refused.
+    val built = steps.filter { it.name.isNotBlank() && it.durationSec > 0 }.map { it.toStep() }
+    val timer = if (name.isNotBlank() && built.isNotEmpty())
+        DevTimer(id = timerId, name = name.trim(), steps = built) else null
+
+    VaultSheet(if (initial != null) "Edit Timer" else "Custom Timer", onDismiss) {
         VaultTextField(name, { name = it }, "Process name", placeholder = "e.g. HC-110 Dilution B")
+        Spacer(Modifier.height(4.dp))
+        Text("Developer steps are entered at 20 °C and scaled to the working temperature when started.",
+            color = colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(12.dp))
-        Text("Steps", color = FilmTheme.colors.cyan, fontSize = 13.sp)
+        Text("Steps", color = colors.cyan, fontSize = 13.sp)
         Spacer(Modifier.height(8.dp))
-        steps.forEachIndexed { i, (stepName, mins, secs) ->
+        steps.forEachIndexed { i, step ->
             Column(
                 Modifier.fillMaxWidth()
-                    .background(FilmTheme.colors.filmRaised)
-                    .border(1.dp, FilmTheme.colors.edge)
+                    .background(colors.filmRaised)
+                    .border(1.dp, colors.edge)
                     .padding(10.dp)
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Step ${i + 1}", color = FilmTheme.colors.dim, fontSize = 11.sp)
+                    Text("Step ${i + 1}", color = colors.dim, fontSize = 11.sp)
                     if (steps.size > 1) {
                         IconButton(onClick = { steps = steps.toMutableList().also { it.removeAt(i) } },
                             Modifier.size(24.dp)) {
-                            DyeIcon(FilmIcons.Close, null, size = 14.dp, tint = FilmTheme.colors.mask.copy(alpha = 0.7f))
+                            DyeIcon(FilmIcons.Close, "Remove step ${i + 1}", size = 14.dp,
+                                tint = colors.mask.copy(alpha = 0.7f))
                         }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                VaultTextField(stepName, { v -> steps = steps.toMutableList().also { it[i] = Triple(v, mins, secs) } },
+                VaultTextField(step.name, { v -> update(i) { it.copy(name = v) } },
                     "Step name", placeholder = "Developer")
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    VaultTextField(mins,
-                        { v -> steps = steps.toMutableList().also { it[i] = Triple(stepName, v, secs) } },
+                    VaultTextField(step.mins, { v -> update(i) { it.copy(mins = v) } },
                         "Min", modifier = Modifier.weight(1f),
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
-                    VaultTextField(secs,
-                        { v -> steps = steps.toMutableList().also { it[i] = Triple(stepName, mins, v) } },
+                    VaultTextField(step.secs, { v -> update(i) { it.copy(secs = v) } },
                         "Sec", modifier = Modifier.weight(1f),
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Role", color = colors.dim, fontSize = 11.sp)
+                Spacer(Modifier.height(4.dp))
+                FilmChipRow {
+                    ROLE_LABELS.forEach { (role, label) ->
+                        FilmChip(label, color = role.color(), filled = step.role == role,
+                            modifier = Modifier.semantics { selected = step.role == role },
+                            onClick = {
+                                update(i) { it.copy(role = role, agitation = defaultAgitation(role)) }
+                            })
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Agitation", color = colors.dim, fontSize = 11.sp)
+                Spacer(Modifier.height(4.dp))
+                FilmChipRow {
+                    AGITATION_CHOICES.forEach { (label, agitation) ->
+                        FilmChip(label, color = colors.cyan, filled = step.agitation == agitation,
+                            modifier = Modifier.semantics { selected = step.agitation == agitation },
+                            onClick = { update(i) { it.copy(agitation = agitation) } })
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
         }
         VaultButton("+ Add Step", modifier = Modifier.fillMaxWidth(), ghost = true,
-            onClick = { steps = steps + Triple("", "0", "0") })
+            onClick = { steps = steps + StepDraft() })
         Spacer(Modifier.height(16.dp))
-        VaultButton("Start Timer", modifier = Modifier.fillMaxWidth(), onClick = {
-            if (name.isNotBlank() && steps.any { it.first.isNotBlank() }) {
-                val devSteps = steps
-                    .filter { it.first.isNotBlank() }
-                    .map { (n, m, s) ->
-                        DevStep(name = n, durationSec = (m.toIntOrNull() ?: 0) * 60 + (s.toIntOrNull() ?: 0))
-                    }
-                if (devSteps.isNotEmpty()) onStart(DevTimer(name = name, steps = devSteps))
-            }
-        })
+        if (timer == null) {
+            Text("Name the process and give at least one step a name and a time.",
+                color = colors.dim, fontSize = 11.sp)
+            Spacer(Modifier.height(8.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            VaultButton(if (initial != null) "Save Changes" else "Save", ghost = true,
+                enabled = timer != null, modifier = Modifier.weight(1f),
+                onClick = { timer?.let(onSave) })
+            VaultButton("Start Timer", enabled = timer != null, modifier = Modifier.weight(1f),
+                onClick = { timer?.let(onStart) })
+        }
+        if (onDelete != null) {
+            Spacer(Modifier.height(10.dp))
+            VaultButton("Delete Timer", danger = true, modifier = Modifier.fillMaxWidth(),
+                onClick = { confirmDelete = true })
+        }
+    }
+
+    if (confirmDelete && onDelete != null) {
+        ConfirmDialog("Delete \"${initial?.name ?: name}\"?",
+            onConfirm = { confirmDelete = false; onDelete() },
+            onDismiss = { confirmDelete = false })
     }
 }
 

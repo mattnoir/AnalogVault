@@ -56,6 +56,8 @@ class VaultRepository @Inject constructor(
     // Settings
     suspend fun getSetting(key: String): String? = settingDao.get(key)?.value
     suspend fun setSetting(key: String, value: String) = settingDao.upsert(Setting(key, value))
+    /** A setting as a live value, for the ones a backup restore can change underneath the UI. */
+    fun observeSetting(key: String): Flow<String?> = settingDao.observe(key)
 
     // Bulk rolls
     val bulkRolls: Flow<List<BulkRoll>> = bulkRollDao.getAll()

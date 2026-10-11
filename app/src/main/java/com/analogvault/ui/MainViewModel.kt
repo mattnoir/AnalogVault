@@ -16,6 +16,8 @@ import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
 import com.analogvault.ui.screens.DEFAULT_HOME_ORDER
 import com.analogvault.ui.screens.DevTimer
+import com.analogvault.ui.screens.decodeTimers
+import com.analogvault.ui.screens.encodeTimers
 import com.analogvault.ui.screens.HomeSection
 import com.analogvault.ui.screens.parseHomeHidden
 import com.analogvault.ui.screens.parseHomeOrder
@@ -35,6 +37,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -631,6 +635,37 @@ class MainViewModel @Inject constructor(
     fun saveRemindChemicals(on: Boolean) = viewModelScope.launch {
         _remindChemicals.value = on; repo.setSetting("remind_chemicals", on.toString())
     }
+
+    /**
+     * Timers the user built and kept, stored as written — at 20 °C for B&W —
+     * and scaled to the working temperature only when started, like the presets.
+     *
+     * Observed rather than read once, so a backup restore shows up without a
+     * restart.
+     */
+    val savedTimers: StateFlow<List<DevTimer>> = repo.observeSetting(Constants.SAVED_TIMERS_SETTING)
+        .map { decodeTimers(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // The list is one setting, so every change is a read-modify-write. Read
+    // back from the database rather than the StateFlow, which lags a write by
+    // one emission, and hold the lock across both halves: two quick edits would
+    // otherwise start from the same list and the second would drop the first.
+    private val savedTimersLock = Mutex()
+    private fun editSavedTimers(change: (List<DevTimer>) -> List<DevTimer>) = viewModelScope.launch {
+        savedTimersLock.withLock {
+            val current = decodeTimers(repo.getSetting(Constants.SAVED_TIMERS_SETTING))
+            repo.setSetting(Constants.SAVED_TIMERS_SETTING, encodeTimers(change(current)))
+        }
+    }
+
+    /** Adds [timer], or replaces the saved timer with the same id in place. */
+    fun saveCustomTimer(timer: DevTimer) = editSavedTimers { current ->
+        if (current.any { it.id == timer.id }) current.map { if (it.id == timer.id) timer else it }
+        else current + timer
+    }
+
+    fun deleteCustomTimer(id: String) = editSavedTimers { current -> current.filterNot { it.id == id } }
 
     fun startTimer(timer: DevTimer) {
         timerJob?.cancel()
