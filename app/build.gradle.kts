@@ -16,6 +16,10 @@ android {
         targetSdk = 35
         versionCode = 50
         versionName = "0.5.0"
+
+        // Substituted into android:label. Overridden by the debug build type so
+        // the two installs are distinguishable in the launcher.
+        manifestPlaceholders["appLabel"] = "Analog Vault"
     }
 
     signingConfigs {
@@ -31,6 +35,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Debug installs under its own application id so it can sit beside a
+            // release-signed build on the same device. Without this, installing a
+            // debug build onto a phone that already has the released app fails
+            // with INSTALL_FAILED_UPDATE_INCOMPATIBLE, and the only way through
+            // is uninstalling the real app and its vault data.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix   = "-debug"
+            // Same icon, same position in an alphabetical launcher — the label is
+            // the only thing telling the test install apart from the real one.
+            manifestPlaceholders["appLabel"] = "Analog Vault ·debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -83,6 +99,10 @@ dependencies {
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
+
+    // Pulled in transitively by compose-ui. Declared here purely to override the
+    // transitive 1.0.1, whose libandroidx.graphics.path.so is not 16 KB-aligned.
+    implementation(libs.androidx.graphics.path)
 
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.gson)

@@ -76,5 +76,7 @@ interface ZoomLevelDao {
 interface SettingDao {
     @Query("SELECT * FROM settings WHERE `key` = :key LIMIT 1")
     suspend fun get(key: String): Setting?
+    @Query("SELECT value FROM settings WHERE `key` = :key LIMIT 1")
+    fun observe(key: String): Flow<String?>
     @Upsert suspend fun upsert(setting: Setting)
 }

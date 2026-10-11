@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -32,6 +33,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.analogvault.ui.MainViewModel
+import com.analogvault.ui.film.DyeIcon
+import com.analogvault.ui.film.FilmIconSpec
+import com.analogvault.ui.film.FilmIcons
+import com.analogvault.ui.film.FilmNavBar
+import com.analogvault.ui.film.FilmNavItem
+import com.analogvault.ui.film.ShutterOverlay
+import com.analogvault.ui.film.rememberShutterConfig
+import com.analogvault.ui.film.rememberShutterController
+import com.analogvault.ui.film.ChromaticText
+import com.analogvault.ui.film.filmGrain
 import com.analogvault.ui.screens.*
 import com.analogvault.ui.theme.*
 import dagger.hilt.android.AndroidEntryPoint
@@ -58,7 +69,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        // Both bars transparent with light icons, so the void black the root
+        // container paints runs edge to edge. `dark` here means "dark background,
+        // therefore light icons" — it is not a bar colour. Passing a transparent
+        // scrim also suppresses the translucent plate enableEdgeToEdge would
+        // otherwise put behind the gesture bar below API 29.
+        enableEdgeToEdge(
+            statusBarStyle     = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
 
         // Tell the LTPO display to stay at 120 Hz while this window is visible.
         //
@@ -83,33 +103,77 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        setContent { AnalogVaultTheme { VaultApp() } }
+        setContent {
+            // Safelight is chosen here, at the root, so the swap reaches every
+            // screen at once. A per-screen toggle would leave whichever surface
+            // you were not looking at still burning white.
+            val safelight by vm.safelight.collectAsState()
+            val saturation by vm.saturation.collectAsState()
+            val legacyAmber by vm.legacyAmber.collectAsState()
+            val themeReady by vm.themeReady.collectAsState()
+            FilmTheme(
+                safelight = safelight,
+                legacyAmber = legacyAmber,
+                saturation = saturation,
+            ) {
+                // The grain is applied exactly once, here, on the root container —
+                // one tiled draw for the whole tree. Never per screen and never
+                // per list item; see FilmModifiers.filmGrain.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(FilmTheme.colors.void)
+                        .filmGrain()
+                ) {
+                    // Nothing until the palette is known. The window background
+                    // is black, this container is black, and every scheme starts
+                    // from black — so the wait is invisible, where drawing first
+                    // and correcting afterwards was not.
+                    if (themeReady) VaultApp()
+                }
+            }
+        }
     }
 }
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    DASH    ("Home",     Icons.Default.Home),
-    STASH   ("Stash",   Icons.Default.Inventory),
-    ACTIVE  ("Loaded",  Icons.Default.CameraRoll),
-    METER   ("Meter",   Icons.Default.WbSunny),
-    WEATHER ("Weather", Icons.Default.Cloud),
-    MORE    ("More",    Icons.Default.MoreHoriz),
+private enum class Tab(val label: String, val icon: FilmIconSpec) {
+    DASH    ("Home",     FilmIcons.Home),
+    STASH   ("Stash",   FilmIcons.Stash),
+    ACTIVE  ("Rolls",   FilmIcons.Rolls),
+    MORE    ("More",    FilmIcons.More),
+    // Reached from the shutter, not from the bar. Full screen, no bottom bar.
+    METER   ("Meter",   FilmIcons.Meter),
     // "More" sub-items — not shown in bottom bar directly
-    DARK    ("Darkroom",Icons.Default.Science),
-    STATS   ("Stats",   Icons.Default.BarChart),
-    BACKUP  ("Backup",  Icons.Default.CloudDownload),
-    SETTINGS("Settings",Icons.Default.Settings)
+    DARK    ("Darkroom",FilmIcons.Darkroom),
+    STATS   ("Stats",   FilmIcons.Stats),
+    // No icon in the set is "arrange the rows on Home"; a contact sheet is a
+    // grid of frames you rearrange, which is near enough and stays in the set.
+    HOMELAYOUT("Home layout", FilmIcons.ContactSheet),
+    WEATHER ("Weather", FilmIcons.Weather),
+    BACKUP  ("Backup",  FilmIcons.Backup),
+    SETTINGS("Settings",FilmIcons.Settings),
+    // Not in the bar and not under More: the map is opened from the thing it is
+    // about — Stats for all rolls, a roll for one — and back returns there.
+    SHOTMAP ("Shot map", FilmIcons.Map)
 }
 
-private val BOTTOM_TABS = listOf(Tab.DASH, Tab.STASH, Tab.ACTIVE, Tab.METER, Tab.WEATHER, Tab.MORE)
-private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.BACKUP, Tab.SETTINGS)
+// Four destinations, two either side of the shutter.
+//
+// Weather is not among them any more. It is an input, not a place you go: it
+// belongs on Home as "light right now" and inside the meter. It lives under
+// More until Home absorbs it, so nothing becomes unreachable in the meantime.
+// The OWM key entry it used to own already exists in Settings.
+private val BOTTOM_TABS = listOf(Tab.DASH, Tab.STASH, Tab.ACTIVE, Tab.MORE)
+private val MORE_TABS   = listOf(Tab.DARK, Tab.STATS, Tab.WEATHER, Tab.HOMELAYOUT, Tab.BACKUP, Tab.SETTINGS)
 
 // Left-to-right position of each tab. The screen transition slides toward the side the new
-// tab sits on (e.g. Home→Meter slides in from the right, Meter→Stash slides in from the left).
+// tab sits on (e.g. Home→Rolls slides in from the right, Rolls→Stash slides in from the left).
 private fun tabOrder(tab: Tab): Int = when (tab) {
-    Tab.DASH -> 0; Tab.STASH -> 1; Tab.ACTIVE -> 2; Tab.METER -> 3
-    Tab.WEATHER -> 4; Tab.MORE -> 5
-    Tab.DARK -> 6; Tab.STATS -> 7; Tab.BACKUP -> 8; Tab.SETTINGS -> 9
+    Tab.DASH -> 0; Tab.STASH -> 1; Tab.ACTIVE -> 2; Tab.MORE -> 3
+    Tab.DARK -> 4; Tab.STATS -> 5; Tab.WEATHER -> 6; Tab.HOMELAYOUT -> 7
+    Tab.BACKUP -> 8; Tab.SETTINGS -> 9
+    Tab.METER -> 10
+    Tab.SHOTMAP -> 11
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,64 +192,123 @@ fun VaultApp() {
     // Hierarchical navigation: Home (DASH) is the root, the bottom tabs sit beneath it, and the
     // "More" sub-screens sit one level deeper. Back always walks up the hierarchy toward Home.
     var currentTab by remember { mutableStateOf(Tab.DASH) }
+    // Where the shutter was pressed from, so closing the meter returns there
+    // rather than dumping the user on Home mid-task.
+    var tabBeforeMeter by remember { mutableStateOf(Tab.DASH) }
+    // Same for the map, which is opened from two places and has to go back to
+    // whichever one asked for it.
+    var tabBeforeMap by remember { mutableStateOf(Tab.STATS) }
+    // Null means every roll; a roll id opens the map filtered to it.
+    var mapRollId by remember { mutableStateOf<String?>(null) }
 
     fun navigateTo(tab: Tab, subTab: Int = 0) {
         if (tab == Tab.ACTIVE) activeSubTab = subTab
+        if (tab == Tab.METER && currentTab != Tab.METER) tabBeforeMeter = currentTab
+        if (tab == Tab.SHOTMAP && currentTab != Tab.SHOTMAP) tabBeforeMap = currentTab
         currentTab = tab
     }
 
-    // Back: walk up one level — More sub-screens → More, any other tab → Home, Home → exit.
+    // The iris belongs to the shutter release, not to the meter.
+    //
+    // Pressing the big button in the middle of the bar is the gesture the
+    // animation is about — you press a shutter, a shutter fires. Reaching the
+    // same screen from the light card on Home is not that gesture, so it opens
+    // the way every other screen does. The transition marks the action, not the
+    // destination.
+    //
+    // It is also enter-only. A shutter firing on the way out would be a second
+    // exposure for a frame you did not take, and 680ms is a long time to spend
+    // leaving somewhere.
+    val shutter = rememberShutterController()
+    val shutterConfig = rememberShutterConfig()
+
+    /** True while the meter is on screen because the shutter release put it there. */
+    var meterViaShutter by remember { mutableStateOf(false) }
+
+    fun fireShutter() = shutter.play(shutterConfig) {
+        meterViaShutter = true
+        navigateTo(Tab.METER)
+    }
+
+    fun openMeterPlainly() {
+        meterViaShutter = false
+        navigateTo(Tab.METER)
+    }
+
+    fun closeMeter() { currentTab = tabBeforeMeter }
+
+    fun openMap(rollId: String?) {
+        mapRollId = rollId
+        navigateTo(Tab.SHOTMAP)
+    }
+
+    // Back: walk up one level — meter → wherever the shutter was pressed,
+    // More sub-screens → More, any other tab → Home, Home → exit.
     BackHandler(enabled = currentTab != Tab.DASH) {
-        currentTab = if (currentTab in MORE_TABS) Tab.MORE else Tab.DASH
+        if (currentTab == Tab.METER) {
+            closeMeter()
+        } else {
+            currentTab = when {
+                currentTab == Tab.SHOTMAP -> tabBeforeMap
+                currentTab in MORE_TABS   -> Tab.MORE
+                else                      -> Tab.DASH
+            }
+        }
     }
 
     val isMoreSub = currentTab in MORE_TABS
+    // The meter is a full-screen instrument. It takes the bar's space rather
+    // than sitting above it — you are holding a camera in the other hand and
+    // the numbers want every pixel.
+    val showNavBar = currentTab != Tab.METER
 
     Scaffold(
         bottomBar = {
-            NavigationBar(containerColor = Bg2, tonalElevation = 0.dp) {
-                BOTTOM_TABS.forEach { tab ->
-                    val selected = currentTab == tab || (tab == Tab.MORE && isMoreSub)
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = { navigateTo(tab) },
-                        icon = {
-                            // Subtle lift on the selected tab for a livelier bottom bar.
-                            val iconScale by animateFloatAsState(
-                                targetValue = if (selected) 1.18f else 1f,
-                                animationSpec = tween(220), label = "navIconScale"
-                            )
-                            BadgedBox(badge = {
-                                if (tab == Tab.ACTIVE && activeCount > 0)
-                                    Badge(containerColor = Amber) {
-                                        Text(activeCount.toString(), color = Bg, fontSize = 10.sp)
-                                    }
-                            }) {
-                                Icon(tab.icon, tab.label,
-                                    modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale })
-                            }
-                        },
-                        label = { Text(tab.label, fontSize = 10.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Amber,
-                            selectedTextColor = Amber,
-                            unselectedIconColor = TextSecondary,
-                            unselectedTextColor = TextSecondary,
-                            indicatorColor = AmberDark.copy(alpha = 0.3f)
+            if (showNavBar) {
+                FilmNavBar(
+                    items = BOTTOM_TABS.map { tab ->
+                        FilmNavItem(
+                            label = tab.label,
+                            icon = tab.icon,
+                            badge = if (tab == Tab.ACTIVE) activeCount else null,
                         )
-                    )
-                }
+                    },
+                    selectedIndex = BOTTOM_TABS.indexOf(currentTab)
+                        .takeIf { it >= 0 }
+                        ?: BOTTOM_TABS.indexOf(Tab.MORE).takeIf { isMoreSub },
+                    onSelect = { navigateTo(BOTTOM_TABS[it]) },
+                    onShutter = { fireShutter() },
+                    onShutterLongPress = { vm.toggleSafelight() },
+                )
             }
         }
     ) { padding ->
         AnimatedContent(
             targetState = currentTab,
             transitionSpec = {
-                // Slide toward the side the target tab sits on: rightward tab → enter from right,
-                // leftward tab → enter from left. Gives a sense of where each tab lives.
-                val dir = if (tabOrder(targetState) >= tabOrder(initialState)) 1 else -1
-                (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { dir * it / 6 }) togetherWith
-                (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { -dir * it / 6 })
+                if (targetState == Tab.METER && meterViaShutter) {
+                    // The blades are covering this swap. A screen sliding
+                    // underneath a closed iris shows through the gap at its
+                    // edge, so nothing moves.
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else if (targetState == Tab.METER) {
+                    // Reached from somewhere other than the shutter: the
+                    // instrument rises into place.
+                    (fadeIn(tween(180)) + slideInVertically(tween(240)) { it / 5 }) togetherWith
+                    fadeOut(tween(140))
+                } else if (initialState == Tab.METER) {
+                    // And drops away again, however it arrived. The way out is
+                    // the same either way, which is what stops the iris reading
+                    // as a door you have to close behind you.
+                    fadeIn(tween(180)) togetherWith
+                    (fadeOut(tween(160)) + slideOutVertically(tween(240)) { it / 5 })
+                } else {
+                    // Slide toward the side the target tab sits on: rightward tab → enter from right,
+                    // leftward tab → enter from left. Gives a sense of where each tab lives.
+                    val dir = if (tabOrder(targetState) >= tabOrder(initialState)) 1 else -1
+                    (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { dir * it / 6 }) togetherWith
+                    (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { -dir * it / 6 })
+                }
             },
             label = "tab",
             modifier = Modifier.padding(padding)
@@ -199,7 +322,8 @@ fun VaultApp() {
                             4 -> Tab.METER;  5 -> Tab.WEATHER; 6 -> Tab.STATS
                             else -> Tab.DASH
                         }
-                        navigateTo(target, subTab)
+                        if (target == Tab.METER) openMeterPlainly()
+                        else navigateTo(target, subTab)
                     })
                 Tab.STASH    -> StashScreen(vm)
                 Tab.ACTIVE   -> ActiveScreen(
@@ -210,21 +334,49 @@ fun VaultApp() {
                     meterAperture = meterAperture,
                     meterIso      = meterIso,
                     onMeterConsumed      = { meterShutter = ""; meterAperture = ""; meterIso = "" },
-                    onNavigateToDarkroom = { navigateTo(Tab.DARK) }
+                    onNavigateToDarkroom = { navigateTo(Tab.DARK) },
+                    onOpenMap            = { rollId -> openMap(rollId) },
                 )
-                Tab.METER    -> MeterScreen(vm, onUseInShot = { sh, ap, iso ->
-                    meterShutter = sh; meterAperture = ap; meterIso = iso
-                    navigateTo(Tab.ACTIVE, 0)
-                })
+                // The meter owns its whole frame, status line and close button
+                // included — the readouts sit on the preview and the commit bar
+                // is pinned, so a header wrapped around it would push both.
+                // No navigationBarsPadding here: Scaffold's contentPadding
+                // already carries the system-bar inset, and adding it a second
+                // time left a band of dead black under the pinned commit bar.
+                Tab.METER    -> Box(Modifier.fillMaxSize()) {
+                    MeterScreen(
+                        vm = vm,
+                        onClose = { closeMeter() },
+                        onUseInShot = { sh, ap, iso ->
+                            meterShutter = sh; meterAperture = ap; meterIso = iso
+                            navigateTo(Tab.ACTIVE, 0)
+                        },
+                    )
+                }
                 Tab.WEATHER  -> WeatherScreen(vm)
                 Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
                 Tab.DARK     -> DarkroomScreen(vm)
-                Tab.STATS    -> StatsScreen(vm)
+                Tab.STATS    -> StatsScreen(vm, onOpenMap = { openMap(null) })
+                Tab.SHOTMAP  -> ShotMapScreen(
+                    vm = vm,
+                    initialRollId = mapRollId,
+                    onBack = { currentTab = tabBeforeMap },
+                    onOpenRoll = { rollId ->
+                        initialRollId = rollId
+                        navigateTo(Tab.ACTIVE, 0)
+                    },
+                )
+                Tab.HOMELAYOUT -> HomeLayoutScreen(vm)
                 Tab.BACKUP   -> BackupScreen()
                 Tab.SETTINGS -> SettingsScreen(vm)
             }
         }
     }
+    // Drawn last, as a sibling of the Scaffold rather than inside its content,
+    // so the blades cover the nav bar and the system bars as well. At rest it
+    // composes nothing at all.
+    ShutterOverlay(shutter, shutterConfig)
+
 }
 
 @Composable
@@ -232,35 +384,50 @@ private fun MoreScreen(currentSub: Tab?, onNavigate: (Tab) -> Unit) {
     val items = listOf(
         Tab.DARK     to "Darkroom timers, develop logs and scan logs",
         Tab.STATS    to "Roll statistics, cost breakdown, shot map",
+        Tab.WEATHER  to "Forecast and golden hour for planning a shoot",
         Tab.BACKUP   to "Export and import your vault data",
-        Tab.SETTINGS to "OWM key, currency, units, custom ISOs"
+        Tab.HOMELAYOUT to "Reorder or hide the rows on the home screen",
+        Tab.SETTINGS to "OWM key, currency, units, safelight, reminders"
     )
+    val colors = FilmTheme.colors
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier
+            .fillMaxSize()
+            .background(colors.void)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("More", color = AmberBright, fontSize = 22.sp)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(14.dp))
+        ChromaticText("MORE", style = FilmTheme.type.display, color = colors.halide)
+        Spacer(Modifier.height(10.dp))
         items.forEach { (tab, subtitle) ->
+            val selected = currentSub == tab
             Row(
-                modifier = Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (currentSub == tab) AmberDark.copy(alpha = 0.2f) else Bg2)
-                    .border(1.dp, if (currentSub == tab) Amber else Border,
-                        RoundedCornerShape(10.dp))
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.film)
+                    .border(1.dp, if (selected) colors.cyan else colors.edge)
                     .clickable { onNavigate(tab) }
-                    .padding(16.dp),
+                    .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(tab.icon, null, tint = if (currentSub == tab) Amber else TextSecondary,
-                    modifier = Modifier.size(28.dp))
-                Column {
-                    Text(tab.label, color = if (currentSub == tab) Amber else TextPrimary, fontSize = 16.sp)
-                    Text(subtitle, color = TextTertiary, fontSize = 12.sp)
+                DyeIcon(tab.icon, null, size = 22.dp,
+                    tint = if (selected) colors.cyan else colors.dim)
+                // weight(1f) on the text, not a Spacer after it. An unweighted
+                // Column takes its full measured width, so a subtitle long
+                // enough to wrap pushed the chevron past the row's edge —
+                // visible on Darkroom before Weather was added, and on both after.
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        tab.label.uppercase(),
+                        style = FilmTheme.type.stock.copy(fontSize = 19.sp),
+                        color = if (selected) colors.cyan else colors.halide,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(subtitle.uppercase(), style = FilmTheme.type.rebate, color = colors.dim)
                 }
-                Spacer(Modifier.weight(1f))
-                Icon(Icons.Default.ChevronRight, null, tint = TextTertiary, modifier = Modifier.size(20.dp))
+                DyeIcon(FilmIcons.ChevronRight, null, size = 18.dp, tint = colors.dim)
             }
         }
     }
