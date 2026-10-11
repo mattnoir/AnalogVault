@@ -107,6 +107,11 @@ object DevTime {
      * covers every scheme worth naming, including the ones that agitate not at
      * all.
      *
+     * Later bursts fall on the step clock — at every multiple of [everySec]
+     * after the initial agitation has ended — because that is how data sheets
+     * write it: "10 s at the start of each minute" means at 1:00, 2:00, 3:00,
+     * not a minute after the initial burst stopped.
+     *
      * @param initialSec how long to agitate at the start of the step.
      * @param everySec gap between later bursts; 0 means no further agitation.
      * @param burstSec how long each later burst lasts.
@@ -127,12 +132,33 @@ object DevTime {
             val NONE = Agitation(0, 0, 0)
         }
 
+        val isContinuous: Boolean get() = initialSec == Int.MAX_VALUE
+
+        private val hasBursts: Boolean get() = !isContinuous && everySec > 0 && burstSec > 0
+
+        /**
+         * Why this rhythm cannot be timed, or null when it can. A burst as long
+         * as its interval never stops, which is continuous agitation written the
+         * long way round, and a burst with no interval has nowhere to go.
+         */
+        val problem: String? get() = when {
+            isContinuous -> null
+            initialSec < 0 || everySec < 0 || burstSec < 0 -> "Times cannot be negative"
+            burstSec > 0 && everySec == 0 -> "Set how often the later bursts come"
+            everySec > 0 && burstSec == 0 -> "Set how long each later burst lasts"
+            everySec > 0 && burstSec >= everySec -> "Each burst must be shorter than the interval"
+            else -> null
+        }
+
+        /** Start of the first later burst: the first multiple of [everySec] after the initial ends. */
+        private fun firstBurstStart(): Int = (initialSec / everySec + 1) * everySec
+
         /** True while [elapsedSec] falls inside an agitation window. */
         fun isAgitating(elapsedSec: Int): Boolean = when {
-            everySec == 0 && initialSec == Int.MAX_VALUE -> true
+            isContinuous -> true
             elapsedSec < initialSec -> true
-            everySec <= 0 -> false
-            else -> (elapsedSec - initialSec) % everySec < burstSec
+            !hasBursts || elapsedSec < firstBurstStart() -> false
+            else -> elapsedSec % everySec < burstSec
         }
 
         /**
@@ -141,11 +167,11 @@ object DevTime {
          */
         fun windows(durationSec: Int): List<IntRange> {
             if (durationSec <= 0) return emptyList()
-            if (initialSec == Int.MAX_VALUE) return listOf(0 until durationSec)
+            if (isContinuous) return listOf(0 until durationSec)
             val out = mutableListOf<IntRange>()
             if (initialSec > 0) out += 0 until minOf(initialSec, durationSec)
-            if (everySec > 0 && burstSec > 0) {
-                var start = initialSec + everySec
+            if (hasBursts) {
+                var start = firstBurstStart()
                 // Guard the loop on the step length rather than the count: a long
                 // stand step with a short interval would otherwise build a list
                 // nobody can see and nothing can draw.
@@ -159,14 +185,19 @@ object DevTime {
 
         /** Seconds until the next burst begins, or null when there is not one. */
         fun secondsToNext(elapsedSec: Int, durationSec: Int): Int? {
-            if (initialSec == Int.MAX_VALUE || everySec <= 0 || burstSec <= 0) return null
+            if (!hasBursts) return null
             if (isAgitating(elapsedSec)) return 0
-            var start = initialSec + everySec
-            while (start < durationSec) {
-                if (start > elapsedSec) return start - elapsedSec
-                start += everySec
-            }
-            return null
+            val next = maxOf(firstBurstStart(), (elapsedSec / everySec + 1) * everySec)
+            return if (next < durationSec) next - elapsedSec else null
+        }
+
+        /** The rhythm in words, e.g. "30 s, then 2 s every 15 s". */
+        fun describe(): String = when {
+            isContinuous -> "Continuously"
+            initialSec == 0 && !hasBursts -> "No agitation"
+            !hasBursts -> "${initialSec} s at the start, then leave it"
+            initialSec == 0 -> "${burstSec} s every ${everySec} s"
+            else -> "${initialSec} s, then ${burstSec} s every ${everySec} s"
         }
     }
 }

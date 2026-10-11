@@ -16,7 +16,10 @@ import com.analogvault.data.network.WeatherApi
 import com.analogvault.data.repo.VaultRepository
 import com.analogvault.ui.screens.DEFAULT_HOME_ORDER
 import com.analogvault.ui.screens.DevTimer
+import com.analogvault.ui.screens.SavedAgitation
+import com.analogvault.ui.screens.decodeAgitations
 import com.analogvault.ui.screens.decodeTimers
+import com.analogvault.ui.screens.encodeAgitations
 import com.analogvault.ui.screens.encodeTimers
 import com.analogvault.ui.screens.HomeSection
 import com.analogvault.ui.screens.parseHomeHidden
@@ -666,6 +669,33 @@ class MainViewModel @Inject constructor(
     }
 
     fun deleteCustomTimer(id: String) = editSavedTimers { current -> current.filterNot { it.id == id } }
+
+    /**
+     * Named agitation rhythms, offered on every step of the custom timer sheet.
+     * A step copies the rhythm rather than pointing at it, so forgetting a
+     * pattern never changes a timer that already uses it.
+     */
+    val savedAgitations: StateFlow<List<SavedAgitation>> =
+        repo.observeSetting(Constants.SAVED_AGITATIONS_SETTING)
+            .map { decodeAgitations(it) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // Same read-modify-write under a lock as the saved timers, for the same reason.
+    private val savedAgitationsLock = Mutex()
+    private fun editSavedAgitations(change: (List<SavedAgitation>) -> List<SavedAgitation>) =
+        viewModelScope.launch {
+            savedAgitationsLock.withLock {
+                val current = decodeAgitations(repo.getSetting(Constants.SAVED_AGITATIONS_SETTING))
+                repo.setSetting(Constants.SAVED_AGITATIONS_SETTING, encodeAgitations(change(current)))
+            }
+        }
+
+    fun saveAgitationPattern(pattern: SavedAgitation) = editSavedAgitations { current ->
+        if (current.any { it.id == pattern.id }) current.map { if (it.id == pattern.id) pattern else it }
+        else current + pattern
+    }
+
+    fun deleteAgitationPattern(id: String) = editSavedAgitations { current -> current.filterNot { it.id == id } }
 
     fun startTimer(timer: DevTimer) {
         timerJob?.cancel()

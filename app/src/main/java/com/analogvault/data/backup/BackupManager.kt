@@ -45,7 +45,9 @@ data class VaultBackup(
      * shape of a timer — and absent in backups written before timers could be
      * saved, which restore as "nothing to add".
      */
-    val savedTimers: JsonArray? = null
+    val savedTimers: JsonArray? = null,
+    /** Named agitation patterns, raw JSON for the same reason (see encodeAgitations). */
+    val savedAgitations: JsonArray? = null
     // photos are stored as separate files inside the ZIP — not embedded here
 )
 
@@ -94,7 +96,8 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
     chemicals   = (chemicals ?: emptyList()).filter { it.id != null },
     zoomLevels  = (zoomLevels ?: emptyList()).filter { it.id != null },
     owmKey      = owmKey ?: "",
-    savedTimers = savedTimers
+    savedTimers = savedTimers,
+    savedAgitations = savedAgitations
 )
 
 // ── Key remapping for obfuscated v2 backups (R8 renamed VaultBackup fields) ──
@@ -156,8 +159,8 @@ class BackupManager @Inject constructor(
                 chemicals   = repo.chemicals.first(),
                 zoomLevels  = repo.zoomLevels.first(),
                 owmKey      = repo.getSetting("owm_key") ?: "",
-                savedTimers = repo.getSetting(Constants.SAVED_TIMERS_SETTING)
-                    ?.let { runCatching { JsonParser.parseString(it).asJsonArray }.getOrNull() }
+                savedTimers = readSettingArray(Constants.SAVED_TIMERS_SETTING),
+                savedAgitations = readSettingArray(Constants.SAVED_AGITATIONS_SETTING)
             )
 
             // Collect photo paths referenced by shots
@@ -378,25 +381,27 @@ class BackupManager @Inject constructor(
         backup.chemicals.forEach   { repo.upsertChemical(it) }
         backup.zoomLevels.forEach  { repo.upsertZoomLevel(it) }
         if (backup.owmKey.isNotBlank()) repo.setSetting("owm_key", backup.owmKey)
-        backup.savedTimers?.let { restoreSavedTimers(it) }
+        backup.savedTimers?.let { mergeSettingArray(Constants.SAVED_TIMERS_SETTING, it) }
+        backup.savedAgitations?.let { mergeSettingArray(Constants.SAVED_AGITATIONS_SETTING, it) }
     }
 
+    /** A setting that holds a JSON array, or null when it is unset or unreadable. */
+    private suspend fun readSettingArray(key: String): JsonArray? =
+        repo.getSetting(key)?.let { runCatching { JsonParser.parseString(it).asJsonArray }.getOrNull() }
+
     /**
-     * Merges by id, like every other restore here: a timer in the backup
-     * replaces the one with its id, and timers saved since the backup was
+     * Merges by id, like every other restore here: an entry in the backup
+     * replaces the one with its id, and entries saved since the backup was
      * written are kept rather than wiped.
      */
-    private suspend fun restoreSavedTimers(incoming: JsonArray) {
+    private suspend fun mergeSettingArray(key: String, incoming: JsonArray) {
         val merged = LinkedHashMap<String, JsonElement>()
         fun addAll(arr: JsonArray) = arr.forEach { el ->
             val id = runCatching { el.asJsonObject.get("id").asString }.getOrNull() ?: return@forEach
             merged[id] = el
         }
-        repo.getSetting(Constants.SAVED_TIMERS_SETTING)
-            ?.let { runCatching { JsonParser.parseString(it).asJsonArray }.getOrNull() }
-            ?.let(::addAll)
+        readSettingArray(key)?.let(::addAll)
         addAll(incoming)
-        repo.setSetting(Constants.SAVED_TIMERS_SETTING,
-            JsonArray().apply { merged.values.forEach { add(it) } }.toString())
+        repo.setSetting(key, JsonArray().apply { merged.values.forEach { add(it) } }.toString())
     }
 }
