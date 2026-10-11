@@ -320,6 +320,48 @@ fun decodeTimers(stored: String?): List<DevTimer> {
     }
 }
 
+/** An agitation rhythm the user named and kept, offered on every custom step. */
+data class SavedAgitation(
+    val id: String = uid(),
+    val name: String,
+    val agitation: DevTime.Agitation,
+)
+
+// Literal keys for the same reason as the timers above.
+fun encodeAgitations(patterns: List<SavedAgitation>): String {
+    val arr = JsonArray()
+    patterns.forEach { p ->
+        arr.add(JsonObject().apply {
+            addProperty("id", p.id)
+            addProperty("name", p.name)
+            addProperty("initialSec", p.agitation.initialSec)
+            addProperty("everySec", p.agitation.everySec)
+            addProperty("burstSec", p.agitation.burstSec)
+        })
+    }
+    return arr.toString()
+}
+
+/** The inverse of [encodeAgitations], dropping any entry it cannot read. */
+fun decodeAgitations(stored: String?): List<SavedAgitation> {
+    if (stored.isNullOrBlank()) return emptyList()
+    val arr = runCatching { JsonParser.parseString(stored).asJsonArray }.getOrNull() ?: return emptyList()
+    return arr.mapNotNull { el ->
+        runCatching {
+            val o = el.asJsonObject
+            SavedAgitation(
+                id = o.get("id").asString,
+                name = o.get("name").asString,
+                agitation = DevTime.Agitation(
+                    initialSec = o.get("initialSec").asInt,
+                    everySec = o.get("everySec").asInt,
+                    burstSec = o.get("burstSec").asInt,
+                ),
+            ).takeIf { it.name.isNotBlank() && it.agitation.problem == null }
+        }.getOrNull()
+    }
+}
+
 // Preset processes. B&W times are at 20 °C, colour at the kit's own 38 °C.
 val DEV_PRESETS = listOf(
     DevTimer("preset_c41", "C-41 Color", listOf(
@@ -381,6 +423,7 @@ fun TimersTab(vm: MainViewModel) {
     val timerState by vm.timerState.collectAsState()
     val tempC by vm.devTempC.collectAsState()
     val savedTimers by vm.savedTimers.collectAsState()
+    val savedAgitations by vm.savedAgitations.collectAsState()
     var showCustom by remember { mutableStateOf(false) }
     // Null with showCustom set means a new timer; otherwise the saved one being edited.
     var editingTimer by remember { mutableStateOf<DevTimer?>(null) }
@@ -471,6 +514,9 @@ fun TimersTab(vm: MainViewModel) {
         val close = { showCustom = false; editingTimer = null }
         CustomTimerSheet(
             initial = editingTimer,
+            savedAgitations = savedAgitations,
+            onSavePattern = vm::saveAgitationPattern,
+            onForgetPattern = vm::deleteAgitationPattern,
             onDismiss = close,
             onSave = { timer -> vm.saveCustomTimer(timer); close() },
             onDelete = editingTimer?.let { t -> { vm.deleteCustomTimer(t.id); close() } },
@@ -833,7 +879,7 @@ private fun agitationCue(
     running: Boolean,
 ): String = when {
     !running -> "PAUSED"
-    agitation.initialSec == Int.MAX_VALUE -> "AGITATE CONTINUOUSLY"
+    agitation.isContinuous -> "AGITATE CONTINUOUSLY"
     agitation.isAgitating(elapsedSec) -> "AGITATE NOW"
     else -> agitation.secondsToNext(elapsedSec, durationSec)
         ?.let { "NEXT AGITATION IN ${it}S" }
@@ -841,6 +887,29 @@ private fun agitationCue(
 }
 
 // ─── Custom timer sheet ───────────────────────────────────────────────────────
+
+/** A hand-typed agitation rhythm. Text until committed, like the step times. */
+private data class AgitationDraft(
+    val initial: String,
+    val burst: String,
+    val every: String,
+) {
+    fun toAgitation() = DevTime.Agitation(
+        initialSec = initial.toIntOrNull() ?: 0,
+        everySec = every.toIntOrNull() ?: 0,
+        burstSec = burst.toIntOrNull() ?: 0,
+    )
+}
+
+/**
+ * Starts the fields from a rhythm the user already picked, so "Custom" reads
+ * as "change this" rather than "start over". Continuous has no numbers to show,
+ * so it starts from the standard rhythm instead.
+ */
+private fun DevTime.Agitation.toDraft(): AgitationDraft {
+    val from = if (isContinuous) DevTime.Agitation.STANDARD else this
+    return AgitationDraft(from.initialSec.toString(), from.burstSec.toString(), from.everySec.toString())
+}
 
 /** A step as typed: the time fields stay text until the sheet is committed. */
 private data class StepDraft(
@@ -850,16 +919,26 @@ private data class StepDraft(
     val secs: String = "0",
     val role: StepRole = StepRole.DEVELOP,
     val agitation: DevTime.Agitation = defaultAgitation(StepRole.DEVELOP),
+    /** Non-null while the rhythm is typed by hand; it then wins over [agitation]. */
+    val customAgitation: AgitationDraft? = null,
 ) {
     val durationSec: Int get() = (mins.toIntOrNull() ?: 0) * 60 + (secs.toIntOrNull() ?: 0)
+    val effectiveAgitation: DevTime.Agitation get() = customAgitation?.toAgitation() ?: agitation
+    /** Unnamed or untimed rows are not filled in yet, and are left out of the timer. */
+    val isFilled: Boolean get() = name.isNotBlank() && durationSec > 0
     fun toStep() = DevStep(id = id, name = name.trim(), durationSec = durationSec,
-        role = role, agitation = agitation)
+        role = role, agitation = effectiveAgitation)
 }
 
-private fun DevStep.toDraft() = StepDraft(
+/**
+ * A saved step whose rhythm has a chip opens with that chip picked; any other
+ * rhythm opens in the custom fields, where it can be seen and changed.
+ */
+private fun DevStep.toDraft(named: Set<DevTime.Agitation>) = StepDraft(
     id = id, name = name,
     mins = (durationSec / 60).toString(), secs = (durationSec % 60).toString(),
     role = role, agitation = agitation,
+    customAgitation = if (agitation in named) null else agitation.toDraft(),
 )
 
 /**
@@ -884,6 +963,9 @@ private val AGITATION_CHOICES = listOf(
     "None" to DevTime.Agitation.NONE,
 )
 
+/** Digits only, and few of them: a step is minutes long, not days. */
+private fun secondsField(v: String) = v.filter(Char::isDigit).take(4)
+
 /**
  * Builds a timer to run now, to keep, or both.
  *
@@ -892,12 +974,20 @@ private val AGITATION_CHOICES = listOf(
  * draws in; a custom timer whose wash was silently treated as a developer would
  * stretch the wash on a warm night.
  *
+ * Each step also carries its own agitation rhythm. The stock rhythms cover the
+ * usual cases, but data sheets disagree — "30 s, then 5 s every 30 s" for one
+ * developer, "10 s each minute" for the next — so the rhythm can be typed by
+ * hand and kept under a name for the next timer.
+ *
  * @param initial the saved timer being edited, or null for a new one.
  * @param onDelete shown only when editing.
  */
 @Composable
 fun CustomTimerSheet(
     initial: DevTimer?,
+    savedAgitations: List<SavedAgitation>,
+    onSavePattern: (SavedAgitation) -> Unit,
+    onForgetPattern: (String) -> Unit,
     onDismiss: () -> Unit,
     onSave: (DevTimer) -> Unit,
     onDelete: (() -> Unit)?,
@@ -908,19 +998,24 @@ fun CustomTimerSheet(
     val timerId = remember { initial?.id ?: uid() }
     var name  by remember { mutableStateOf(initial?.name ?: "") }
     var steps by remember {
-        mutableStateOf(initial?.steps?.map { it.toDraft() } ?: listOf(StepDraft(mins = "8")))
+        val named = AGITATION_CHOICES.map { it.second }.toSet() + savedAgitations.map { it.agitation }
+        mutableStateOf(initial?.steps?.map { it.toDraft(named) } ?: listOf(StepDraft(mins = "8")))
     }
     var confirmDelete by remember { mutableStateOf(false) }
+    // The step whose hand-typed rhythm is being named, and the pattern being forgotten.
+    var namingPatternFor by remember { mutableStateOf<Int?>(null) }
+    var forgetting by remember { mutableStateOf<SavedAgitation?>(null) }
 
     fun update(i: Int, change: (StepDraft) -> StepDraft) {
         steps = steps.toMutableList().also { it[i] = change(it[i]) }
     }
 
-    // A step with no name or no time is a row the user has not filled in yet,
-    // not a mistake, so it is left out rather than refused.
-    val built = steps.filter { it.name.isNotBlank() && it.durationSec > 0 }.map { it.toStep() }
-    val timer = if (name.isNotBlank() && built.isNotEmpty())
-        DevTimer(id = timerId, name = name.trim(), steps = built) else null
+    val filled = steps.filter { it.isFilled }
+    // A rhythm that cannot be timed is refused rather than guessed at: the
+    // whole point of typing one is that it is what the data sheet says.
+    val badRhythm = steps.indexOfFirst { it.isFilled && it.effectiveAgitation.problem != null }
+    val timer = if (name.isNotBlank() && filled.isNotEmpty() && badRhythm < 0)
+        DevTimer(id = timerId, name = name.trim(), steps = filled.map { it.toStep() }) else null
 
     VaultSheet(if (initial != null) "Edit Timer" else "Custom Timer", onDismiss) {
         VaultTextField(name, { name = it }, "Process name", placeholder = "e.g. HC-110 Dilution B")
@@ -968,20 +1063,25 @@ fun CustomTimerSheet(
                         FilmChip(label, color = role.color(), filled = step.role == role,
                             modifier = Modifier.semantics { selected = step.role == role },
                             onClick = {
-                                update(i) { it.copy(role = role, agitation = defaultAgitation(role)) }
+                                update(i) {
+                                    it.copy(role = role, agitation = defaultAgitation(role),
+                                        customAgitation = null)
+                                }
                             })
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("Agitation", color = colors.dim, fontSize = 11.sp)
-                Spacer(Modifier.height(4.dp))
-                FilmChipRow {
-                    AGITATION_CHOICES.forEach { (label, agitation) ->
-                        FilmChip(label, color = colors.cyan, filled = step.agitation == agitation,
-                            modifier = Modifier.semantics { selected = step.agitation == agitation },
-                            onClick = { update(i) { it.copy(agitation = agitation) } })
-                    }
-                }
+                AgitationPicker(
+                    step = step,
+                    savedAgitations = savedAgitations,
+                    onPick = { a -> update(i) { it.copy(agitation = a, customAgitation = null) } },
+                    onCustom = {
+                        update(i) { it.copy(customAgitation = it.customAgitation ?: it.agitation.toDraft()) }
+                    },
+                    onCustomChange = { d -> update(i) { it.copy(customAgitation = d) } },
+                    onSavePattern = { namingPatternFor = i },
+                    onForgetPattern = { forgetting = it },
+                )
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -989,8 +1089,10 @@ fun CustomTimerSheet(
             onClick = { steps = steps + StepDraft() })
         Spacer(Modifier.height(16.dp))
         if (timer == null) {
-            Text("Name the process and give at least one step a name and a time.",
-                color = colors.dim, fontSize = 11.sp)
+            Text(
+                if (badRhythm >= 0) "Fix the agitation on step ${badRhythm + 1}."
+                else "Name the process and give at least one step a name and a time.",
+                color = if (badRhythm >= 0) colors.mask else colors.dim, fontSize = 11.sp)
             Spacer(Modifier.height(8.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1012,6 +1114,175 @@ fun CustomTimerSheet(
             onConfirm = { confirmDelete = false; onDelete() },
             onDismiss = { confirmDelete = false })
     }
+
+    namingPatternFor?.let { i ->
+        val rhythm = steps.getOrNull(i)?.effectiveAgitation
+        if (rhythm == null) { namingPatternFor = null; return@let }
+        NamePatternDialog(
+            rhythm = rhythm,
+            taken = savedAgitations.map { it.name.lowercase() }.toSet(),
+            onDismiss = { namingPatternFor = null },
+            onSave = { patternName ->
+                onSavePattern(SavedAgitation(name = patternName, agitation = rhythm))
+                // The step now wears the new chip rather than the custom fields.
+                update(i) { it.copy(agitation = rhythm, customAgitation = null) }
+                namingPatternFor = null
+            },
+        )
+    }
+
+    forgetting?.let { pattern ->
+        ConfirmDialog(
+            "Forget the \"${pattern.name}\" agitation pattern? Timers that use it keep their rhythm.",
+            confirmLabel = "Forget",
+            onConfirm = {
+                // Steps on this rhythm lose their chip, so show them the numbers
+                // instead of leaving the row with nothing picked.
+                steps = steps.map {
+                    if (it.customAgitation == null && it.agitation == pattern.agitation &&
+                        AGITATION_CHOICES.none { (_, a) -> a == pattern.agitation })
+                        it.copy(customAgitation = it.agitation.toDraft())
+                    else it
+                }
+                onForgetPattern(pattern.id)
+                forgetting = null
+            },
+            onDismiss = { forgetting = null },
+        )
+    }
+}
+
+/**
+ * The agitation row of one step: the stock rhythms, the user's own, and a
+ * "Custom" chip that opens three fields — the initial agitation, then how long
+ * each later burst lasts and how often it comes.
+ */
+@Composable
+private fun AgitationPicker(
+    step: StepDraft,
+    savedAgitations: List<SavedAgitation>,
+    onPick: (DevTime.Agitation) -> Unit,
+    onCustom: () -> Unit,
+    onCustomChange: (AgitationDraft) -> Unit,
+    onSavePattern: () -> Unit,
+    onForgetPattern: (SavedAgitation) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    val custom = step.customAgitation
+    val rhythm = step.effectiveAgitation
+    // A stock chip wins a tie, so a saved pattern equal to one is never lit twice.
+    val stock = AGITATION_CHOICES.firstOrNull { it.second == step.agitation }
+    val pickedSaved = if (custom == null && stock == null)
+        savedAgitations.firstOrNull { it.agitation == step.agitation } else null
+
+    Text("Agitation", color = colors.dim, fontSize = 11.sp)
+    Spacer(Modifier.height(4.dp))
+    FilmChipRow {
+        AGITATION_CHOICES.forEach { (label, agitation) ->
+            val on = custom == null && step.agitation == agitation
+            FilmChip(label, color = colors.cyan, filled = on,
+                modifier = Modifier.semantics { selected = on },
+                onClick = { onPick(agitation) })
+        }
+        savedAgitations.forEach { pattern ->
+            val on = pattern == pickedSaved
+            FilmChip(pattern.name, color = colors.violet, filled = on,
+                modifier = Modifier.semantics { selected = on },
+                onClick = { onPick(pattern.agitation) })
+        }
+        FilmChip("Custom", color = colors.violet, filled = custom != null,
+            modifier = Modifier.semantics { selected = custom != null },
+            onClick = onCustom)
+    }
+
+    if (custom != null) {
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            VaultTextField(custom.initial, { onCustomChange(custom.copy(initial = secondsField(it))) },
+                "First (s)", modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            VaultTextField(custom.burst, { onCustomChange(custom.copy(burst = secondsField(it))) },
+                "Then (s)", modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            VaultTextField(custom.every, { onCustomChange(custom.copy(every = secondsField(it))) },
+                "Every (s)", modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+        }
+    }
+
+    Spacer(Modifier.height(6.dp))
+    val problem = rhythm.problem
+    Text(
+        (problem ?: rhythm.describe()).uppercase(),
+        style = FilmTheme.type.rebate,
+        color = if (problem != null) colors.mask else colors.dim,
+    )
+
+    if (custom != null) {
+        val alreadySaved = savedAgitations.firstOrNull { it.agitation == rhythm }
+        val alreadyStock = AGITATION_CHOICES.firstOrNull { it.second == rhythm }
+        Spacer(Modifier.height(6.dp))
+        when {
+            problem != null -> {}
+            alreadySaved != null || alreadyStock != null -> Text(
+                "Same as \"${alreadySaved?.name ?: alreadyStock!!.first}\"".uppercase(),
+                style = FilmTheme.type.rebate, color = colors.dim)
+            else -> VaultButton("Save pattern", ghost = true, small = true, onClick = onSavePattern)
+        }
+    }
+
+    pickedSaved?.let { pattern ->
+        TextButton(onClick = { onForgetPattern(pattern) }, contentPadding = PaddingValues(0.dp)) {
+            Text("FORGET PATTERN", style = FilmTheme.type.rebate, color = colors.mask.copy(alpha = 0.8f))
+        }
+    }
+}
+
+/** Asks for a name for a hand-typed rhythm, suggesting one built from its numbers. */
+@Composable
+private fun NamePatternDialog(
+    rhythm: DevTime.Agitation,
+    taken: Set<String>,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    val suggestion = remember(rhythm) {
+        if (rhythm.everySec > 0) "${rhythm.burstSec}s/${rhythm.everySec}s" else "${rhythm.initialSec}s once"
+    }
+    var value by remember { mutableStateOf(suggestion) }
+    val trimmed = value.trim()
+    val clash = trimmed.lowercase() in taken
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.filmRaised,
+        shape = androidx.compose.ui.graphics.RectangleShape,
+        title = {
+            Text("SAVE PATTERN", style = FilmTheme.type.stock.copy(fontSize = 20.sp), color = colors.halide)
+        },
+        text = {
+            Column {
+                Text(rhythm.describe(), color = colors.dim, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                VaultTextField(value, { value = it.take(24) }, "Name")
+                if (clash) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("You already have a pattern with this name.", color = colors.mask, fontSize = 11.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(trimmed) }, enabled = trimmed.isNotEmpty() && !clash) {
+                Text("SAVE", style = FilmTheme.type.data,
+                    color = if (trimmed.isNotEmpty() && !clash) colors.cyan else colors.dead)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", style = FilmTheme.type.data, color = colors.dim)
+            }
+        },
+    )
 }
 
 // ─── Dialogs (unchanged) ──────────────────────────────────────────────────────
