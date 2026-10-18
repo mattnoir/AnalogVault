@@ -3,6 +3,7 @@ package com.analogvault.data.repo
 import com.analogvault.data.db.*
 import com.analogvault.data.model.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,6 +44,31 @@ class VaultRepository @Inject constructor(
     suspend fun upsertRoll(r: Roll) = rollDao.upsert(r)
     suspend fun deleteRollById(id: String) = rollDao.deleteById(id)
 
+    /**
+     * Re-count the unfinished 120/220 rolls against their camera's frame size
+     * (see [framesFor]), optionally for one camera only.
+     *
+     * Rolls loaded before the load sheet asked the camera all say 12, and a
+     * body whose shooting format is set after loading would otherwise keep the
+     * old count. A roll that already has more frames logged than the new count
+     * is left alone — shrinking it would hide shots the user took.
+     */
+    suspend fun refitRollFrames(cameraId: String? = null) {
+        val cams = cameras.first().associateBy { it.id }
+        val stocks = films.first().associateBy { it.id }
+        rolls.first()
+            .filter { !it.finished && (cameraId == null || it.cameraId == cameraId) }
+            .forEach { r ->
+                val cam = cams[r.cameraId] ?: return@forEach
+                val film = stocks[r.filmId] ?: return@forEach
+                if (film.filmFormat != "120" && film.filmFormat != "220") return@forEach
+                val frames = cam.framesFor(film)
+                if (frames != r.totalShots && r.shots.size <= frames) {
+                    rollDao.upsert(r.copy(totalShots = frames))
+                }
+            }
+    }
+
     // Chemicals
     val chemicals: Flow<List<Chemical>> = chemicalDao.getAll()
     suspend fun upsertChemical(c: Chemical) = chemicalDao.upsert(c)
@@ -56,6 +82,8 @@ class VaultRepository @Inject constructor(
     // Settings
     suspend fun getSetting(key: String): String? = settingDao.get(key)?.value
     suspend fun setSetting(key: String, value: String) = settingDao.upsert(Setting(key, value))
+    /** A setting as a live value, for the ones a backup restore can change underneath the UI. */
+    fun observeSetting(key: String): Flow<String?> = settingDao.observe(key)
 
     // Bulk rolls
     val bulkRolls: Flow<List<BulkRoll>> = bulkRollDao.getAll()

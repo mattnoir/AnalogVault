@@ -1,3 +1,19 @@
+# Changelog
+
+Notable changes to Analog Vault, newest first. The format follows
+[Keep a Changelog](https://keepachangelog.com) and versions follow
+[Semantic Versioning](https://semver.org); see CONTRIBUTING.md for how entries
+are added and releases are cut.
+
+## [Unreleased]
+
+### Added
+- **Chemistry kits**: save a kit like Cinestill Cs41 or Kodak Flexicolor as one item with its own baths, temperature and shared roll count. It shows up under Timers as the full process, and each bath is lengthened by its own per-roll amount as the kit wears.
+- **Fixed-lens aperture**: a fixed-lens camera can now carry its lens's widest and narrowest aperture. The light meter hatches exposures the lens can't reach, and the shot log's aperture list starts at the lens's widest stop.
+
+### Fixed
+- 120 and 220 rolls now get the frame count of the camera they're loaded into (8 in a 6x9, 10 in a 6x7, 16 in a 6x4.5, doubled for 220) instead of always 12. Rolls already in a camera are corrected too, unless more frames are logged than the new count allows.
+
 [v0.5.0] - 2026-07-02
 -
 **Light meter overhaul**

@@ -4,10 +4,14 @@ import android.content.Context
 import android.net.Uri
 import com.analogvault.data.model.*
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.util.Constants
 import com.analogvault.util.photoDir
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +38,16 @@ data class VaultBackup(
     val bulkRolls: List<BulkRoll> = emptyList(),
     val chemicals: List<Chemical> = emptyList(),
     val zoomLevels: List<ZoomLevel> = emptyList(),
-    val owmKey: String = ""
+    val owmKey: String = "",
+    /**
+     * Saved darkroom timers, in the Darkroom's own storage format (see
+     * encodeTimers). Kept as raw JSON so the backup does not need to know the
+     * shape of a timer — and absent in backups written before timers could be
+     * saved, which restore as "nothing to add".
+     */
+    val savedTimers: JsonArray? = null,
+    /** Named agitation patterns, raw JSON for the same reason (see encodeAgitations). */
+    val savedAgitations: JsonArray? = null
     // photos are stored as separate files inside the ZIP — not embedded here
 )
 
@@ -55,7 +68,16 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
     exportedAt  = exportedAt ?: "",
     // records without a primary key are corrupt — drop them rather than crash Room
     films       = (films ?: emptyList()).filter { it.id != null },
-    cameras     = (cameras ?: emptyList()).filter { it.id != null },
+    // Backups from before the gear limits lack these columns; they restore as
+    // "unknown", which the meter reads as unclamped.
+    cameras     = (cameras ?: emptyList()).filter { it.id != null }.map { c ->
+        c.copy(
+            fastestShutter = c.fastestShutter ?: "",
+            slowestShutter = c.slowestShutter ?: "",
+            maxAperture    = c.maxAperture ?: "",
+            minAperture    = c.minAperture ?: ""
+        )
+    },
     lenses      = (lenses ?: emptyList()).filter { it.id != null },
     accessories = (accessories ?: emptyList()).filter { it.id != null },
     rolls       = (rolls ?: emptyList()).filter { it.id != null }.map { roll ->
@@ -80,9 +102,22 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
         )
     },
     bulkRolls   = (bulkRolls ?: emptyList()).filter { it.id != null },
-    chemicals   = (chemicals ?: emptyList()).filter { it.id != null },
+    // Backups from before kits have no kit fields at all; they restore as the
+    // single chemicals they were.
+    chemicals   = (chemicals ?: emptyList()).filter { it.id != null }.map { c ->
+        c.copy(
+            kitSteps = (c.kitSteps ?: emptyList()).filter { it != null }.map { k ->
+                KitStep(name = k.name ?: "", role = k.role ?: "DEVELOP",
+                    baseTime = k.baseTime ?: "", adjPerRoll = k.adjPerRoll ?: "")
+            },
+            process  = c.process ?: "",
+            kitTempC = c.kitTempC ?: ""
+        )
+    },
     zoomLevels  = (zoomLevels ?: emptyList()).filter { it.id != null },
-    owmKey      = owmKey ?: ""
+    owmKey      = owmKey ?: "",
+    savedTimers = savedTimers,
+    savedAgitations = savedAgitations
 )
 
 // ── Key remapping for obfuscated v2 backups (R8 renamed VaultBackup fields) ──
@@ -143,7 +178,9 @@ class BackupManager @Inject constructor(
                 bulkRolls   = repo.bulkRolls.first(),
                 chemicals   = repo.chemicals.first(),
                 zoomLevels  = repo.zoomLevels.first(),
-                owmKey      = repo.getSetting("owm_key") ?: ""
+                owmKey      = repo.getSetting("owm_key") ?: "",
+                savedTimers = readSettingArray(Constants.SAVED_TIMERS_SETTING),
+                savedAgitations = readSettingArray(Constants.SAVED_AGITATIONS_SETTING)
             )
 
             // Collect photo paths referenced by shots
@@ -364,5 +401,27 @@ class BackupManager @Inject constructor(
         backup.chemicals.forEach   { repo.upsertChemical(it) }
         backup.zoomLevels.forEach  { repo.upsertZoomLevel(it) }
         if (backup.owmKey.isNotBlank()) repo.setSetting("owm_key", backup.owmKey)
+        backup.savedTimers?.let { mergeSettingArray(Constants.SAVED_TIMERS_SETTING, it) }
+        backup.savedAgitations?.let { mergeSettingArray(Constants.SAVED_AGITATIONS_SETTING, it) }
+    }
+
+    /** A setting that holds a JSON array, or null when it is unset or unreadable. */
+    private suspend fun readSettingArray(key: String): JsonArray? =
+        repo.getSetting(key)?.let { runCatching { JsonParser.parseString(it).asJsonArray }.getOrNull() }
+
+    /**
+     * Merges by id, like every other restore here: an entry in the backup
+     * replaces the one with its id, and entries saved since the backup was
+     * written are kept rather than wiped.
+     */
+    private suspend fun mergeSettingArray(key: String, incoming: JsonArray) {
+        val merged = LinkedHashMap<String, JsonElement>()
+        fun addAll(arr: JsonArray) = arr.forEach { el ->
+            val id = runCatching { el.asJsonObject.get("id").asString }.getOrNull() ?: return@forEach
+            merged[id] = el
+        }
+        readSettingArray(key)?.let(::addAll)
+        addAll(incoming)
+        repo.setSetting(key, JsonArray().apply { merged.values.forEach { add(it) } }.toString())
     }
 }

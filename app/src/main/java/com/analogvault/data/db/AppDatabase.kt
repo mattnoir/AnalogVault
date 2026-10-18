@@ -107,13 +107,70 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/**
+ * Add stockAccent to films (v7 → v8).
+ *
+ * Blank is the meaningful default, not a placeholder: it means "derive the
+ * colour from the stock name and process", so existing rows keep working and
+ * only stocks the user deliberately recolours carry a stored value.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE films ADD COLUMN stockAccent TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+/**
+ * Add the gear limits the meter clamps against (v8 → v9).
+ *
+ * Every column defaults to "unknown" rather than to a plausible value. The meter
+ * treats unknown as unclamped, so an install that never fills any of this in
+ * behaves exactly as it did before — and a guessed default would be worse than
+ * nothing, because it would hazard-stripe a rung the gear can actually reach.
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE cameras ADD COLUMN fastestShutter TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE cameras ADD COLUMN slowestShutter TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE cameras ADD COLUMN hasBulb INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE lenses ADD COLUMN minAperture TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+/**
+ * Let one chemistry row be a whole kit (v9 → v10).
+ *
+ * Every existing row is a single chemical, which is exactly what an empty step
+ * list and a blank process mean — nothing about it changes.
+ */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE chemicals ADD COLUMN kitSteps TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE chemicals ADD COLUMN process TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE chemicals ADD COLUMN kitTempC TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+/**
+ * Give fixed-lens bodies the aperture range of their built-in lens (v10 → v11).
+ *
+ * Blank means unknown and unknown means unclamped, so every existing camera
+ * meters exactly as it did before.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE cameras ADD COLUMN maxAperture TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE cameras ADD COLUMN minAperture TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 7,
+    version = 11,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true
@@ -122,6 +179,7 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     StringListConverter::class,
     ShotListConverter::class,
     DevLogConverter::class,
+    KitStepListConverter::class,
     ScanLogConverter::class
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Void black, not the old #0E0C0A. The window background is what shows
+         during the cold-start flash before Compose draws, so any brown here
+         reads as the app being brown.
+
+         The bars are opaque black rather than transparent on purpose: the
+         activity gets its transparent, edge-to-edge treatment from
+         enableEdgeToEdge in MainActivity, but dialog and bottom-sheet windows
+         inherit these attributes instead. Declaring them transparent here let
+         a sheet slide under the status bar and put the gesture bar on the
+         system's light contrast plate. -->
     <style name="Theme.AnalogVault" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:windowBackground">#0E0C0A</item>
-        <item name="android:statusBarColor">#0E0C0A</item>
-        <item name="android:navigationBarColor">#181512</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

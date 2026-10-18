@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// The app's version, and the only place it is written. Feature and fix PRs leave
+// it alone; only a version-bump commit changes it (see CONTRIBUTING.md).
+val appVersion = "0.6.0"
+
 android {
     namespace = "com.analogvault"
     compileSdk = 35
@@ -14,8 +18,16 @@ android {
         applicationId = "com.analogvault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.5.0"
+        versionName = appVersion
+        // Derived, so it can't drift from the name and only ever goes up:
+        // 0.6.0 → 6000, 0.6.1 → 6001, 1.2.3 → 1002003.
+        versionCode = appVersion.substringBefore('-').split('.').map(String::toInt)
+            .also { require(it.size == 3) { "appVersion must be MAJOR.MINOR.PATCH, was $appVersion" } }
+            .let { (major, minor, patch) -> major * 1_000_000 + minor * 1_000 + patch }
+
+        // Substituted into android:label. Overridden by the debug build type so
+        // the two installs are distinguishable in the launcher.
+        manifestPlaceholders["appLabel"] = "Analog Vault"
     }
 
     signingConfigs {
@@ -31,6 +43,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Debug installs under its own application id so it can sit beside a
+            // release-signed build on the same device. Without this, installing a
+            // debug build onto a phone that already has the released app fails
+            // with INSTALL_FAILED_UPDATE_INCOMPATIBLE, and the only way through
+            // is uninstalling the real app and its vault data.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix   = "-debug"
+            // Same icon, same position in an alphabetical launcher — the label is
+            // the only thing telling the test install apart from the real one.
+            manifestPlaceholders["appLabel"] = "Analog Vault ·debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -83,6 +107,10 @@ dependencies {
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
+
+    // Pulled in transitively by compose-ui. Declared here purely to override the
+    // transitive 1.0.1, whose libandroidx.graphics.path.so is not 16 KB-aligned.
+    implementation(libs.androidx.graphics.path)
 
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.gson)

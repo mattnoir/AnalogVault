@@ -6,6 +6,7 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.analogvault.util.Constants
 
 // ─── Type Converters ────────────────────────────────────────────────────────
 
@@ -27,6 +28,13 @@ class DevLogConverter {
     private val gson = Gson()
     @TypeConverter fun from(v: DevLog?): String? = v?.let { gson.toJson(it) }
     @TypeConverter fun to(json: String?): DevLog? = json?.let { gson.fromJson(it, DevLog::class.java) }
+}
+
+class KitStepListConverter {
+    private val gson = Gson()
+    @TypeConverter fun fromList(list: List<KitStep>?): String = gson.toJson(list ?: emptyList<KitStep>())
+    @TypeConverter fun toList(json: String?): List<KitStep> = if (json.isNullOrBlank()) emptyList()
+        else gson.fromJson(json, object : TypeToken<List<KitStep>>() {}.type)
 }
 
 class ScanLogConverter {
@@ -53,7 +61,13 @@ data class FilmStock(
     val storage: String = "Shelf",
     val quantity: Int = 1,
     val notes: String = "",
-    val costPerRoll: Double = 0.0  // purchase price per roll; 0 = gifted / unknown
+    val costPerRoll: Double = 0.0,  // purchase price per roll; 0 = gifted / unknown
+    /**
+     * Override for the stock's accent colour, as "#RRGGBB" or "#RRGGBB,#RRGGBB"
+     * for a gradient. Blank means "derive it" — see StockAccent, which knows the
+     * box art of the common stocks and falls back to the process otherwise.
+     */
+    val stockAccent: String = ""
 )
 
 // ─── Camera ──────────────────────────────────────────────────────────────────
@@ -70,8 +84,54 @@ data class Camera(
     val condition: String = "Good",
     val mount: String = "",
     val adapterMounts: List<String> = emptyList(),
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * The shutter range this body can actually be set to, as SHUTTER_SPEEDS
+     * strings ("1/500", "1s"). Blank means unknown, and unknown means unclamped —
+     * the meter suggests whatever the light asks for, which is what it did before
+     * these columns existed. A Zenit E carries "1/500" and "1/30"; a Nikon F5
+     * carries "1/8000" and "30s".
+     */
+    val fastestShutter: String = "",
+    val slowestShutter: String = "",
+    /** Bulb lets the body go past [slowestShutter] on a cable release. */
+    val hasBulb: Boolean = false,
+    /**
+     * The aperture range of a fixed-lens body's built-in lens, stated like
+     * [Lens.maxAperture] and [Lens.minAperture]. Ignored on interchangeable
+     * bodies, where the mounted lens carries it. Blank means unknown, and
+     * unknown means unclamped — the same rule as the shutter range.
+     */
+    val maxAperture: String = "",
+    val minAperture: String = ""
 )
+
+/**
+ * The built-in lens of a fixed-lens body, shaped as a [Lens] so the meter and
+ * the shot sheet can treat it like a mounted one. Null on interchangeable
+ * bodies, and when neither end of the aperture range is known.
+ */
+fun Camera.fixedLens(): Lens? =
+    if (lensSystem != "fixed" || (maxAperture.isBlank() && minAperture.isBlank())) null
+    else Lens(id = "", name = "${name.ifBlank { "Built-in" }} lens", brand = brand,
+        focalLength = "", maxAperture = maxAperture, minAperture = minAperture)
+
+/**
+ * Frames a roll of [film] gives in this body. A 120 roll's count is set by the
+ * camera's frame size, not the film — the same roll is 8 frames in a 6x9 and 16
+ * in a 645 — so a medium-format body with a shooting format overrides the
+ * stock's count. 220 is twice the length of 120, so twice the frames.
+ * Everything else keeps the stock's own count.
+ */
+fun Camera?.framesFor(film: FilmStock?): Int {
+    val stock = film?.frameCount?.takeIf { it > 0 } ?: 36
+    val perRoll = this?.let { Constants.MF_FRAME_COUNTS[it.mfFormat] } ?: return stock
+    return when (film?.filmFormat) {
+        "120" -> perRoll
+        "220" -> perRoll * 2
+        else  -> stock
+    }
+}
 
 // ─── Lens ─────────────────────────────────────────────────────────────────────
 
@@ -81,7 +141,15 @@ data class Lens(
     val name: String = "",
     val brand: String = "",
     val focalLength: String = "50",
+    /** Widest opening — the number on the barrel, so the *smallest* f-number. */
     val maxAperture: String = "1.8",
+    /**
+     * Narrowest opening, the far end of the aperture ring ("16", "22"). Blank
+     * means unknown, and unknown means that end is unclamped. Most lenses stop
+     * down to f/16 or f/22, but guessing would put a hazard stripe on a rung the
+     * lens can reach, which is worse than not clamping at all.
+     */
+    val minAperture: String = "",
     val mount: String = "",
     val condition: String = "Good"
 )
@@ -139,6 +207,11 @@ data class Roll(
     @PrimaryKey val id: String,
     val filmId: String = "",
     val cameraId: String = "",
+    /**
+     * The lens mounted for this roll. Blank on fixed-lens bodies, and blank on
+     * rolls loaded before the field was asked for — the meter treats both as
+     * "no lens known" and clamps on the body alone.
+     */
     val cameraLensId: String = "",
     val startDate: String = "",
     val finished: Boolean = false,
@@ -172,7 +245,39 @@ data class Chemical(
     val baseDevTime: String = "",
     val timeAdjPerRoll: String = "",
     val manualRolls: Int = -1,   // -1 = auto-count from rolls
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * The baths of a kit, in the order they run. Empty for a single chemical.
+     * A kit is bought, mixed and worn out as one thing, so it shares the one
+     * mix date, capacity and roll count above — but every bath keeps its own
+     * extension per roll, because a developer slows as it ages while a blix
+     * usually does not.
+     */
+    val kitSteps: List<KitStep> = emptyList(),
+    /** "C-41", "E-6" or "B&W" for a kit; decides which temperature rules apply. */
+    val process: String = "",
+    /**
+     * The one temperature a colour kit runs at, in °C, or blank for the
+     * process's standard. Kits differ — Cinestill's Cs41 is 39 °C, Kodak's
+     * Flexicolor 37.8 °C — and their times are only true at their own.
+     */
+    val kitTempC: String = ""
+) {
+    val isKit: Boolean get() = type == KIT_TYPE
+}
+
+const val KIT_TYPE = "Kit"
+
+/**
+ * One bath in a chemistry kit. Times are minutes, written either as "3:30" or
+ * as "3.5" — see parseMinutes. [role] is a StepRole name, kept as text so the
+ * data layer does not depend on the timer's UI types.
+ */
+data class KitStep(
+    val name: String = "",
+    val role: String = "DEVELOP",
+    val baseTime: String = "",
+    val adjPerRoll: String = "",
 )
 
 // ─── Bulk Roll (canister inventory) ──────────────────────────────────────────
