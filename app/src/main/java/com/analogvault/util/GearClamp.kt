@@ -118,6 +118,42 @@ object GearClamp {
             )
         }
 
+    /**
+     * The rung an aperture-priority meter lands on with [aperture] held.
+     *
+     * The time the held aperture needs rarely falls on a dial speed. This takes
+     * the rung whose own aperture is the held one or the nearest *wider* — the
+     * next faster speed — and shows that rung's aperture as it is. An f/3.5
+     * lens that wants 1/600 lands on f/2.8 at 1/1000: wider than the lens can
+     * open, hatched as such, and the honest answer to "what does wide open
+     * need?" rather than a slower speed that quietly reads as stopped down.
+     *
+     * A fifth of a stop of slack sits on the wide edge. A rung tapped off the
+     * ladder holds its *snapped* aperture, up to a sixth of a stop off its exact
+     * one, and without the slack that rung could read as a hair too narrow and
+     * jump the selection a whole stop to the next speed.
+     *
+     * When the body cannot run that speed, the nearest speed it can run wins
+     * instead — the aperture moves off the held value, which is what you would
+     * do with the camera in hand. Null when no rung is anywhere near.
+     */
+    fun rungForAperture(rungs: List<Rung>, iso: Int, ev: Double, aperture: Double): Rung? {
+        if (rungs.isEmpty()) return null
+        val needed = shutterSecFor(iso, aperture, ev)
+        // Faster than needed means a wider aperture for the same exposure.
+        val wider = rungs
+            .filter { it.shutterSec <= needed * 2.0.pow(0.2) }
+            .maxByOrNull { it.shutterSec }
+            ?: return null
+        val shutterBlocked = { r: Rung ->
+            r.reason == Reason.SHUTTER_TOO_FAST || r.reason == Reason.SHUTTER_TOO_SLOW
+        }
+        if (!shutterBlocked(wider)) return wider
+        return rungs.filterNot(shutterBlocked)
+            .minByOrNull { kotlin.math.abs(log2(it.shutterSec / needed)) }
+            ?: wider
+    }
+
     // ── The way out ──────────────────────────────────────────────────────────
 
     /**

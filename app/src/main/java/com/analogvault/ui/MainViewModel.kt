@@ -86,10 +86,14 @@ class MainViewModel @Inject constructor(
     val meterShutter: StateFlow<String> = _meterShutter.asStateFlow()
     private val _meterMetering = MutableStateFlow(Constants.METERING_TYPES[0])
     val meterMetering: StateFlow<String> = _meterMetering.asStateFlow()
-    // The priority-mode selector and its fixed aperture are gone: the exposure
-    // ladder shows every equivalent pair and lets you pick one, which is both
-    // priorities at once. Their settings rows are left in the database rather
-    // than deleted, so downgrading an install does not lose them.
+    // Which half of the exposure the meter holds still while the light moves.
+    // Aperture priority holds the lens wide open by default and lets the
+    // shutter follow; shutter priority holds the speed last picked off the
+    // ladder. Stored under its own key: the 0.5.0 selector's `meter_mode` and
+    // `meter_aperture` rows are still in older databases, and reading them back
+    // would resurrect a choice made against a different screen.
+    private val _meterAperturePriority = MutableStateFlow(true)
+    val meterAperturePriority: StateFlow<Boolean> = _meterAperturePriority.asStateFlow()
     private val _recipFilm = MutableStateFlow("Other B&W (generic)")
     val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
 
@@ -122,6 +126,23 @@ class MainViewModel @Inject constructor(
     private val _meterRollId = MutableStateFlow<String?>(null)
     val meterRollId: StateFlow<String?> = _meterRollId.asStateFlow()
     fun setMeterRoll(rollId: String?) { _meterRollId.value = rollId }
+
+    /**
+     * Lens swapped onto a roll's camera for metering only, keyed by roll id.
+     *
+     * The meter clamps and opens wide against this lens, but the roll keeps the
+     * lens it was loaded with and frames logged from the meter record that one.
+     * Kept for the session so a swap survives a trip to another tab; not
+     * persisted, for the same reason the roll choice is not.
+     */
+    private val _meterLensOverrides = MutableStateFlow<Map<String, String>>(emptyMap())
+    val meterLensOverrides: StateFlow<Map<String, String>> = _meterLensOverrides.asStateFlow()
+    /** Null [lensId] goes back to the roll's own lens. */
+    fun setMeterLens(rollId: String, lensId: String?) {
+        _meterLensOverrides.value =
+            if (lensId == null) _meterLensOverrides.value - rollId
+            else _meterLensOverrides.value + (rollId to lensId)
+    }
 
     /** Called from the Camera2 capture callback (already throttled there). */
     fun onMeterReading(iso: Int, shutterSec: Double, aperture: Double) {
@@ -185,6 +206,7 @@ class MainViewModel @Inject constructor(
             _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
             _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
+            _meterAperturePriority.value = repo.getSetting("meter_priority") != "shutter"
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
@@ -224,6 +246,10 @@ class MainViewModel @Inject constructor(
     }
     fun saveMeterMetering(m: String) = viewModelScope.launch {
         _meterMetering.value = m; repo.setSetting("meter_metering", m)
+    }
+    fun saveMeterAperturePriority(on: Boolean) = viewModelScope.launch {
+        _meterAperturePriority.value = on
+        repo.setSetting("meter_priority", if (on) "aperture" else "shutter")
     }
     fun saveRecipFilm(name: String) = viewModelScope.launch {
         _recipFilm.value = name; repo.setSetting("recip_film", name)

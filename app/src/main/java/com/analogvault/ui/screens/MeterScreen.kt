@@ -166,15 +166,29 @@ fun MeterContent(
     val roll   = loadedRolls.find { it.id == rollId }
     val film   = films.find { it.id == roll?.filmId }
     val camera = cameras.find { it.id == roll?.cameraId }
-    // A fixed-lens body has no stash lens on the roll; its own aperture range
-    // stands in so the ladder clamps on the glass it was built with.
-    val lens   = lenses.find { it.id == roll?.cameraLensId } ?: camera?.fixedLens()
+    val lensOverrides by vm.meterLensOverrides.collectAsState()
+    val rollLens = lenses.find { it.id == roll?.cameraLensId }
+    // A lens swapped on in the meter wins over the one the roll was loaded
+    // with — for the meter only, the roll keeps its own. A fixed-lens body has
+    // no stash lens on the roll; its own aperture range stands in so the
+    // ladder clamps on the glass it was built with.
+    val lens = roll?.let { r -> lensOverrides[r.id]?.let { id -> lenses.find { it.id == id } } }
+        ?: rollLens ?: camera?.fixedLens()
+    // Only glass that fits the body, natively or through an adapter you own —
+    // the same list the roll's lens is picked from.
+    val swappableLenses = remember(camera, lenses) {
+        if (camera?.lensSystem != "interchangeable") emptyList()
+        else lenses.filter {
+            Constants.mountCompat(camera.mount, it.mount, camera.adapterMounts) != "incompatible"
+        }
+    }
 
     // ── User inputs — persisted via settings so the per-device calibration
     //    (and last-used ISO/shutter/metering) survive restarts ────────────────
     val meterIso    by vm.meterIso.collectAsState()
     val shutter     by vm.meterShutter.collectAsState()
     val metering    by vm.meterMetering.collectAsState()
+    val aperturePriority by vm.meterAperturePriority.collectAsState()
     val calibThirds by vm.meterCalibThirds.collectAsState()
     val recipFilm   by vm.recipFilm.collectAsState()
     // Draft tracks the ruler while dragging; persisted on release
@@ -239,7 +253,13 @@ fun MeterContent(
 
     // ── The clamp ─────────────────────────────────────────────────────────────
     val limits = remember(camera, lens) { GearClamp.limitsOf(camera, lens) }
-    val rungs = remember(filmIso, effectiveEV, limits) {
+    // Aperture priority holds the lens wide open unless a rung was tapped.
+    // The tap lasts until the meter closes or the lens changes: opening the
+    // meter again means wide open again, whatever was dialled last time.
+    var heldApertureTap by remember(lens?.id, lens?.maxAperture) { mutableStateOf<Double?>(null) }
+    val heldAperture = heldApertureTap ?: limits.widestAperture ?: FALLBACK_HELD_APERTURE
+    val heldIsWideOpen = heldApertureTap == null && limits.widestAperture != null
+    val rungs = remember(filmIso, effectiveEV, limits, aperturePriority, shutter) {
         GearClamp.ladder(filmIso, effectiveEV, limits)
             // Rungs needing an aperture no lens has are noise on every ladder,
             // clamped or not. Filter on the exact value, not the snapped one:
@@ -248,32 +268,44 @@ fun MeterContent(
             // the dial on a film body has whole stops, and 30 third-stop rungs
             // is a scroll, not a choice.
             .filter { it.apertureExact >= 0.95 && it.apertureExact <= 32.0 }
-            .filter { it.shutter in Constants.WHOLE_STOP_SHUTTERS || it.shutter == shutter }
+            .filter {
+                it.shutter in Constants.WHOLE_STOP_SHUTTERS ||
+                    (!aperturePriority && it.shutter == shutter)
+            }
     }
-    val selected = rungs.find { it.shutter == shutter }
+    val selected =
+        if (aperturePriority) GearClamp.rungForAperture(rungs, filmIso, effectiveEV, heldAperture)
+        else rungs.find { it.shutter == shutter }
+    // The speed the readouts and the commit bar name. Under aperture priority
+    // it is whatever the light asks of the held aperture, not the stored one.
+    val activeShutter = selected?.shutter
+        ?: if (aperturePriority) Exposure.nearestStandardShutter(
+            GearClamp.shutterSecFor(filmIso, heldAperture, effectiveEV)
+        ) else shutter
     val advice = remember(filmIso, effectiveEV, limits, camera, lens) {
         GearClamp.advise(filmIso, effectiveEV, limits, camera, lens)
     }
 
     // Shutter seconds the reciprocity helper should correct
-    val displaySec = selected?.shutterSec ?: Constants.evalShutter(shutter)
+    val displaySec = selected?.shutterSec ?: Constants.evalShutter(activeShutter)
     val apExact = selected?.apertureExact
         ?: GearClamp.apertureFor(filmIso, displaySec, effectiveEV)
     val apSnapped = selected?.aperture ?: Constants.nearestStandardAperture(apExact)
     // Why the frame cannot be committed, or null when it can.
     //
-    // "No rung is selected" is its own case and not the same as "out of range":
-    // as the light moves, the stored shutter can stop having any f-stop on the
-    // standard scale while other rungs remain perfectly usable. Treating that as
-    // merely unselected left the button live with a dash for an aperture, which
-    // would have logged the frame at the scale's floor.
+    // Only a missing rung blocks. As the light moves, the stored shutter can
+    // stop having any f-stop on the standard scale while other rungs remain
+    // perfectly usable; leaving the button live then would log the frame at the
+    // scale's floor. A rung outside the gear's range does not block: it is
+    // hatched and the banner says why, but choosing it is the photographer's
+    // call — a third wider than the lens is a third under at full aperture.
     val blockedLabel = when {
-        advice != null       -> "OUT OF RANGE"
-        selected == null     -> "PICK A SPEED"
-        !selected.achievable -> "OUT OF RANGE"
-        else                 -> null
+        selected != null -> null
+        aperturePriority -> "NO SPEED FITS"
+        else             -> "PICK A SPEED"
     }
-    val unreachable = blockedLabel != null
+    val beyondGear = advice != null || selected?.achievable == false
+    val unreachable = blockedLabel != null || beyondGear
     // A dash, not a snapped number, once the answer leaves the scale: rounding
     // f/0.1 up to f/0.95 prints an f-stop that exists and is still four stops out.
     val apertureLabel =
@@ -557,7 +589,7 @@ fun MeterContent(
                     )
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        "EXACT f/${"%.1f".format(apExact)} · ISO $filmIso · $shutter",
+                        "EXACT f/${"%.1f".format(apExact)} · ISO $filmIso · $activeShutter",
                         style = FilmTheme.type.rebate,
                         color = colors.dim,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -583,6 +615,16 @@ fun MeterContent(
             // choose the frame. The design sketch put it last, on a mockup that
             // had no manual-EV ruler and no film-speed row above it.
             MeterEyebrow("Equivalent exposures")
+            PriorityToggle(
+                aperturePriority = aperturePriority,
+                heldAperture = heldAperture,
+                heldIsWideOpen = heldIsWideOpen,
+                canReopen = heldApertureTap != null && limits.widestAperture != null,
+                heldShutter = shutter,
+                onPriority = { vm.saveMeterAperturePriority(it) },
+                onWideOpen = { heldApertureTap = null },
+            )
+            Spacer(Modifier.height(8.dp))
             if (rungs.isEmpty()) {
                 // No standard shutter maps onto an aperture any lens carries.
                 // The banner above says what to do; this only has to explain why
@@ -595,8 +637,16 @@ fun MeterContent(
             } else {
                 ExposureLadder(
                     rungs = rungs,
-                    selectedShutter = shutter,
-                    onSelect = { vm.saveMeterShutter(it) },
+                    selectedShutter = selected?.shutter,
+                    onSelect = { rung ->
+                        if (aperturePriority) {
+                            // Tapping the wide-open rung goes back to following the
+                            // lens, so a later lens swap opens wide on the new glass.
+                            heldApertureTap = rung.aperture.takeUnless { ap ->
+                                limits.widestAperture?.let { abs(log2(ap / it)) < 0.1 } == true
+                            }
+                        } else vm.saveMeterShutter(rung.shutter)
+                    },
                 )
             }
             if (!limits.unclamped) {
@@ -605,6 +655,45 @@ fun MeterContent(
                     style = FilmTheme.type.rebate, color = colors.dim,
                     modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp),
                 )
+            }
+
+            // ── Lens (interchangeable bodies) ─────────────────────────────────
+            if (roll != null && swappableLenses.isNotEmpty()) {
+                MeterEyebrow("Lens · meter only")
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(swappableLenses, key = { it.id }) { l ->
+                        val sel = lens?.id == l.id
+                        val onRoll = l.id == roll.cameraLensId
+                        Column(
+                            Modifier
+                                .background(colors.film)
+                                .border(1.dp, if (sel) colors.violet else colors.edge)
+                                .clickable {
+                                    vm.setMeterLens(roll.id, l.id.takeUnless { onRoll })
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                l.name.ifBlank { "${l.focalLength}MM" },
+                                style = FilmTheme.type.data,
+                                color = if (sel) colors.violet else colors.halide,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 160.dp),
+                            )
+                            Text(
+                                listOfNotNull(
+                                    l.maxAperture.takeIf { it.isNotBlank() }?.let { "F/$it" },
+                                    "ON ROLL".takeIf { onRoll },
+                                ).joinToString(" · ").ifBlank { "—" },
+                                style = FilmTheme.type.rebate, color = colors.dim,
+                            )
+                        }
+                    }
+                }
             }
 
             MeterEyebrow("Metering")
@@ -828,12 +917,13 @@ fun MeterContent(
         // ── COMMIT BAR ────────────────────────────────────────────────────────
         CommitBar(
             roll = roll, film = film, camera = camera,
-            shutter = shutter,
+            shutter = activeShutter,
             aperture = apSnapped,
             apertureLabel = apertureLabel,
             iso = filmIso,
             ev = effectiveEV,
             blockedLabel = blockedLabel,
+            beyondGear = beyondGear,
             onLog = { sh, ap ->
                 roll?.let { vm.quickLogShot(it.id, shutter = sh, aperture = ap, iso = filmIso.toString()) }
             },
@@ -929,18 +1019,19 @@ private fun ClampBanner(advice: GearClamp.Advice) {
 
 /**
  * Every equivalent exposure for this EV, with the ones the gear cannot be set to
- * hatched out and not selectable.
+ * hatched out.
  *
  * The hatching is the point: a greyed rung reads as "not chosen", and the user
- * needs "not possible". Tapping one does nothing on purpose — the clamp banner
- * above already says why, and a rung that silently accepts a tap it cannot honour
- * is worse than one that refuses.
+ * needs "not possible". Hatched rungs still take a tap — a third of a stop wider
+ * than the lens is a frame a third under at full aperture, and whether that is
+ * acceptable is for the person holding the camera to say. The commit bar marks
+ * the frame as beyond the gear when one is chosen.
  */
 @Composable
 private fun ExposureLadder(
     rungs: List<GearClamp.Rung>,
-    selectedShutter: String,
-    onSelect: (String) -> Unit,
+    selectedShutter: String?,
+    onSelect: (GearClamp.Rung) -> Unit,
 ) {
     val colors = FilmTheme.colors
     val state = rememberLazyListState()
@@ -957,13 +1048,13 @@ private fun ExposureLadder(
         items(rungs, key = { it.shutter }) { rung ->
             val sel = rung.shutter == selectedShutter
             val border = when {
-                sel && rung.achievable -> colors.magenta
-                !rung.achievable       -> colors.dead
-                else                   -> colors.edge
+                sel              -> colors.magenta
+                !rung.achievable -> colors.dead
+                else             -> colors.edge
             }
             val text = when {
-                !rung.achievable -> colors.dead
                 sel              -> colors.magenta
+                !rung.achievable -> colors.dead
                 else             -> colors.halide
             }
             Column(
@@ -976,7 +1067,7 @@ private fun ExposureLadder(
                         else Modifier
                     )
                     .border(1.dp, border)
-                    .clickable(enabled = rung.achievable) { onSelect(rung.shutter) }
+                    .clickable { onSelect(rung) }
                     .padding(vertical = 9.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -1035,6 +1126,8 @@ private fun CommitBar(
     ev: Double,
     /** Why the frame cannot be logged, shown as the button's title. Null = it can. */
     blockedLabel: String?,
+    /** The chosen exposure is outside what the body or lens can be set to. */
+    beyondGear: Boolean,
     onLog: (shutter: String, aperture: String) -> Unit,
     onUseInShot: ((String, String, String) -> Unit)?,
 ) {
@@ -1051,6 +1144,7 @@ private fun CommitBar(
         else                 -> "USE IN SHOT"
     }
     val subtitle = listOfNotNull(
+        "BEYOND GEAR".takeIf { beyondGear && blockedLabel == null },
         film?.name?.takeIf { it.isNotBlank() }?.uppercase(),
         camera?.name?.takeIf { it.isNotBlank() }?.uppercase(),
         apertureLabel,
@@ -1111,6 +1205,58 @@ private fun CommitBar(
         }
     }
 }
+
+// ─── Priority toggle ──────────────────────────────────────────────────────────
+
+/**
+ * Which half of the exposure stays put while the light moves, with the value
+ * being held written on the control itself.
+ *
+ * Aperture priority opens wide by default; once a rung has stopped it down, a
+ * small reset returns it to wide open rather than making the user hunt for the
+ * widest rung on a ladder that keeps sliding under their thumb.
+ */
+@Composable
+private fun PriorityToggle(
+    aperturePriority: Boolean,
+    heldAperture: Double,
+    heldIsWideOpen: Boolean,
+    canReopen: Boolean,
+    heldShutter: String,
+    onPriority: (Boolean) -> Unit,
+    onWideOpen: () -> Unit,
+) {
+    val colors = FilmTheme.colors
+    Row(
+        Modifier.padding(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        MeterSegment(
+            label = "A · ${GearClamp.formatAperture(heldAperture).uppercase()}" +
+                if (heldIsWideOpen) " OPEN" else "",
+            selected = aperturePriority,
+            accent = colors.cyan,
+            modifier = Modifier.weight(1f),
+            onClick = { onPriority(true) },
+        )
+        MeterSegment(
+            label = "S · $heldShutter",
+            selected = !aperturePriority,
+            accent = colors.cyan,
+            modifier = Modifier.weight(1f),
+            onClick = { onPriority(false) },
+        )
+        if (aperturePriority && canReopen) {
+            MeterSegment("↺", false, colors.cyan, Modifier.width(44.dp), onClick = onWideOpen)
+        }
+    }
+}
+
+/**
+ * Held aperture when nothing says how wide the lens opens: a fixed-lens body
+ * with no range entered, or no roll at all. f/8 because it is on every lens.
+ */
+private const val FALLBACK_HELD_APERTURE = 8.0
 
 // ─── Small parts ──────────────────────────────────────────────────────────────
 
