@@ -10,6 +10,11 @@ are added and releases are cut.
 ### Added
 - **Chemistry kits**: save a kit like Cinestill Cs41 or Kodak Flexicolor as one item with its own baths, temperature and shared roll count. It shows up under Timers as the full process, and each bath is lengthened by its own per-roll amount as the kit wears.
 - **Fixed-lens aperture**: a fixed-lens camera can now carry its lens's widest and narrowest aperture. The light meter hatches exposures the lens can't reach, and the shot log's aperture list starts at the lens's widest stop.
+- **Meter priority lock**: the light meter can hold the aperture or the shutter while the light changes. Aperture priority opens the lens wide by default and picks the speed whose aperture is at or just wider than wide open; ↺ goes back to wide open after a rung was tapped.
+- **Swap lenses in the meter**: on an interchangeable-lens camera, the meter lists every lens that fits the mount (natively or through an adapter) and meters against the one you pick. The roll keeps its own lens.
+
+### Changed
+- Exposures outside what the camera or lens can be set to stay hatched on the meter's ladder but can now be picked and logged; the log button marks them "beyond gear".
 
 ### Fixed
 - 120 and 220 rolls now get the frame count of the camera they're loaded into (8 in a 6x9, 10 in a 6x7, 16 in a 6x4.5, doubled for 220) instead of always 12. Rolls already in a camera are corrected too, unless more frames are logged than the new count allows.
