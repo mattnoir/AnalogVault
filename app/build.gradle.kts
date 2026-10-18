@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// The app's version, and the only place it is written. Feature and fix PRs leave
+// it alone; only a version-bump commit changes it (see CONTRIBUTING.md).
+val appVersion = "0.6.0"
+
 android {
     namespace = "com.analogvault"
     compileSdk = 35
@@ -14,8 +18,12 @@ android {
         applicationId = "com.analogvault"
         minSdk = 26
         targetSdk = 35
-        versionCode = 50
-        versionName = "0.5.0"
+        versionName = appVersion
+        // Derived, so it can't drift from the name and only ever goes up:
+        // 0.6.0 → 6000, 0.6.1 → 6001, 1.2.3 → 1002003.
+        versionCode = appVersion.substringBefore('-').split('.').map(String::toInt)
+            .also { require(it.size == 3) { "appVersion must be MAJOR.MINOR.PATCH, was $appVersion" } }
+            .let { (major, minor, patch) -> major * 1_000_000 + minor * 1_000 + patch }
 
         // Substituted into android:label. Overridden by the debug build type so
         // the two installs are distinguishable in the launcher.

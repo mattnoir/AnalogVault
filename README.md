@@ -314,12 +314,13 @@ Current notes include ongoing smoothness/navigation tuning and feature expansion
 
 ## Contributing
 
-If you plan to contribute:
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for branch names, commit and PR
+titles, versioning, the changelog and how a release is cut. In short:
 
-1. Fork + create a feature branch
-2. Keep changes scoped and testable
-3. Run a debug build before opening PR
-4. Include screenshots for UI-visible changes when relevant
+1. Branch off `redesign` as `feature/…`, `fix/…` or `chore/…`
+2. Title commits and the PR `feat: …`, `fix: …` or `chore: …`
+3. Add a line under `## [Unreleased]` in `CHANGELOG.md` for anything a user will notice
+4. Run a debug build and try it on a device; include screenshots for UI changes
 
 ---
 
