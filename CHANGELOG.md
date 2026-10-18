@@ -1,3 +1,12 @@
+# Changelog
+
+Notable changes to Analog Vault, newest first. The format follows
+[Keep a Changelog](https://keepachangelog.com) and versions follow
+[Semantic Versioning](https://semver.org); see CONTRIBUTING.md for how entries
+are added and releases are cut.
+
+## [Unreleased]
+
 [v0.5.0] - 2026-07-02
 -
 **Light meter overhaul**
