@@ -100,7 +100,7 @@ object Constants {
     val DEVELOP_PROCESSES = listOf("C-41 (Color)","B&W (Standard)","B&W (Stand)","B&W (Semi-Stand)","E-6 (Slide)","Custom")
     val SCAN_METHODS = listOf("Flatbed Scanner","DSLR/Mirrorless","Phone Scan","Lab Scan","Drum Scan")
     val ACCESSORY_TYPES = listOf("Filter","Flash","Tripod","Cable Release","Light Meter","Film Changing Bag","Darkroom Equipment","Bag/Case","Strap","Lens Hood","Other")
-    val CHEM_TYPES = listOf("Developer","Fixer","Blix","Bleach","Stop Bath","Stabiliser","Wetting Agent","Custom")
+    val CHEM_TYPES = listOf("Developer","Fixer","Blix","Bleach","Stop Bath","Stabiliser","Wetting Agent","Kit","Custom")
     val CHEM_UNITS = listOf("ml","L","g","oz","mixed (L)")
     val MF_FORMATS = listOf("6x4.5","6x6","6x7","6x9","6x17")
     // frames per roll by MF format
