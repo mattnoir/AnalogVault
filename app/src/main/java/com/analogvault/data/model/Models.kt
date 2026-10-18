@@ -6,6 +6,7 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.analogvault.util.Constants
 
 // ─── Type Converters ────────────────────────────────────────────────────────
 
@@ -94,8 +95,43 @@ data class Camera(
     val fastestShutter: String = "",
     val slowestShutter: String = "",
     /** Bulb lets the body go past [slowestShutter] on a cable release. */
-    val hasBulb: Boolean = false
+    val hasBulb: Boolean = false,
+    /**
+     * The aperture range of a fixed-lens body's built-in lens, stated like
+     * [Lens.maxAperture] and [Lens.minAperture]. Ignored on interchangeable
+     * bodies, where the mounted lens carries it. Blank means unknown, and
+     * unknown means unclamped — the same rule as the shutter range.
+     */
+    val maxAperture: String = "",
+    val minAperture: String = ""
 )
+
+/**
+ * The built-in lens of a fixed-lens body, shaped as a [Lens] so the meter and
+ * the shot sheet can treat it like a mounted one. Null on interchangeable
+ * bodies, and when neither end of the aperture range is known.
+ */
+fun Camera.fixedLens(): Lens? =
+    if (lensSystem != "fixed" || (maxAperture.isBlank() && minAperture.isBlank())) null
+    else Lens(id = "", name = "${name.ifBlank { "Built-in" }} lens", brand = brand,
+        focalLength = "", maxAperture = maxAperture, minAperture = minAperture)
+
+/**
+ * Frames a roll of [film] gives in this body. A 120 roll's count is set by the
+ * camera's frame size, not the film — the same roll is 8 frames in a 6x9 and 16
+ * in a 645 — so a medium-format body with a shooting format overrides the
+ * stock's count. 220 is twice the length of 120, so twice the frames.
+ * Everything else keeps the stock's own count.
+ */
+fun Camera?.framesFor(film: FilmStock?): Int {
+    val stock = film?.frameCount?.takeIf { it > 0 } ?: 36
+    val perRoll = this?.let { Constants.MF_FRAME_COUNTS[it.mfFormat] } ?: return stock
+    return when (film?.filmFormat) {
+        "120" -> perRoll
+        "220" -> perRoll * 2
+        else  -> stock
+    }
+}
 
 // ─── Lens ─────────────────────────────────────────────────────────────────────
 

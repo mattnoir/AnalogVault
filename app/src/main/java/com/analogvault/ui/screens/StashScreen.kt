@@ -1013,7 +1013,8 @@ fun CameraStashTab(cameras: List<Camera>, vm: MainViewModel, busyCameraIds: Set<
                             VaultTag(cam.format, textColor = FilmTheme.colors.yellow)
                             VaultTag(cam.condition)
                             if (cam.mount.isNotBlank()) VaultTag(cam.mount)
-                            VaultTag(cam.lensSystem)
+                            VaultTag(if (cam.lensSystem == "fixed" && cam.maxAperture.isNotBlank())
+                                "fixed f/${cam.maxAperture}" else cam.lensSystem)
                             if (cam.id in busyCameraIds) VaultTag("Film loaded", textColor = FilmTheme.colors.violet, icon = FilmIcons.LoadRoll)
                         }
                         cam.adapterMounts.take(3).let { if (it.isNotEmpty()) {
@@ -1543,6 +1544,8 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
     var fastest    by remember { mutableStateOf(ed?.fastestShutter ?: "") }
     var slowest    by remember { mutableStateOf(ed?.slowestShutter ?: "") }
     var hasBulb    by remember { mutableStateOf(ed?.hasBulb ?: false) }
+    var maxAperture by remember { mutableStateOf(ed?.maxAperture ?: "") }
+    var minAperture by remember { mutableStateOf(ed?.minAperture ?: "") }
 
     fun onCameraSelected(modelName: String) {
         name = modelName
@@ -1623,6 +1626,22 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                 }
             }
         }
+        // The built-in lens's aperture range — what a mounted lens would carry on
+        // an interchangeable body. Unknown on either end leaves that end unclamped
+        // in the meter and the shot sheet.
+        if (lensSystem == "fixed") {
+            Spacer(Modifier.height(14.dp))
+            Text("Lens aperture", color = FilmTheme.colors.dim, fontSize = 11.sp)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                VaultDropdown("Widest (f/)", maxAperture.ifBlank { UNKNOWN_LIMIT },
+                    listOf(UNKNOWN_LIMIT) + Constants.APERTURES.filter { it <= 11.0 }.map { apertureNum(it) },
+                    { maxAperture = if (it == UNKNOWN_LIMIT) "" else it }, modifier = Modifier.weight(1f))
+                VaultDropdown("Narrowest (f/)", minAperture.ifBlank { UNKNOWN_LIMIT },
+                    listOf(UNKNOWN_LIMIT) + Constants.APERTURES.filter { it >= 4.0 }.map { apertureNum(it) },
+                    { minAperture = if (it == UNKNOWN_LIMIT) "" else it }, modifier = Modifier.weight(1f))
+            }
+        }
         // Shutter range. Left blank the meter suggests whatever the light asks
         // for, which is the old behaviour; filled in it stops offering speeds the
         // dial does not have.
@@ -1656,7 +1675,10 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
             onSave(Camera(id = ed?.id ?: uid(), name = name, brand = brand, format = format,
                 mfFormat = mfFormat, lensSystem = lensSystem, condition = condition,
                 mount = mount, adapterMounts = adapters, notes = notes,
-                fastestShutter = fastest, slowestShutter = slowest, hasBulb = hasBulb))
+                fastestShutter = fastest, slowestShutter = slowest, hasBulb = hasBulb,
+                // Kept only while fixed: an interchangeable body's aperture lives on its lens.
+                maxAperture = if (lensSystem == "fixed") maxAperture else "",
+                minAperture = if (lensSystem == "fixed") minAperture else ""))
         })
     }
 }

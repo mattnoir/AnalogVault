@@ -471,8 +471,9 @@ fun LoadRollSheet(
     // Stash flow allows loading into a busy camera (MF backs); loaded-tab flow blocks it.
     val allowBusyLoad = fixedFilm != null
 
-    // Exposure count is taken from the film/roll itself (FilmStock.frameCount) — no manual picker.
-    val rollFrames = selFilm?.frameCount?.takeIf { it > 0 } ?: 36
+    // Exposure count comes from the film, except a 120/220 roll in a body with a
+    // shooting format, where the frame size decides it — no manual picker.
+    val rollFrames = selCamera.framesFor(selFilm)
 
     val isoOptions = remember(selFilm?.iso, customIsos) {
         listOf("Box (${selFilm?.iso ?: "?"})") +
@@ -958,7 +959,11 @@ fun ShotSheet(
     var customIsoInput by remember { mutableStateOf("") }
     var weatherLoading by remember { mutableStateOf(false) }
 
-    val selectedLens = remember(lensName, lenses) { lenses.find { it.name == lensName } }
+    // A fixed-lens body's own lens stands in when no stash lens is picked, so
+    // the aperture list stops at what the built-in glass opens to.
+    val selectedLens = remember(lensName, lenses, rollCamera) {
+        lenses.find { it.name == lensName } ?: rollCamera?.fixedLens()
+    }
     val apertureOptions = remember(selectedLens) {
         val maxAp = selectedLens?.maxAperture?.toDoubleOrNull()
         listOf("") + Constants.APERTURES
