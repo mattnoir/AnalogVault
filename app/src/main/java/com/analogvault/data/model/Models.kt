@@ -29,6 +29,13 @@ class DevLogConverter {
     @TypeConverter fun to(json: String?): DevLog? = json?.let { gson.fromJson(it, DevLog::class.java) }
 }
 
+class KitStepListConverter {
+    private val gson = Gson()
+    @TypeConverter fun fromList(list: List<KitStep>?): String = gson.toJson(list ?: emptyList<KitStep>())
+    @TypeConverter fun toList(json: String?): List<KitStep> = if (json.isNullOrBlank()) emptyList()
+        else gson.fromJson(json, object : TypeToken<List<KitStep>>() {}.type)
+}
+
 class ScanLogConverter {
     private val gson = Gson()
     @TypeConverter fun from(v: ScanLog?): String? = v?.let { gson.toJson(it) }
@@ -202,7 +209,39 @@ data class Chemical(
     val baseDevTime: String = "",
     val timeAdjPerRoll: String = "",
     val manualRolls: Int = -1,   // -1 = auto-count from rolls
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * The baths of a kit, in the order they run. Empty for a single chemical.
+     * A kit is bought, mixed and worn out as one thing, so it shares the one
+     * mix date, capacity and roll count above — but every bath keeps its own
+     * extension per roll, because a developer slows as it ages while a blix
+     * usually does not.
+     */
+    val kitSteps: List<KitStep> = emptyList(),
+    /** "C-41", "E-6" or "B&W" for a kit; decides which temperature rules apply. */
+    val process: String = "",
+    /**
+     * The one temperature a colour kit runs at, in °C, or blank for the
+     * process's standard. Kits differ — Cinestill's Cs41 is 39 °C, Kodak's
+     * Flexicolor 37.8 °C — and their times are only true at their own.
+     */
+    val kitTempC: String = ""
+) {
+    val isKit: Boolean get() = type == KIT_TYPE
+}
+
+const val KIT_TYPE = "Kit"
+
+/**
+ * One bath in a chemistry kit. Times are minutes, written either as "3:30" or
+ * as "3.5" — see parseMinutes. [role] is a StepRole name, kept as text so the
+ * data layer does not depend on the timer's UI types.
+ */
+data class KitStep(
+    val name: String = "",
+    val role: String = "DEVELOP",
+    val baseTime: String = "",
+    val adjPerRoll: String = "",
 )
 
 // ─── Bulk Roll (canister inventory) ──────────────────────────────────────────

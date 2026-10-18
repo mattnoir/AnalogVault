@@ -93,7 +93,18 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
         )
     },
     bulkRolls   = (bulkRolls ?: emptyList()).filter { it.id != null },
-    chemicals   = (chemicals ?: emptyList()).filter { it.id != null },
+    // Backups from before kits have no kit fields at all; they restore as the
+    // single chemicals they were.
+    chemicals   = (chemicals ?: emptyList()).filter { it.id != null }.map { c ->
+        c.copy(
+            kitSteps = (c.kitSteps ?: emptyList()).filter { it != null }.map { k ->
+                KitStep(name = k.name ?: "", role = k.role ?: "DEVELOP",
+                    baseTime = k.baseTime ?: "", adjPerRoll = k.adjPerRoll ?: "")
+            },
+            process  = c.process ?: "",
+            kitTempC = c.kitTempC ?: ""
+        )
+    },
     zoomLevels  = (zoomLevels ?: emptyList()).filter { it.id != null },
     owmKey      = owmKey ?: "",
     savedTimers = savedTimers,

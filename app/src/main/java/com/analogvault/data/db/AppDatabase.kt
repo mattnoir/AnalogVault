@@ -137,13 +137,27 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+/**
+ * Let one chemistry row be a whole kit (v9 → v10).
+ *
+ * Every existing row is a single chemical, which is exactly what an empty step
+ * list and a blank process mean — nothing about it changes.
+ */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE chemicals ADD COLUMN kitSteps TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE chemicals ADD COLUMN process TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE chemicals ADD COLUMN kitTempC TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 9,
+    version = 10,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true
@@ -152,6 +166,7 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     StringListConverter::class,
     ShotListConverter::class,
     DevLogConverter::class,
+    KitStepListConverter::class,
     ScanLogConverter::class
 )
 abstract class AppDatabase : RoomDatabase() {

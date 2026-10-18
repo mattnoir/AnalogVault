@@ -7,6 +7,9 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+### Added
+- **Chemistry kits**: save a kit like Cinestill Cs41 or Kodak Flexicolor as one item with its own baths, temperature and shared roll count. It shows up under Timers as the full process, and each bath is lengthened by its own per-roll amount as the kit wears.
+
 [v0.5.0] - 2026-07-02
 -
 **Light meter overhaul**

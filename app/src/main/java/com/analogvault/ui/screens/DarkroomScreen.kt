@@ -41,6 +41,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import com.analogvault.data.model.Chemical
+import com.analogvault.data.model.KIT_TYPE
+import com.analogvault.data.model.KitStep
+import kotlin.math.roundToInt
 import com.analogvault.ui.DarkroomTimerState
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
@@ -123,7 +126,7 @@ fun ChemistryTab(vm: MainViewModel) {
                 maxR != null && used.toFloat() / maxR >= 0.8f -> "warn"
                 else -> null
             }
-            val adjTime = if (chem.timeAdjPerRoll.isNotBlank() && chem.baseDevTime.isNotBlank()) {
+            val adjTime = if (!chem.isKit && chem.timeAdjPerRoll.isNotBlank() && chem.baseDevTime.isNotBlank()) {
                 val base = chem.baseDevTime.toDoubleOrNull() ?: 0.0
                 val adj  = chem.timeAdjPerRoll.toDoubleOrNull() ?: 0.0
                 "%.2f".format(base + used * adj)
@@ -134,8 +137,15 @@ fun ChemistryTab(vm: MainViewModel) {
                     verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
                         Text(chem.name.ifBlank { "Unnamed" }, color = FilmTheme.colors.halide, fontSize = 15.sp)
-                        Text("${chem.type}${if (chem.dilution.isNotBlank()) " · ${chem.dilution}" else ""}",
-                            color = FilmTheme.colors.dim, fontSize = 12.sp)
+                        val detail = if (chem.isKit) {
+                            val spec = chem.kitSpec()
+                            listOfNotNull(
+                                "Kit", chem.process.ifBlank { null },
+                                spec.fixedC?.let { "%.1f °C".format(it) },
+                                "${chem.kitSteps.size} baths",
+                            ).joinToString(" · ")
+                        } else "${chem.type}${if (chem.dilution.isNotBlank()) " · ${chem.dilution}" else ""}"
+                        Text(detail, color = FilmTheme.colors.dim, fontSize = 12.sp)
                     }
                     when (alert) {
                         "exhausted" -> VaultTag("Exhausted", textColor = FilmTheme.colors.mask, icon = FilmIcons.Warn)
@@ -164,6 +174,19 @@ fun ChemistryTab(vm: MainViewModel) {
                     val diff = "%.2f".format(adjTime.toDouble() - base)
                     Text("Adjusted dev time: $adjTime min (+$diff for $used rolls)",
                         color = FilmTheme.colors.cyan, fontSize = 11.sp)
+                }
+                if (chem.isKit) {
+                    val steps = chem.kitTimer(used).steps
+                    if (steps.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        // Today's times, with this many rolls through the kit.
+                        FilmChipRow {
+                            steps.forEach { step ->
+                                FilmChip("${step.name} ${formatDuration(step.durationSec)}",
+                                    color = step.role.color())
+                            }
+                        }
+                    }
                 }
                 if (chem.notes.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
@@ -224,12 +247,116 @@ data class DevTimer(
     val id: String = uid(),
     val name: String,
     val steps: List<DevStep>,
+    /**
+     * The temperature rules, when something more specific than the name knows
+     * them: a kit says its process and its temperature outright. Never stored —
+     * a kit's timer is rebuilt from the kit each time it is shown.
+     */
+    val spec: DevTime.ProcessSpec? = null,
 ) {
     /**
-     * Which temperature rules apply, read off the name. One source of truth —
-     * a stored field could disagree with a name the user edited.
+     * Which temperature rules apply, read off the name unless [spec] is given.
+     * One source of truth — a stored field could disagree with a name the user
+     * edited.
      */
-    val process: DevTime.ProcessSpec get() = DevTime.specFor(name)
+    val process: DevTime.ProcessSpec get() = spec ?: DevTime.specFor(name)
+}
+
+// ─── Kits ─────────────────────────────────────────────────────────────────────
+
+/** Processes a kit can be; [DevTime.specFor] reads each back to its rules. */
+val KIT_PROCESSES = listOf("C-41", "E-6", "B&W")
+
+/** How a kit bath's role reads in the sheet. Bleach and fix share a colour, so they share a role. */
+fun StepRole.kitLabel(): String = when (this) {
+    StepRole.DEVELOP -> "Develop"
+    StepRole.STOP    -> "Stop"
+    StepRole.FIX     -> "Bleach / Fix"
+    StepRole.WASH    -> "Wash"
+    StepRole.FINISH  -> "Final rinse"
+}
+
+/**
+ * Minutes as people write them off a kit's leaflet: "3:30", "3.5" or "3,5".
+ * Null when there is nothing usable, so a half-typed field reads as missing
+ * rather than as zero.
+ */
+fun parseMinutes(text: String): Double? {
+    val t = text.trim()
+    if (t.isEmpty()) return null
+    if (':' in t) {
+        val (m, s) = t.split(':', limit = 2)
+        val min = m.trim().ifEmpty { "0" }.toIntOrNull() ?: return null
+        val sec = s.trim().ifEmpty { "0" }.toIntOrNull() ?: return null
+        if (min < 0 || sec !in 0..59) return null
+        return min + sec / 60.0
+    }
+    return t.replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 }
+}
+
+/** The temperature rules this kit runs under, with its own temperature if it gives one. */
+fun Chemical.kitSpec(): DevTime.ProcessSpec {
+    val base = DevTime.specFor(process)
+    val own = kitTempC.replace(',', '.').toDoubleOrNull()
+    return if (base.isFixedTemperature && own != null) base.copy(fixedC = own) else base
+}
+
+/**
+ * The kit as a timer, every bath extended for the [rolls] already through it.
+ *
+ * Each bath carries its own extension because kits do not age evenly: Cs41
+ * and Flexicolor both lengthen the developer as it works while the bleach and
+ * fix hold their times. A bath with no usable time is left out rather than run
+ * for zero seconds.
+ */
+fun Chemical.kitTimer(rolls: Int): DevTimer {
+    val spec = kitSpec()
+    val colour = spec.isFixedTemperature
+    return DevTimer(
+        id = "kit_$id",
+        name = name.ifBlank { "Kit" },
+        spec = spec,
+        steps = kitSteps.mapIndexedNotNull { i, step ->
+            val base = parseMinutes(step.baseTime) ?: return@mapIndexedNotNull null
+            val adj = parseMinutes(step.adjPerRoll) ?: 0.0
+            val sec = ((base + rolls * adj) * 60).roundToInt()
+            if (sec <= 0) return@mapIndexedNotNull null
+            val role = runCatching { StepRole.valueOf(step.role) }.getOrDefault(StepRole.DEVELOP)
+            DevStep(
+                id = "kit_${id}_$i",
+                name = step.name.ifBlank { role.kitLabel() },
+                durationSec = sec,
+                role = role,
+                // The kit leaflet's rhythm is not stored, so take the presets':
+                // colour kits agitate harder and more often than B&W.
+                agitation = when (role) {
+                    StepRole.DEVELOP, StepRole.FIX ->
+                        if (colour) DevTime.Agitation(initialSec = 30, everySec = 30, burstSec = 5)
+                        else DevTime.Agitation.STANDARD
+                    StepRole.STOP -> DevTime.Agitation.CONTINUOUS
+                    StepRole.WASH, StepRole.FINISH -> DevTime.Agitation.NONE
+                },
+            )
+        },
+    )
+}
+
+/** The baths a new kit starts with: names and roles only, since times are the kit's own. */
+fun kitTemplate(process: String): List<KitStep> = when (DevTime.specFor(process)) {
+    DevTime.E6 -> listOf(
+        KitStep("First Developer", StepRole.DEVELOP.name), KitStep("Wash", StepRole.WASH.name),
+        KitStep("Color Developer", StepRole.DEVELOP.name), KitStep("Wash", StepRole.WASH.name),
+        KitStep("Blix", StepRole.FIX.name), KitStep("Wash", StepRole.WASH.name),
+        KitStep("Stabiliser", StepRole.FINISH.name),
+    )
+    DevTime.BW -> listOf(
+        KitStep("Developer", StepRole.DEVELOP.name), KitStep("Stop Bath", StepRole.STOP.name),
+        KitStep("Fixer", StepRole.FIX.name), KitStep("Wash", StepRole.WASH.name),
+    )
+    else -> listOf(
+        KitStep("Developer", StepRole.DEVELOP.name), KitStep("Blix", StepRole.FIX.name),
+        KitStep("Wash", StepRole.WASH.name), KitStep("Stabiliser", StepRole.FINISH.name),
+    )
 }
 
 /**
@@ -463,13 +590,35 @@ fun TimersTab(vm: MainViewModel) {
             }
         }
 
+        // Kits are yours too, so they come before the stock presets: the whole
+        // process, already extended for how worn the kit is.
+        val kits = chemicals.filter { it.isKit }
+            .map { it to vm.rolledCount(it) }
+            .filter { (kit, rolls) -> kit.kitTimer(rolls).steps.isNotEmpty() }
+        if (kits.isNotEmpty()) {
+            item { DarkroomEyebrow("Your kits") }
+            items(kits, key = { it.first.id }) { (kit, rolls) ->
+                val timer = kit.kitTimer(rolls)
+                val extended = kit.kitSteps.any { (parseMinutes(it.adjPerRoll) ?: 0.0) > 0 }
+                val cap = kit.maxRolls.toIntOrNull()
+                PresetCard(
+                    timer, tempC,
+                    note = buildString {
+                        append("$rolls ROLL${if (rolls != 1) "S" else ""} THROUGH")
+                        if (cap != null) append(" OF $cap")
+                        if (extended && rolls > 0) append("  ▸  TIMES EXTENDED")
+                    },
+                ) { vm.startTimer(timer.atTemperature(tempC)) }
+            }
+        }
+
         item { DarkroomEyebrow("Process presets") }
         items(DEV_PRESETS, key = { it.id }) { preset ->
             PresetCard(preset, tempC) { vm.startTimer(preset.atTemperature(tempC)) }
         }
 
         // Custom from chemistry
-        val usable = chemicals.filter { it.baseDevTime.isNotBlank() }
+        val usable = chemicals.filter { !it.isKit && it.baseDevTime.isNotBlank() }
         if (usable.isNotEmpty()) {
             item { DarkroomEyebrow("From your chemistry") }
             items(usable, key = { it.id }) { chem ->
@@ -530,6 +679,8 @@ private fun PresetCard(
     preset: DevTimer,
     tempC: Double,
     onEdit: (() -> Unit)? = null,
+    /** An extra line under the totals, e.g. how far through its life a kit is. */
+    note: String? = null,
     onStart: () -> Unit,
 ) {
     val colors = FilmTheme.colors
@@ -562,6 +713,10 @@ private fun PresetCard(
                     "  ▸  AT ${"%.1f".format(preset.process.fixedC)} °C" else "",
             style = FilmTheme.type.rebate, color = colors.dim,
         )
+        note?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(it, style = FilmTheme.type.rebate, color = colors.cyan)
+        }
         Spacer(Modifier.height(9.dp))
         FilmChipRow {
             adjusted.steps.forEach { step ->
@@ -1325,14 +1480,32 @@ fun ChemSheet(ed: Chemical?, onDismiss: () -> Unit, onSave: (Chemical) -> Unit) 
     var baseDevTime    by remember { mutableStateOf(ed?.baseDevTime ?: "") }
     var timeAdjPerRoll by remember { mutableStateOf(ed?.timeAdjPerRoll ?: "") }
     var notes          by remember { mutableStateOf(ed?.notes ?: "") }
+    var process        by remember { mutableStateOf(ed?.process?.ifBlank { null } ?: KIT_PROCESSES[0]) }
+    var kitTempC       by remember { mutableStateOf(ed?.kitTempC ?: "") }
+    val kitSteps = remember { mutableStateListOf<KitStep>().apply { addAll(ed?.kitSteps ?: emptyList()) } }
+    var error          by remember { mutableStateOf<String?>(null) }
     val allChemDb = Constants.DEV_DB + Constants.FIX_DB
+    val isKit = type == KIT_TYPE
+    val roleOptions = StepRole.entries.map { it.kitLabel() }
 
     VaultSheet(if (ed != null) "Edit Chemistry" else "Add Chemistry", onDismiss) {
-        AutoCompleteField(name, { name = it }, "Name / Brand", allChemDb, placeholder = "e.g. Kodak HC-110")
+        AutoCompleteField(name, { name = it }, "Name / Brand", allChemDb,
+            placeholder = if (isKit) "e.g. Cinestill Cs41" else "e.g. Kodak HC-110")
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultDropdown("Type", type, Constants.CHEM_TYPES, { type = it }, modifier = Modifier.weight(1f))
-            VaultTextField(dilution, { dilution = it }, "Dilution", modifier = Modifier.weight(1f), placeholder = "1:31")
+            VaultDropdown("Type", type, Constants.CHEM_TYPES, {
+                type = it
+                // A kit with no baths yet starts from its process's usual ones.
+                if (it == KIT_TYPE && kitSteps.isEmpty()) kitSteps.addAll(kitTemplate(process))
+            }, modifier = Modifier.weight(1f))
+            if (isKit) VaultDropdown("Process", process, KIT_PROCESSES, {
+                // Swap the template only while nobody has typed a time into it.
+                if (kitSteps.all { s -> s.baseTime.isBlank() && s.adjPerRoll.isBlank() }) {
+                    kitSteps.clear(); kitSteps.addAll(kitTemplate(it))
+                }
+                process = it
+            }, modifier = Modifier.weight(1f))
+            else VaultTextField(dilution, { dilution = it }, "Dilution", modifier = Modifier.weight(1f), placeholder = "1:31")
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1347,21 +1520,87 @@ fun ChemSheet(ed: Chemical?, onDismiss: () -> Unit, onSave: (Chemical) -> Unit) 
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Number, placeholder = "25")
         }
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultTextField(baseDevTime, { baseDevTime = it }, "Base Dev (min)", modifier = Modifier.weight(1f),
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal, placeholder = "8")
-            VaultTextField(timeAdjPerRoll, { timeAdjPerRoll = it }, "+Time/Roll", modifier = Modifier.weight(1f),
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal, placeholder = "0.1")
+        if (isKit) {
+            val spec = DevTime.specFor(process)
+            if (spec.isFixedTemperature) {
+                VaultTextField(kitTempC, { kitTempC = it }, "Kit temperature (°C)",
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                    placeholder = "%.1f".format(spec.fixedC))
+                Spacer(Modifier.height(10.dp))
+            }
+            Text("BATHS · TIMES AS 3:30 OR 3.5 MIN", style = FilmTheme.type.eyebrow,
+                color = FilmTheme.colors.dim)
+            Spacer(Modifier.height(6.dp))
+            kitSteps.forEachIndexed { i, step ->
+                val role = runCatching { StepRole.valueOf(step.role) }.getOrDefault(StepRole.DEVELOP)
+                Column(Modifier.fillMaxWidth().border(1.dp, FilmTheme.colors.edge).padding(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        VaultTextField(step.name, { kitSteps[i] = step.copy(name = it) }, "Bath ${i + 1}",
+                            modifier = Modifier.weight(1f))
+                        VaultDropdown("Role", role.kitLabel(), roleOptions, { label ->
+                            val picked = StepRole.entries.first { it.kitLabel() == label }
+                            kitSteps[i] = step.copy(role = picked.name)
+                        }, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { kitSteps.removeAt(i) }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Close, "Remove ${step.name.ifBlank { "bath ${i + 1}" }}",
+                                tint = FilmTheme.colors.dim)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        VaultTextField(step.baseTime, { kitSteps[i] = step.copy(baseTime = it) }, "Time",
+                            modifier = Modifier.weight(1f), placeholder = "3:30")
+                        VaultTextField(step.adjPerRoll, { kitSteps[i] = step.copy(adjPerRoll = it) }, "+Time/Roll",
+                            modifier = Modifier.weight(1f), placeholder = "0:00")
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            VaultButton("+ Add bath", small = true, ghost = true, onClick = {
+                kitSteps.add(KitStep(role = StepRole.WASH.name))
+            })
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                VaultTextField(baseDevTime, { baseDevTime = it }, "Base Dev (min)", modifier = Modifier.weight(1f),
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal, placeholder = "8")
+                VaultTextField(timeAdjPerRoll, { timeAdjPerRoll = it }, "+Time/Roll", modifier = Modifier.weight(1f),
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal, placeholder = "0.1")
+            }
         }
         Spacer(Modifier.height(10.dp))
         VaultTextField(notes, { notes = it }, "Notes", singleLine = false, minLines = 2,
             placeholder = "Storage, replenishment…")
+        error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = FilmTheme.colors.mask, fontSize = 12.sp)
+        }
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Chemistry", modifier = Modifier.fillMaxWidth(), onClick = {
-            onSave(Chemical(id = ed?.id ?: uid(), name = name, type = type, dilution = dilution,
-                volume = volume, volumeUnit = volumeUnit, mixDate = mixDate, maxRolls = maxRolls,
-                baseDevTime = baseDevTime, timeAdjPerRoll = timeAdjPerRoll,
-                manualRolls = ed?.manualRolls ?: -1, notes = notes))
+            // A bath whose time cannot be read would quietly drop out of the
+            // timer, which is worse than refusing the save and saying which one.
+            val unreadable = if (!isKit) null else kitSteps.withIndex().firstOrNull { (_, s) ->
+                parseMinutes(s.baseTime) == null ||
+                    (s.adjPerRoll.isNotBlank() && parseMinutes(s.adjPerRoll) == null)
+            }
+            error = when {
+                isKit && kitSteps.isEmpty() -> "A kit needs at least one bath"
+                unreadable != null ->
+                    "Check the times for ${unreadable.value.name.ifBlank { "bath ${unreadable.index + 1}" }}"
+                else -> null
+            }
+            if (error == null) {
+                onSave(Chemical(id = ed?.id ?: uid(), name = name, type = type,
+                    dilution = if (isKit) "" else dilution,
+                    volume = volume, volumeUnit = volumeUnit, mixDate = mixDate, maxRolls = maxRolls,
+                    baseDevTime = if (isKit) "" else baseDevTime,
+                    timeAdjPerRoll = if (isKit) "" else timeAdjPerRoll,
+                    manualRolls = ed?.manualRolls ?: -1, notes = notes,
+                    kitSteps = if (isKit) kitSteps.toList() else emptyList(),
+                    process = if (isKit) process else "",
+                    kitTempC = if (isKit && DevTime.specFor(process).isFixedTemperature) kitTempC.trim() else ""))
+            }
         })
     }
 }
