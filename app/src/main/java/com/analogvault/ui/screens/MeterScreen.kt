@@ -62,6 +62,7 @@ import com.analogvault.data.model.FilmStock
 import com.analogvault.data.model.Lens
 import com.analogvault.data.model.Roll
 import com.analogvault.data.model.ZoomLevel
+import com.analogvault.data.model.fixedLens
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.VaultButton
 import com.analogvault.ui.components.VaultDropdown
@@ -165,7 +166,9 @@ fun MeterContent(
     val roll   = loadedRolls.find { it.id == rollId }
     val film   = films.find { it.id == roll?.filmId }
     val camera = cameras.find { it.id == roll?.cameraId }
-    val lens   = lenses.find { it.id == roll?.cameraLensId }
+    // A fixed-lens body has no stash lens on the roll; its own aperture range
+    // stands in so the ladder clamps on the glass it was built with.
+    val lens   = lenses.find { it.id == roll?.cameraLensId } ?: camera?.fixedLens()
 
     // ── User inputs — persisted via settings so the per-device calibration
     //    (and last-used ISO/shutter/metering) survive restarts ────────────────

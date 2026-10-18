@@ -151,13 +151,26 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+/**
+ * Give fixed-lens bodies the aperture range of their built-in lens (v10 → v11).
+ *
+ * Blank means unknown and unknown means unclamped, so every existing camera
+ * meters exactly as it did before.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE cameras ADD COLUMN maxAperture TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE cameras ADD COLUMN minAperture TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 10,
+    version = 11,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true

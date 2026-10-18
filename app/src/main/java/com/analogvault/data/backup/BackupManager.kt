@@ -68,7 +68,16 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
     exportedAt  = exportedAt ?: "",
     // records without a primary key are corrupt — drop them rather than crash Room
     films       = (films ?: emptyList()).filter { it.id != null },
-    cameras     = (cameras ?: emptyList()).filter { it.id != null },
+    // Backups from before the gear limits lack these columns; they restore as
+    // "unknown", which the meter reads as unclamped.
+    cameras     = (cameras ?: emptyList()).filter { it.id != null }.map { c ->
+        c.copy(
+            fastestShutter = c.fastestShutter ?: "",
+            slowestShutter = c.slowestShutter ?: "",
+            maxAperture    = c.maxAperture ?: "",
+            minAperture    = c.minAperture ?: ""
+        )
+    },
     lenses      = (lenses ?: emptyList()).filter { it.id != null },
     accessories = (accessories ?: emptyList()).filter { it.id != null },
     rolls       = (rolls ?: emptyList()).filter { it.id != null }.map { roll ->

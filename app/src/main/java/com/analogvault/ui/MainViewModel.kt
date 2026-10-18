@@ -145,6 +145,8 @@ class MainViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(Dispatchers.IO) { migratePhotosFromCache() }
+        // Rolls loaded before the frame count followed the camera still say 12.
+        viewModelScope.launch { repo.refitRollFrames() }
         viewModelScope.launch {
             // The palette first, and nothing before it.
             //
@@ -275,7 +277,11 @@ class MainViewModel @Inject constructor(
     fun deleteFilm(f: FilmStock) = viewModelScope.launch { repo.deleteFilm(f) }
 
     // ─── Camera CRUD ─────────────────────────────────────────────────────────
-    fun upsertCamera(c: Camera) = viewModelScope.launch { repo.upsertCamera(c) }
+    fun upsertCamera(c: Camera) = viewModelScope.launch {
+        repo.upsertCamera(c)
+        // A changed shooting format re-counts the 120 rolls already in this body.
+        repo.refitRollFrames(c.id)
+    }
     fun deleteCamera(c: Camera) = viewModelScope.launch { repo.deleteCamera(c) }
 
     // ─── Lens CRUD ───────────────────────────────────────────────────────────
