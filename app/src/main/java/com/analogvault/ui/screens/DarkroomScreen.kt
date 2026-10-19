@@ -704,30 +704,39 @@ fun TimersTab(vm: MainViewModel) {
             )
         }
 
-        // Yours before the stock ones: a process someone took the trouble to
-        // save is the one they came back to run.
-        if (savedTimers.isNotEmpty()) {
-            item { DarkroomEyebrow("Your timers") }
-            items(savedTimers, key = { it.id }) { saved ->
-                // Edited as saved, at fresh-chemistry times; shown and run as
-                // today's, lengthened for the rolls through what it is linked to.
-                val timer = saved.withChemistry(chemicals, vm::rolledCount)
-                PresetCard(
-                    timer, tempC,
-                    onEdit = { editingTimer = saved; startingFrom = null; showCustom = true },
-                    note = linkNote(saved, chemicals, vm::rolledCount),
-                ) { vm.startTimer(timer.atTemperature(tempC)) }
-            }
-        }
-
         // Kits are yours too, so they come before the stock presets: the whole
         // process, already extended for how worn the kit is.
         val kits = chemicals.filter { it.isKit }
             .map { it to vm.rolledCount(it) }
             .filter { (kit, rolls) -> kit.kitTimer(rolls).steps.isNotEmpty() }
+        // A saved timer linked to a kit is someone's own version of that kit's
+        // process, so it is listed under the kit, where they go looking for it.
+        val kitIds = kits.map { it.first.id }.toSet()
+        val (kitTimers, ownTimers) = savedTimers.partition { linkedKitId(it, chemicals) in kitIds }
+        val byKit = kitTimers.groupBy { linkedKitId(it, chemicals) }
+
+        // Yours before the stock ones: a process someone took the trouble to
+        // save is the one they came back to run.
+        val savedCard: @Composable (DevTimer) -> Unit = { saved ->
+            // Edited as saved, at fresh-chemistry times; shown and run as
+            // today's, lengthened for the rolls through what it is linked to.
+            val timer = saved.withChemistry(chemicals, vm::rolledCount)
+            PresetCard(
+                timer, tempC,
+                onEdit = { editingTimer = saved; startingFrom = null; showCustom = true },
+                note = linkNote(saved, chemicals, vm::rolledCount),
+            ) { vm.startTimer(timer.atTemperature(tempC)) }
+        }
+        if (ownTimers.isNotEmpty()) {
+            item { DarkroomEyebrow("Your timers") }
+            items(ownTimers, key = { it.id }) { savedCard(it) }
+        }
+
         if (kits.isNotEmpty()) {
             item { DarkroomEyebrow("Your kits") }
-            items(kits, key = { it.first.id }) { (kit, rolls) ->
+        }
+        kits.forEach { (kit, rolls) ->
+            item(key = kit.id) {
                 val timer = kit.kitTimer(rolls)
                 val extended = kit.kitSteps.any { (parseMinutes(it.adjPerRoll) ?: 0.0) > 0 }
                 val cap = kit.maxRolls.toIntOrNull()
@@ -742,6 +751,7 @@ fun TimersTab(vm: MainViewModel) {
                     editDescription = "Customise the ${timer.name} timer",
                 ) { vm.startTimer(timer.atTemperature(tempC)) }
             }
+            items(byKit[kit.id].orEmpty(), key = { it.id }) { savedCard(it) }
         }
 
         item { DarkroomEyebrow("Process presets") }
@@ -816,6 +826,12 @@ fun TimersTab(vm: MainViewModel) {
         )
     }
 }
+
+/** The kit a timer's steps are linked to — the same one [withChemistry] takes the process from — or null. */
+private fun linkedKitId(timer: DevTimer, chemicals: List<Chemical>): String? =
+    timer.steps.firstNotNullOfOrNull { step ->
+        chemicals.firstOrNull { it.id == step.chemicalId && it.isKit }?.id
+    }
 
 /**
  * What a saved timer's chemistry links say about it today — which chemistry,
@@ -1554,9 +1570,15 @@ private fun ChemistryLink(
 ) {
     val colors = FilmTheme.colors
     val linked = sources.firstOrNull { it.chemical.id == step.chemicalId }?.chemical
+    // Only the chemical is stored, not the bath, so a kit step reads as the
+    // bath it is named after when there is one, and as the kit otherwise.
+    val bath = sources.firstOrNull {
+        it.chemical.id == step.chemicalId && it.name.equals(step.name.trim(), ignoreCase = true)
+    }
     val shown = when {
         step.chemicalId.isBlank() -> NO_CHEMISTRY
         linked == null -> "Deleted chemistry"
+        bath != null -> bath.label
         else -> linked.name.ifBlank { linked.type }
     }
     VaultDropdown("Chemistry", shown, listOf(NO_CHEMISTRY) + sources.map { it.label }, { label ->
