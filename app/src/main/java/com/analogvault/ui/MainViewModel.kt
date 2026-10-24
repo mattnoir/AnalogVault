@@ -32,6 +32,7 @@ import com.analogvault.util.Constants
 import com.analogvault.util.Exposure
 import com.analogvault.util.legacyPhotoCacheDir
 import com.analogvault.util.photoDir
+import com.analogvault.util.saveShotPhoto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -358,9 +360,22 @@ class MainViewModel @Inject constructor(
         shutter: String? = null,
         aperture: String? = null,
         iso: String? = null,
+        /** What the meter's viewfinder showed when the frame was logged. */
+        photo: android.graphics.Bitmap? = null,
     ) = viewModelScope.launch {
-        val roll = repo.rolls.first().find { it.id == rollId } ?: return@launch
-        if (roll.finished || roll.developed) return@launch
+        // Written before the roll is read, so the roll appended to below is
+        // never one that went stale while the JPEG was being encoded.
+        val photoFile = photo?.let { bmp ->
+            withContext(Dispatchers.IO) {
+                saveShotPhoto(appContext, bmp, "meter").also { bmp.recycle() }
+            }
+        }
+        val roll = repo.rolls.first().find { it.id == rollId }
+        if (roll == null || roll.finished || roll.developed) {
+            photoFile?.delete()
+            return@launch
+        }
+        val photoPath = photoFile?.absolutePath
         val last = roll.shots.lastOrNull()
         val film = films.value.find { it.id == roll.filmId }
         val shot = Shot(
@@ -372,7 +387,8 @@ class MainViewModel @Inject constructor(
             weather  = (weatherState.value as? WeatherState.Success)?.data
                 ?.let { formatWeatherString(it, isMetric.value) } ?: "",
             date     = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
-                .format(java.util.Date())
+                .format(java.util.Date()),
+            photoThumbPath = photoPath.orEmpty(),
         )
         repo.upsertRoll(roll.copy(shots = roll.shots + shot))
 
