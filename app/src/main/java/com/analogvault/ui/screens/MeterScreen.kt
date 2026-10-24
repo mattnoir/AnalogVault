@@ -62,8 +62,8 @@ import com.analogvault.data.model.FilmStock
 import com.analogvault.data.model.Lens
 import com.analogvault.data.model.Roll
 import com.analogvault.data.model.ZoomLevel
-import com.analogvault.data.model.fixedLens
 import com.analogvault.data.model.meterFrame
+import com.analogvault.data.model.fixedLens
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.VaultButton
 import com.analogvault.ui.components.VaultDropdown
@@ -368,14 +368,6 @@ fun MeterContent(
                         val pv = PreviewView(ctx).apply {
                             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                         }
-                        // A new frame resizes the view, and a metering point maps
-                        // through the view's size: re-aim the AE region once the
-                        // preview has settled into its new shape.
-                        pv.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
-                            if (r - l != oldR - oldL || b - t != oldB - oldT) {
-                                pv.post { appliedRegionKey = null }
-                            }
-                        }
                         val future = ProcessCameraProvider.getInstance(ctx)
                         future.addListener({
                             val provider = future.get()
@@ -430,6 +422,14 @@ fun MeterContent(
                                 } catch (_: Exception) { false }
                             } catch (e: Exception) { e.printStackTrace() }
                         }, ContextCompat.getMainExecutor(ctx))
+                        // A new frame resizes the view, and a metering point maps
+                        // through the view's size: re-aim the AE region once the
+                        // preview has settled into its new shape.
+                        pv.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
+                            if (r - l != oldR - oldL || b - t != oldB - oldT) {
+                                pv.post { appliedRegionKey = null }
+                            }
+                        }
                         pv
                     },
                     update = { pv ->

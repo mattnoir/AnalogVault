@@ -97,6 +97,19 @@ object Constants {
         in METERING_TYPES    -> stored
         else                 -> METERING_MATRIX
     }
+    val DEVELOP_PROCESSES = listOf("C-41 (Color)","B&W (Standard)","B&W (Stand)","B&W (Semi-Stand)","E-6 (Slide)","Custom")
+    val SCAN_METHODS = listOf("Flatbed Scanner","DSLR/Mirrorless","Phone Scan","Lab Scan","Drum Scan")
+    val ACCESSORY_TYPES = listOf("Filter","Flash","Tripod","Cable Release","Light Meter","Film Changing Bag","Darkroom Equipment","Bag/Case","Strap","Lens Hood","Other")
+    val CHEM_TYPES = listOf("Developer","Fixer","Blix","Bleach","Stop Bath","Stabiliser","Wetting Agent","Kit","Custom")
+    val CHEM_UNITS = listOf("ml","L","g","oz","mixed (L)")
+    val MF_FORMATS = listOf("6x4.5","6x6","6x7","6x9","6x17")
+    // frames per roll by MF format
+    val MF_FRAME_COUNTS = mapOf("6x4.5" to 16, "6x6" to 12, "6x7" to 10, "6x9" to 8, "6x17" to 4)
+    // frame count options for 135 (quick-pick)
+    val FRAMES_135 = listOf(12, 24, 36)
+        val CAMERA_FORMATS = listOf("35mm","120 (MF)","4x5","110","Instant")
+    val CONDITIONS = listOf("Mint","Excellent","Good","Fair","Needs CLA")
+    val LENS_CONDITIONS = listOf("Mint","Excellent","Good","Fair")
 
     /**
      * Shapes the meter's viewfinder can crop the preview to, as long side over
@@ -119,19 +132,6 @@ object Constants {
 
     fun normaliseMeterFrame(stored: String?): String =
         stored?.takeIf { it == METER_FRAME_FILL || it in METER_FRAMES } ?: METER_FRAME_AUTO
-    val DEVELOP_PROCESSES = listOf("C-41 (Color)","B&W (Standard)","B&W (Stand)","B&W (Semi-Stand)","E-6 (Slide)","Custom")
-    val SCAN_METHODS = listOf("Flatbed Scanner","DSLR/Mirrorless","Phone Scan","Lab Scan","Drum Scan")
-    val ACCESSORY_TYPES = listOf("Filter","Flash","Tripod","Cable Release","Light Meter","Film Changing Bag","Darkroom Equipment","Bag/Case","Strap","Lens Hood","Other")
-    val CHEM_TYPES = listOf("Developer","Fixer","Blix","Bleach","Stop Bath","Stabiliser","Wetting Agent","Kit","Custom")
-    val CHEM_UNITS = listOf("ml","L","g","oz","mixed (L)")
-    val MF_FORMATS = listOf("6x4.5","6x6","6x7","6x9","6x17")
-    // frames per roll by MF format
-    val MF_FRAME_COUNTS = mapOf("6x4.5" to 16, "6x6" to 12, "6x7" to 10, "6x9" to 8, "6x17" to 4)
-    // frame count options for 135 (quick-pick)
-    val FRAMES_135 = listOf(12, 24, 36)
-        val CAMERA_FORMATS = listOf("35mm","120 (MF)","4x5","110","Instant")
-    val CONDITIONS = listOf("Mint","Excellent","Good","Fair","Needs CLA")
-    val LENS_CONDITIONS = listOf("Mint","Excellent","Good","Fair")
 
     val FILM_DB = listOf(
         // Kodak Color
