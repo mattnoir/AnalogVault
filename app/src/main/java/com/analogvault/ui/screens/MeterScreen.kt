@@ -318,6 +318,7 @@ fun MeterContent(
     // other side: horizontal on an upright phone is a strip of a tall image.
     val frameChoice   by vm.meterFrame.collectAsState()
     val frameVertical by vm.meterFrameVertical.collectAsState()
+    val gridOn        by vm.meterGrid.collectAsState()
     val autoFrame = camera.meterFrame()
     val frameKey = if (frameChoice == Constants.METER_FRAME_AUTO) autoFrame else frameChoice
     /** Long side over short side; null fills the viewfinder uncropped. */
@@ -555,6 +556,7 @@ fun MeterContent(
                         reticle = reticle,
                         reticleColor = colors.magenta,
                         gridColor = colors.halide.copy(alpha = 0.13f),
+                        grid = gridOn,
                         active = draggable,
                     )
                 }
@@ -882,18 +884,21 @@ fun MeterContent(
                         )
                     }
                 }
-                if (frameTurns) {
-                    Spacer(Modifier.height(7.dp))
-                    Row(
-                        Modifier.padding(horizontal = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
+                Spacer(Modifier.height(7.dp))
+                Row(
+                    Modifier.padding(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (frameTurns) {
                         MeterSegment("HORIZONTAL", !frameVertical, colors.cyan, Modifier.weight(1f)) {
                             vm.saveMeterFrameVertical(false)
                         }
                         MeterSegment("VERTICAL", frameVertical, colors.cyan, Modifier.weight(1f)) {
                             vm.saveMeterFrameVertical(true)
                         }
+                    }
+                    MeterSegment("GRID", gridOn, colors.cyan, Modifier.width(80.dp)) {
+                        vm.saveMeterGrid(!gridOn)
                     }
                 }
                 if (frameRatio != null) {
@@ -1542,6 +1547,7 @@ private fun DrawScope.drawMeteringOverlay(
     reticle: Offset,
     reticleColor: Color,
     gridColor: Color,
+    grid: Boolean,
     active: Boolean,
 ) {
     val w = size.width
@@ -1551,9 +1557,12 @@ private fun DrawScope.drawMeteringOverlay(
     val stroke = Stroke(1.5.dp.toPx())
     val colour = if (active) reticleColor else reticleColor.copy(alpha = 0.45f)
 
-    // Thirds grid under every mode — it is a viewfinder, not just a meter
-    for (c in 1..2) drawLine(gridColor, Offset(w * c / 3f, 0f), Offset(w * c / 3f, h), 1.dp.toPx())
-    for (r in 1..2) drawLine(gridColor, Offset(0f, h * r / 3f), Offset(w, h * r / 3f), 1.dp.toPx())
+    // Thirds grid under every mode — it is a viewfinder, not just a meter —
+    // unless switched off for a clean look at the frame
+    if (grid) {
+        for (c in 1..2) drawLine(gridColor, Offset(w * c / 3f, 0f), Offset(w * c / 3f, h), 1.dp.toPx())
+        for (r in 1..2) drawLine(gridColor, Offset(0f, h * r / 3f), Offset(w, h * r / 3f), 1.dp.toPx())
+    }
 
     when (metering) {
         Constants.METERING_SPOT -> {
@@ -1578,7 +1587,7 @@ private fun DrawScope.drawMeteringOverlay(
         Constants.METERING_HIGHLIGHT -> {
             drawRect(colour, Offset(0f, 0f), Size(w, h / 4f), style = stroke)
         }
-        else -> { /* Matrix — the thirds grid above is the whole overlay */ }
+        else -> { /* Matrix — the thirds grid above, if on, is the whole overlay */ }
     }
 }
 

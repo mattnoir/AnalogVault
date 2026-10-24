@@ -102,6 +102,9 @@ class MainViewModel @Inject constructor(
     val meterFrame: StateFlow<String> = _meterFrame.asStateFlow()
     private val _meterFrameVertical = MutableStateFlow(false)
     val meterFrameVertical: StateFlow<Boolean> = _meterFrameVertical.asStateFlow()
+    // Thirds grid over the meter's preview. On unless switched off.
+    private val _meterGrid = MutableStateFlow(true)
+    val meterGrid: StateFlow<Boolean> = _meterGrid.asStateFlow()
 
     // ── Meter live state — hoisted here so readings, EV lock and zone marks
     //    survive tab navigation (previously reset on every visit) ────────────
@@ -216,6 +219,7 @@ class MainViewModel @Inject constructor(
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             _meterFrame.value    = Constants.normaliseMeterFrame(repo.getSetting("meter_frame"))
             _meterFrameVertical.value = repo.getSetting("meter_frame_vertical") == "true"
+            _meterGrid.value     = repo.getSetting("meter_grid") != "false"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
             // Seed default zoom levels if empty
@@ -267,6 +271,9 @@ class MainViewModel @Inject constructor(
     }
     fun saveMeterFrameVertical(on: Boolean) = viewModelScope.launch {
         _meterFrameVertical.value = on; repo.setSetting("meter_frame_vertical", on.toString())
+    }
+    fun saveMeterGrid(on: Boolean) = viewModelScope.launch {
+        _meterGrid.value = on; repo.setSetting("meter_grid", on.toString())
     }
 
     /**
