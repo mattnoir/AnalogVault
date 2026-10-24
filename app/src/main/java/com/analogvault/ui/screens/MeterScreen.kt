@@ -259,8 +259,13 @@ fun MeterContent(
     var heldApertureTap by remember(lens?.id, lens?.maxAperture) { mutableStateOf<Double?>(null) }
     val heldAperture = heldApertureTap ?: limits.widestAperture ?: FALLBACK_HELD_APERTURE
     val heldIsWideOpen = heldApertureTap == null && limits.widestAperture != null
-    val rungs = remember(filmIso, effectiveEV, limits, aperturePriority, shutter) {
+    // Every speed with its aperture, before any filtering: shutter priority
+    // answers for whatever speed is dialled, on the ladder or not.
+    val fullLadder = remember(filmIso, effectiveEV, limits) {
         GearClamp.ladder(filmIso, effectiveEV, limits)
+    }
+    val rungs = remember(fullLadder, aperturePriority, shutter) {
+        fullLadder
             // Rungs needing an aperture no lens has are noise on every ladder,
             // clamped or not. Filter on the exact value, not the snapped one:
             // snapping always lands inside the scale, so a rung wanting f/0.1
@@ -273,9 +278,11 @@ fun MeterContent(
                     (!aperturePriority && it.shutter == shutter)
             }
     }
+    // Shutter priority works like the S on a camera dial: any speed can be set
+    // and the aperture follows it, even where the answer has left the scale.
     val selected =
         if (aperturePriority) GearClamp.rungForAperture(rungs, filmIso, effectiveEV, heldAperture)
-        else rungs.find { it.shutter == shutter }
+        else fullLadder.find { it.shutter == shutter }
     // The speed the readouts and the commit bar name. Under aperture priority
     // it is whatever the light asks of the held aperture, not the stored one.
     val activeShutter = selected?.shutter
@@ -291,25 +298,26 @@ fun MeterContent(
     val apExact = selected?.apertureExact
         ?: GearClamp.apertureFor(filmIso, displaySec, effectiveEV)
     val apSnapped = selected?.aperture ?: Constants.nearestStandardAperture(apExact)
+    val apOffScale = apExact < 0.95 || apExact > 32.0
     // Why the frame cannot be committed, or null when it can.
     //
-    // Only a missing rung blocks. As the light moves, the stored shutter can
-    // stop having any f-stop on the standard scale while other rungs remain
-    // perfectly usable; leaving the button live then would log the frame at the
-    // scale's floor. A rung outside the gear's range does not block: it is
-    // hatched and the banner says why, but choosing it is the photographer's
-    // call — a third wider than the lens is a third under at full aperture.
+    // Only an answer off the f-stop scale blocks. As the light moves, the
+    // dialled shutter can stop having any f-stop on the standard scale; leaving
+    // the button live then would log the frame at the scale's floor. A rung
+    // outside the gear's range does not block: it is hatched and the banner
+    // says why, but choosing it is the photographer's call — a third wider than
+    // the lens is a third under at full aperture.
     val blockedLabel = when {
-        selected != null -> null
-        aperturePriority -> "NO SPEED FITS"
-        else             -> "PICK A SPEED"
+        selected == null && aperturePriority -> "NO SPEED FITS"
+        selected == null                     -> "PICK A SPEED"
+        apOffScale                           -> "NO APERTURE FITS"
+        else                                 -> null
     }
     val beyondGear = advice != null || selected?.achievable == false
     val unreachable = blockedLabel != null || beyondGear
     // A dash, not a snapped number, once the answer leaves the scale: rounding
     // f/0.1 up to f/0.95 prints an f-stop that exists and is still four stops out.
-    val apertureLabel =
-        if (apExact < 0.95 || apExact > 32.0) "—" else GearClamp.formatAperture(apSnapped)
+    val apertureLabel = if (apOffScale) "—" else GearClamp.formatAperture(apSnapped)
 
     // ── Layout ───────────────────────────────────────────────────────────────
     // The outer Column is NOT scrollable — AndroidView breaks verticalScroll.
@@ -625,6 +633,14 @@ fun MeterContent(
                 onWideOpen = { heldApertureTap = null },
             )
             Spacer(Modifier.height(8.dp))
+            if (!aperturePriority) {
+                ShutterDial(
+                    rungs = fullLadder,
+                    selectedShutter = shutter,
+                    onSelect = { vm.saveMeterShutter(it) },
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             if (rungs.isEmpty()) {
                 // No standard shutter maps onto an aperture any lens carries.
                 // The banner above says what to do; this only has to explain why
@@ -1078,6 +1094,65 @@ private fun ExposureLadder(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(rung.shutter, style = FilmTheme.type.rebate, color = if (sel) text else colors.dim,
+                    maxLines = 1, softWrap = false)
+            }
+        }
+    }
+}
+
+/**
+ * The shutter-speed dial for shutter priority: every speed on the scale, third
+ * stops included, the way the dial on a camera with a command wheel offers them.
+ *
+ * The ladder below only offers whole stops with an aperture to match; this is
+ * where a speed is set regardless of what the light leaves for the lens. Speeds
+ * the body cannot run are hatched, as on the ladder, but still take a tap.
+ */
+@Composable
+private fun ShutterDial(
+    rungs: List<GearClamp.Rung>,
+    selectedShutter: String,
+    onSelect: (String) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    val state = rememberLazyListState()
+    val selectedIndex = rungs.indexOfFirst { it.shutter == selectedShutter }
+    LaunchedEffect(selectedIndex) {
+        if (selectedIndex >= 0) state.animateScrollToItem(selectedIndex, -180)
+    }
+    LazyRow(
+        state = state,
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        items(rungs, key = { it.shutter }) { rung ->
+            val sel = rung.shutter == selectedShutter
+            val bodyBlocked = rung.reason == GearClamp.Reason.SHUTTER_TOO_FAST ||
+                rung.reason == GearClamp.Reason.SHUTTER_TOO_SLOW
+            // Whole stops are the engraved numbers on a dial; thirds are the
+            // clicks between them, so they read a step quieter.
+            val whole = rung.shutter in Constants.WHOLE_STOP_SHUTTERS
+            val text = when {
+                sel         -> colors.magenta
+                bodyBlocked -> colors.dead
+                whole       -> colors.halide
+                else        -> colors.dim
+            }
+            Box(
+                Modifier
+                    .widthIn(min = 52.dp)
+                    .clipToBounds()
+                    .background(colors.film)
+                    .then(
+                        if (bodyBlocked) Modifier.hazardHatch(colors.filmRaised, stripe = 4.dp)
+                        else Modifier
+                    )
+                    .border(1.dp, if (sel) colors.magenta else colors.edge)
+                    .clickable { onSelect(rung.shutter) }
+                    .padding(horizontal = 6.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(rung.shutter, style = FilmTheme.type.data, color = text,
                     maxLines = 1, softWrap = false)
             }
         }
