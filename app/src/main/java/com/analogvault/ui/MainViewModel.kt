@@ -89,11 +89,12 @@ class MainViewModel @Inject constructor(
     // Which half of the exposure the meter holds still while the light moves.
     // Aperture priority holds the lens wide open by default and lets the
     // shutter follow; shutter priority holds the speed last picked off the
-    // ladder. Stored under its own key: the 0.5.0 selector's `meter_mode` and
+    // ladder; manual holds both and only reports how far off the light they
+    // are. Stored under its own key: the 0.5.0 selector's `meter_mode` and
     // `meter_aperture` rows are still in older databases, and reading them back
     // would resurrect a choice made against a different screen.
-    private val _meterAperturePriority = MutableStateFlow(true)
-    val meterAperturePriority: StateFlow<Boolean> = _meterAperturePriority.asStateFlow()
+    private val _meterPriority = MutableStateFlow(MeterPriority.APERTURE)
+    val meterPriority: StateFlow<MeterPriority> = _meterPriority.asStateFlow()
     private val _recipFilm = MutableStateFlow("Other B&W (generic)")
     val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
 
@@ -206,7 +207,7 @@ class MainViewModel @Inject constructor(
             _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
             _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
-            _meterAperturePriority.value = repo.getSetting("meter_priority") != "shutter"
+            _meterPriority.value = MeterPriority.fromKey(repo.getSetting("meter_priority"))
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
@@ -247,9 +248,9 @@ class MainViewModel @Inject constructor(
     fun saveMeterMetering(m: String) = viewModelScope.launch {
         _meterMetering.value = m; repo.setSetting("meter_metering", m)
     }
-    fun saveMeterAperturePriority(on: Boolean) = viewModelScope.launch {
-        _meterAperturePriority.value = on
-        repo.setSetting("meter_priority", if (on) "aperture" else "shutter")
+    fun saveMeterPriority(p: MeterPriority) = viewModelScope.launch {
+        _meterPriority.value = p
+        repo.setSetting("meter_priority", p.key)
     }
     fun saveRecipFilm(name: String) = viewModelScope.launch {
         _recipFilm.value = name; repo.setSetting("recip_film", name)
@@ -900,6 +901,18 @@ class MainViewModel @Inject constructor(
 }
 
 fun uid() = UUID.randomUUID().toString()
+
+/**
+ * What the meter holds still while the light moves. [key] is the `meter_priority`
+ * setting; anything unrecognised reads as aperture priority, the default.
+ */
+enum class MeterPriority(val key: String) {
+    APERTURE("aperture"), SHUTTER("shutter"), MANUAL("manual");
+
+    companion object {
+        fun fromKey(key: String?): MeterPriority = entries.find { it.key == key } ?: APERTURE
+    }
+}
 
 data class DarkroomTimerState(
     val timer: DevTimer,
