@@ -97,6 +97,28 @@ object Constants {
         in METERING_TYPES    -> stored
         else                 -> METERING_MATRIX
     }
+
+    /**
+     * Shapes the meter's viewfinder can crop the preview to, as long side over
+     * short side. Whether the long side runs across or up is a separate choice,
+     * so one entry covers both a horizontal and a vertical frame.
+     */
+    val METER_FRAMES = linkedMapOf(
+        "3:2"  to 3f / 2f,
+        "4:3"  to 4f / 3f,
+        "5:4"  to 5f / 4f,
+        "1:1"  to 1f,
+        "16:9" to 16f / 9f,
+        "XPAN" to 65f / 24f,
+        "3:1"  to 3f,
+    )
+    /** The shape of the roll's camera, or [METER_FRAME_FILL] when it has none. */
+    const val METER_FRAME_AUTO = "AUTO"
+    /** No crop: the preview fills the viewfinder, as it did before frames existed. */
+    const val METER_FRAME_FILL = "FILL"
+
+    fun normaliseMeterFrame(stored: String?): String =
+        stored?.takeIf { it == METER_FRAME_FILL || it in METER_FRAMES } ?: METER_FRAME_AUTO
     val DEVELOP_PROCESSES = listOf("C-41 (Color)","B&W (Standard)","B&W (Stand)","B&W (Semi-Stand)","E-6 (Slide)","Custom")
     val SCAN_METHODS = listOf("Flatbed Scanner","DSLR/Mirrorless","Phone Scan","Lab Scan","Drum Scan")
     val ACCESSORY_TYPES = listOf("Filter","Flash","Tripod","Cable Release","Light Meter","Film Changing Bag","Darkroom Equipment","Bag/Case","Strap","Lens Hood","Other")

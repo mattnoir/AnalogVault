@@ -133,6 +133,26 @@ fun Camera?.framesFor(film: FilmStock?): Int {
     }
 }
 
+/**
+ * The [Constants.METER_FRAMES] shape this body exposes, for the meter's preview.
+ * A 120 body without a shooting format and an instant camera (mini, wide and
+ * square all load into "Instant") have no one shape, so they get null.
+ */
+fun Camera?.meterFrame(): String? = when (this?.format) {
+    "35mm" -> "3:2"
+    "120 (MF)" -> when (mfFormat) {
+        "6x4.5" -> "4:3"
+        "6x6"   -> "1:1"
+        "6x7"   -> "5:4"
+        "6x9"   -> "3:2"
+        "6x17"  -> "3:1"
+        else    -> null
+    }
+    "4x5" -> "5:4"
+    "110" -> "4:3"
+    else  -> null
+}
+
 // ─── Lens ─────────────────────────────────────────────────────────────────────
 
 @Entity(tableName = "lenses")

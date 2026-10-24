@@ -94,6 +94,12 @@ class MainViewModel @Inject constructor(
     // would resurrect a choice made against a different screen.
     private val _meterAperturePriority = MutableStateFlow(true)
     val meterAperturePriority: StateFlow<Boolean> = _meterAperturePriority.asStateFlow()
+    // The shape the meter's viewfinder crops the preview to: a METER_FRAMES
+    // key, AUTO (the roll's camera) or FILL. Vertical stands the long side up.
+    private val _meterFrame = MutableStateFlow(Constants.METER_FRAME_AUTO)
+    val meterFrame: StateFlow<String> = _meterFrame.asStateFlow()
+    private val _meterFrameVertical = MutableStateFlow(false)
+    val meterFrameVertical: StateFlow<Boolean> = _meterFrameVertical.asStateFlow()
     private val _recipFilm = MutableStateFlow("Other B&W (generic)")
     val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
 
@@ -207,6 +213,8 @@ class MainViewModel @Inject constructor(
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
             _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
             _meterAperturePriority.value = repo.getSetting("meter_priority") != "shutter"
+            _meterFrame.value    = Constants.normaliseMeterFrame(repo.getSetting("meter_frame"))
+            _meterFrameVertical.value = repo.getSetting("meter_frame_vertical") == "true"
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
@@ -250,6 +258,12 @@ class MainViewModel @Inject constructor(
     fun saveMeterAperturePriority(on: Boolean) = viewModelScope.launch {
         _meterAperturePriority.value = on
         repo.setSetting("meter_priority", if (on) "aperture" else "shutter")
+    }
+    fun saveMeterFrame(frame: String) = viewModelScope.launch {
+        _meterFrame.value = frame; repo.setSetting("meter_frame", frame)
+    }
+    fun saveMeterFrameVertical(on: Boolean) = viewModelScope.launch {
+        _meterFrameVertical.value = on; repo.setSetting("meter_frame_vertical", on.toString())
     }
     fun saveRecipFilm(name: String) = viewModelScope.launch {
         _recipFilm.value = name; repo.setSetting("recip_film", name)
