@@ -116,6 +116,28 @@ object Constants {
     val CONDITIONS = listOf("Mint","Excellent","Good","Fair","Needs CLA")
     val LENS_CONDITIONS = listOf("Mint","Excellent","Good","Fair")
 
+    /**
+     * Shapes the meter's viewfinder can crop the preview to, as long side over
+     * short side. Whether the long side runs across or up is a separate choice,
+     * so one entry covers both a horizontal and a vertical frame.
+     */
+    val METER_FRAMES = linkedMapOf(
+        "3:2"  to 3f / 2f,
+        "4:3"  to 4f / 3f,
+        "5:4"  to 5f / 4f,
+        "1:1"  to 1f,
+        "16:9" to 16f / 9f,
+        "XPAN" to 65f / 24f,
+        "3:1"  to 3f,
+    )
+    /** The shape of the roll's camera, else of its film, else [METER_FRAME_FILL]. */
+    const val METER_FRAME_AUTO = "AUTO"
+    /** No crop: the preview fills the viewfinder, as it did before frames existed. */
+    const val METER_FRAME_FILL = "FILL"
+
+    fun normaliseMeterFrame(stored: String?): String =
+        stored?.takeIf { it == METER_FRAME_FILL || it in METER_FRAMES } ?: METER_FRAME_AUTO
+
     val FILM_DB = listOf(
         // Kodak Color
         "Kodak Portra 160","Kodak Portra 400","Kodak Portra 800",

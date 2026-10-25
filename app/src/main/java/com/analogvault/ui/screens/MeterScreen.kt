@@ -62,6 +62,7 @@ import com.analogvault.data.model.FilmStock
 import com.analogvault.data.model.Lens
 import com.analogvault.data.model.Roll
 import com.analogvault.data.model.ZoomLevel
+import com.analogvault.data.model.meterFrame
 import com.analogvault.data.model.fixedLens
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.MeterPriority
@@ -339,6 +340,24 @@ fun MeterContent(
     val apertureLabel =
         if (apExact < 0.95 || apExact > 32.0) "—" else GearClamp.formatAperture(apSnapped)
 
+    // ── Frame ─────────────────────────────────────────────────────────────────
+    // The preview is cropped to the shape of the negative. A phone sensor is
+    // one fixed rectangle, so a frame turned across it loses some of the
+    // other side: horizontal on an upright phone is a strip of a tall image.
+    val frameChoice   by vm.meterFrame.collectAsState()
+    val frameVertical by vm.meterFrameVertical.collectAsState()
+    val gridOn        by vm.meterGrid.collectAsState()
+    val autoFrame = camera.meterFrame() ?: film.meterFrame()
+    val frameKey = if (frameChoice == Constants.METER_FRAME_AUTO) autoFrame else frameChoice
+    /** Long side over short side; null fills the viewfinder uncropped. */
+    val frameLong = frameKey?.let { Constants.METER_FRAMES[it] }
+    val frameTurns = frameLong != null && frameLong != 1f
+    /** Width over height, as laid out. */
+    val frameRatio = frameLong?.let { if (frameVertical && frameTurns) 1f / it else it }
+    // An upright frame gets a taller viewfinder; at the usual height a 2:3
+    // would be a postage stamp in the middle of the screen.
+    val viewfinderHeight = if (frameRatio != null && frameRatio < 1f) 300.dp else 250.dp
+
     // ── Layout ───────────────────────────────────────────────────────────────
     // The outer Column is NOT scrollable — AndroidView breaks verticalScroll.
     // Viewfinder and commit bar are fixed; only the controls between them scroll.
@@ -363,10 +382,18 @@ fun MeterContent(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(250.dp)
+                .height(viewfinderHeight)
                 .clipToBounds()
                 .background(colors.film)
         ) {
+            // Preview and overlay share one box so the reticle, the grid and the
+            // AE region all live inside the frame, not the letterbox around it.
+            val frameModifier = Modifier
+                .align(Alignment.Center)
+                .then(if (frameRatio == null) Modifier.fillMaxSize() else Modifier.aspectRatio(frameRatio))
+                // FILL_CENTER scales the TextureView past the frame; without a clip
+                // the overflow paints into the letterbox.
+                .clipToBounds()
             if (cameraOn && hasCamPerm) {
                 AndroidView(
                     factory = { ctx ->
@@ -428,6 +455,14 @@ fun MeterContent(
                                 } catch (_: Exception) { false }
                             } catch (e: Exception) { e.printStackTrace() }
                         }, ContextCompat.getMainExecutor(ctx))
+                        // A new frame resizes the view, and a metering point maps
+                        // through the view's size: re-aim the AE region once the
+                        // preview has settled into its new shape.
+                        pv.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
+                            if (r - l != oldR - oldL || b - t != oldB - oldT) {
+                                pv.post { appliedRegionKey = null }
+                            }
+                        }
                         pv
                     },
                     update = { pv ->
@@ -467,7 +502,7 @@ fun MeterContent(
                             } catch (_: Exception) { /* fall back to full-frame AE */ }
                         }
                     },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = frameModifier
                 )
             } else {
                 // No preview: the readouts still have to work, so the viewfinder
@@ -507,8 +542,13 @@ fun MeterContent(
                     (effectiveMetering == Constants.METERING_SPOT ||
                         effectiveMetering == Constants.METERING_CENTRE)
                 Canvas(
-                    Modifier
-                        .fillMaxSize()
+                    frameModifier
+                        // Bright-line edge, only when there is a letterbox to
+                        // set the frame apart from
+                        .then(
+                            if (frameRatio == null) Modifier
+                            else Modifier.border(1.dp, colors.halide.copy(alpha = 0.35f))
+                        )
                         .then(
                             if (!draggable) Modifier else Modifier
                                 .pointerInput(effectiveMetering) {
@@ -548,6 +588,7 @@ fun MeterContent(
                         reticle = reticle,
                         reticleColor = colors.magenta,
                         gridColor = colors.halide.copy(alpha = 0.13f),
+                        grid = gridOn,
                         active = draggable,
                     )
                 }
@@ -887,6 +928,54 @@ fun MeterContent(
                             Text("EDIT", style = FilmTheme.type.rebate, color = colors.dim)
                         }
                     }
+                }
+            }
+
+            // ── Frame ─────────────────────────────────────────────────────────
+            if (cameraOn && hasCamPerm) {
+                MeterEyebrow("Frame")
+                val frameOptions = remember {
+                    listOf(Constants.METER_FRAME_AUTO, Constants.METER_FRAME_FILL) +
+                        Constants.METER_FRAMES.keys
+                }
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(frameOptions, key = { it }) { f ->
+                        val auto = f == Constants.METER_FRAME_AUTO
+                        MeterSegment(
+                            label = if (auto) "AUTO ${autoFrame ?: Constants.METER_FRAME_FILL}" else f,
+                            selected = frameChoice == f,
+                            accent = colors.cyan,
+                            modifier = Modifier.width(if (auto) 96.dp else 58.dp),
+                            onClick = { vm.saveMeterFrame(f) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(7.dp))
+                Row(
+                    Modifier.padding(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (frameTurns) {
+                        MeterSegment("HORIZONTAL", !frameVertical, colors.cyan, Modifier.weight(1f)) {
+                            vm.saveMeterFrameVertical(false)
+                        }
+                        MeterSegment("VERTICAL", frameVertical, colors.cyan, Modifier.weight(1f)) {
+                            vm.saveMeterFrameVertical(true)
+                        }
+                    }
+                    MeterSegment("GRID", gridOn, colors.cyan, Modifier.width(80.dp)) {
+                        vm.saveMeterGrid(!gridOn)
+                    }
+                }
+                if (frameRatio != null) {
+                    Text(
+                        "CROPS THE PREVIEW · MATRIX STILL READS THE WHOLE SENSOR",
+                        style = FilmTheme.type.rebate, color = colors.dim,
+                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp),
+                    )
                 }
             }
 
@@ -1670,6 +1759,7 @@ private fun DrawScope.drawMeteringOverlay(
     reticle: Offset,
     reticleColor: Color,
     gridColor: Color,
+    grid: Boolean,
     active: Boolean,
 ) {
     val w = size.width
@@ -1679,9 +1769,12 @@ private fun DrawScope.drawMeteringOverlay(
     val stroke = Stroke(1.5.dp.toPx())
     val colour = if (active) reticleColor else reticleColor.copy(alpha = 0.45f)
 
-    // Thirds grid under every mode — it is a viewfinder, not just a meter
-    for (c in 1..2) drawLine(gridColor, Offset(w * c / 3f, 0f), Offset(w * c / 3f, h), 1.dp.toPx())
-    for (r in 1..2) drawLine(gridColor, Offset(0f, h * r / 3f), Offset(w, h * r / 3f), 1.dp.toPx())
+    // Thirds grid under every mode — it is a viewfinder, not just a meter —
+    // unless switched off for a clean look at the frame
+    if (grid) {
+        for (c in 1..2) drawLine(gridColor, Offset(w * c / 3f, 0f), Offset(w * c / 3f, h), 1.dp.toPx())
+        for (r in 1..2) drawLine(gridColor, Offset(0f, h * r / 3f), Offset(w, h * r / 3f), 1.dp.toPx())
+    }
 
     when (metering) {
         Constants.METERING_SPOT -> {
@@ -1706,7 +1799,7 @@ private fun DrawScope.drawMeteringOverlay(
         Constants.METERING_HIGHLIGHT -> {
             drawRect(colour, Offset(0f, 0f), Size(w, h / 4f), style = stroke)
         }
-        else -> { /* Matrix — the thirds grid above is the whole overlay */ }
+        else -> { /* Matrix — the thirds grid above, if on, is the whole overlay */ }
     }
 }
 
