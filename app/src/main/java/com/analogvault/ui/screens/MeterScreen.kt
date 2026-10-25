@@ -319,7 +319,7 @@ fun MeterContent(
     val frameChoice   by vm.meterFrame.collectAsState()
     val frameVertical by vm.meterFrameVertical.collectAsState()
     val gridOn        by vm.meterGrid.collectAsState()
-    val autoFrame = camera.meterFrame()
+    val autoFrame = camera.meterFrame() ?: film.meterFrame()
     val frameKey = if (frameChoice == Constants.METER_FRAME_AUTO) autoFrame else frameChoice
     /** Long side over short side; null fills the viewfinder uncropped. */
     val frameLong = frameKey?.let { Constants.METER_FRAMES[it] }

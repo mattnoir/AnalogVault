@@ -125,7 +125,7 @@ object Constants {
         "XPAN" to 65f / 24f,
         "3:1"  to 3f,
     )
-    /** The shape of the roll's camera, or [METER_FRAME_FILL] when it has none. */
+    /** The shape of the roll's camera, else of its film, else [METER_FRAME_FILL]. */
     const val METER_FRAME_AUTO = "AUTO"
     /** No crop: the preview fills the viewfinder, as it did before frames existed. */
     const val METER_FRAME_FILL = "FILL"

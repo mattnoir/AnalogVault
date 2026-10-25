@@ -133,24 +133,45 @@ fun Camera?.framesFor(film: FilmStock?): Int {
     }
 }
 
+/** [Constants.METER_FRAMES] shape of each medium-format frame size. */
+private val MF_METER_FRAMES = mapOf(
+    "6x4.5" to "4:3",
+    "6x6"   to "1:1",
+    "6x7"   to "5:4",
+    "6x9"   to "3:2",
+    "6x17"  to "3:1",
+)
+
 /**
  * The [Constants.METER_FRAMES] shape this body exposes, for the meter's preview.
  * A 120 body without a shooting format and an instant camera (mini, wide and
- * square all load into "Instant") have no one shape, so they get null.
+ * square all load into "Instant") have no one shape, so they get null and the
+ * film decides.
  */
 fun Camera?.meterFrame(): String? = when (this?.format) {
     "35mm" -> "3:2"
-    "120 (MF)" -> when (mfFormat) {
-        "6x4.5" -> "4:3"
-        "6x6"   -> "1:1"
-        "6x7"   -> "5:4"
-        "6x9"   -> "3:2"
-        "6x17"  -> "3:1"
-        else    -> null
-    }
+    "120 (MF)" -> MF_METER_FRAMES[mfFormat]
     "4x5" -> "5:4"
     "110" -> "4:3"
     else  -> null
+}
+
+/**
+ * The shape a roll of this stock exposes, for when its camera doesn't say.
+ * 120 and 220 don't name a frame size, but the stock's frame count does: 16
+ * frames of 120 is 6x4.5, 12 is 6x6, and so on, twice as many on 220. A count
+ * that matches no frame size, and instant film, give null.
+ */
+fun FilmStock?.meterFrame(): String? = when (this?.filmFormat) {
+    "135 (35mm)" -> "3:2"
+    "120", "220" -> {
+        val perRoll = if (filmFormat == "220") frameCount / 2 else frameCount
+        Constants.MF_FRAME_COUNTS.entries.find { it.value == perRoll }?.key?.let { MF_METER_FRAMES[it] }
+    }
+    "4x5", "8x10" -> "5:4"
+    "110", "Super 8" -> "4:3"
+    "126" -> "1:1"
+    else -> null
 }
 
 // ─── Lens ─────────────────────────────────────────────────────────────────────
