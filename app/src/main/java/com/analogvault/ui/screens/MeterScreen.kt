@@ -1,8 +1,11 @@
 package com.analogvault.ui.screens
 
 import android.Manifest
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureResult
+import android.view.View
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -64,6 +67,7 @@ import com.analogvault.data.model.Roll
 import com.analogvault.data.model.ZoomLevel
 import com.analogvault.data.model.meterFrame
 import com.analogvault.data.model.fixedLens
+import com.analogvault.data.model.isMonochrome
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.MeterPriority
 import com.analogvault.ui.components.VaultButton
@@ -195,6 +199,9 @@ fun MeterContent(
     val manual = priority == MeterPriority.MANUAL
     val calibThirds by vm.meterCalibThirds.collectAsState()
     val recipFilm   by vm.recipFilm.collectAsState()
+    val monoContrast by vm.meterMonoContrast.collectAsState()
+    // Draft tracks the ruler while dragging so the preview follows the finger
+    var contrastDraft by remember(monoContrast) { mutableIntStateOf(monoContrast) }
     // Draft tracks the ruler while dragging; persisted on release
     var calibDraft  by remember(calibThirds) { mutableIntStateOf(calibThirds) }
     val calibOffset = calibDraft / 3.0
@@ -238,6 +245,13 @@ fun MeterContent(
         (metering == Constants.METERING_SPOT || metering == Constants.METERING_CENTRE)
     val effectiveMetering =
         if (spotUnsupported) Constants.METERING_CENTRE else metering
+
+    // A black-and-white roll previews in grey unless switched off; anything
+    // else previews in colour unless switched on. Grey is also the quick way
+    // to judge a scene's contrast without its colours getting in the way.
+    val monoOverrides by vm.meterMonoOverrides.collectAsState()
+    val filmMono = film?.isMonochrome() == true
+    val mono = monoOverrides[roll?.id] ?: filmMono
 
     // The camera binds to the Activity lifecycle; without an explicit unbind it
     // keeps running (privacy indicator on, battery draining) after the user
@@ -475,6 +489,7 @@ fun MeterContent(
                         pv
                     },
                     update = { pv ->
+                        pv.applyMonoFilter(if (mono) contrastDraft / 10f else null)
                         // Apply zoom
                         activeZoom?.mm?.toFloat()?.let { mm ->
                             cameraInfoObj?.zoomState?.value?.let { state ->
@@ -859,6 +874,31 @@ fun MeterContent(
                         } else onRequestPerm()
                     },
                 )
+            }
+
+            // ── Black & white preview ─────────────────────────────────────────
+            if (cameraOn && hasCamPerm) {
+                MeterEyebrow(if (filmMono) "Preview · black & white roll" else "Preview")
+                Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MeterSegment("COLOUR", !mono, colors.cyan, Modifier.weight(1f)) {
+                        vm.setMeterMono(roll?.id, on = false, filmDefault = filmMono)
+                    }
+                    MeterSegment("B&W", mono, colors.cyan, Modifier.weight(1f)) {
+                        vm.setMeterMono(roll?.id, on = true, filmDefault = filmMono)
+                    }
+                }
+                if (mono) {
+                    Spacer(Modifier.height(10.dp))
+                    CalibrationRuler(
+                        value = contrastDraft,
+                        range = Constants.MONO_CONTRAST_RANGE,
+                        accent = colors.halide,
+                        label = "CONTRAST %.1f×".format(contrastDraft / 10f),
+                        caption = "DRAG FOR SOFTER OR HARDER GREYS",
+                        onValue = { contrastDraft = it },
+                        onCommit = { vm.saveMeterMonoContrast(contrastDraft) },
+                    )
+                }
             }
 
             // Manual EV when there is nothing live to read
@@ -1779,6 +1819,42 @@ private fun CalibrationRuler(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Greys the preview through a hardware layer's colour filter, so the frames
+ * never leave the GPU. [contrast] is a multiplier around mid-grey; null takes
+ * the filter off. The applied value is kept in the view's tag: `update` runs
+ * on every recomposition the preview reads, and rebuilding the layer each time
+ * would be wasted work.
+ */
+private fun PreviewView.applyMonoFilter(contrast: Float?) {
+    if (tag == contrast) return
+    tag = contrast
+    if (contrast == null) {
+        setLayerType(View.LAYER_TYPE_NONE, null)
+    } else {
+        val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(monoMatrix(contrast)) }
+        setLayerType(View.LAYER_TYPE_HARDWARE, paint)
+    }
+}
+
+/**
+ * Luma, then contrast stretched around mid-grey (128 of 255). Rec. 709
+ * weights: green carries most of what reads as brightness, which is close
+ * enough to an unfiltered panchromatic stock for judging a scene.
+ */
+private fun monoMatrix(contrast: Float): FloatArray {
+    val r = 0.2126f * contrast
+    val g = 0.7152f * contrast
+    val b = 0.0722f * contrast
+    val shift = 128f * (1f - contrast)
+    return floatArrayOf(
+        r, g, b, 0f, shift,
+        r, g, b, 0f, shift,
+        r, g, b, 0f, shift,
+        0f, 0f, 0f, 1f, 0f,
+    )
+}
 
 /** The roll's working speed: a push overrides the box, blank or zero does not. */
 private fun rollSpeed(roll: Roll?, film: FilmStock?): Int? {

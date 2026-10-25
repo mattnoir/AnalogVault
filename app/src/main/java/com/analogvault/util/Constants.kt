@@ -102,6 +102,15 @@ object Constants {
         in METERING_TYPES    -> stored
         else                 -> METERING_MATRIX
     }
+
+    /**
+     * Contrast of the meter's black-and-white preview, in tenths of a multiplier
+     * around mid-grey. The default sits at the middle of the range so the ruler's
+     * centre tick marks it.
+     */
+    const val MONO_CONTRAST_DEFAULT = 13
+    val MONO_CONTRAST_RANGE = 4..22
+
     val DEVELOP_PROCESSES = listOf("C-41 (Color)","B&W (Standard)","B&W (Stand)","B&W (Semi-Stand)","E-6 (Slide)","Custom")
     val SCAN_METHODS = listOf("Flatbed Scanner","DSLR/Mirrorless","Phone Scan","Lab Scan","Drum Scan")
     val ACCESSORY_TYPES = listOf("Filter","Flash","Tripod","Cable Release","Light Meter","Film Changing Bag","Darkroom Equipment","Bag/Case","Strap","Lens Hood","Other")

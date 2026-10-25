@@ -70,6 +70,16 @@ data class FilmStock(
     val stockAccent: String = ""
 )
 
+/**
+ * Whether this stock records the scene in grey. Infrared counts: the IR stocks
+ * people shoot (Rollei IR, SFX) are black and white. The type is free text in
+ * older data, so match loosely rather than on the exact FILM_TYPES label.
+ */
+fun FilmStock.isMonochrome(): Boolean =
+    type.contains("Black", ignoreCase = true) ||
+        type.contains("B&W", ignoreCase = true) ||
+        type.contains("Infrared", ignoreCase = true)
+
 // ─── Camera ──────────────────────────────────────────────────────────────────
 
 @Entity(tableName = "cameras")

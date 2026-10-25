@@ -97,6 +97,12 @@ class MainViewModel @Inject constructor(
     // would resurrect a choice made against a different screen.
     private val _meterPriority = MutableStateFlow(MeterPriority.APERTURE)
     val meterPriority: StateFlow<MeterPriority> = _meterPriority.asStateFlow()
+    // Contrast of the meter's black-and-white preview, in tenths (13 = 1.3×).
+    // A touch above flat by default: the point of the grey preview is to see
+    // where the tones separate, and a straight desaturation looks muddier than
+    // the print will.
+    private val _meterMonoContrast = MutableStateFlow(Constants.MONO_CONTRAST_DEFAULT)
+    val meterMonoContrast: StateFlow<Int> = _meterMonoContrast.asStateFlow()
     private val _recipFilm = MutableStateFlow("Other B&W (generic)")
     val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
     // The shape the meter's viewfinder crops the preview to: a METER_FRAMES
@@ -149,6 +155,17 @@ class MainViewModel @Inject constructor(
      */
     private val _meterLensOverrides = MutableStateFlow<Map<String, String>>(emptyMap())
     val meterLensOverrides: StateFlow<Map<String, String>> = _meterLensOverrides.asStateFlow()
+    // The preview goes grey by itself on a black-and-white roll. Switching it
+    // either way is remembered per roll (null key: no roll) until the app
+    // closes, like a lens swap; a choice matching the film's default is dropped.
+    private val _meterMonoOverrides = MutableStateFlow<Map<String?, Boolean>>(emptyMap())
+    val meterMonoOverrides: StateFlow<Map<String?, Boolean>> = _meterMonoOverrides.asStateFlow()
+    fun setMeterMono(rollId: String?, on: Boolean, filmDefault: Boolean) {
+        _meterMonoOverrides.value =
+            if (on == filmDefault) _meterMonoOverrides.value - rollId
+            else _meterMonoOverrides.value + (rollId to on)
+    }
+
     /** Null [lensId] goes back to the roll's own lens. */
     fun setMeterLens(rollId: String, lensId: String?) {
         _meterLensOverrides.value =
@@ -219,6 +236,8 @@ class MainViewModel @Inject constructor(
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
             _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
             _meterPriority.value = MeterPriority.fromKey(repo.getSetting("meter_priority"))
+            _meterMonoContrast.value = repo.getSetting("meter_mono_contrast")?.toIntOrNull()
+                ?.coerceIn(Constants.MONO_CONTRAST_RANGE) ?: Constants.MONO_CONTRAST_DEFAULT
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
             _meterFrame.value    = Constants.normaliseMeterFrame(repo.getSetting("meter_frame"))
             _meterFrameVertical.value = repo.getSetting("meter_frame_vertical") == "true"
@@ -265,6 +284,9 @@ class MainViewModel @Inject constructor(
     fun saveMeterPriority(p: MeterPriority) = viewModelScope.launch {
         _meterPriority.value = p
         repo.setSetting("meter_priority", p.key)
+    }
+    fun saveMeterMonoContrast(tenths: Int) = viewModelScope.launch {
+        _meterMonoContrast.value = tenths; repo.setSetting("meter_mono_contrast", tenths.toString())
     }
     fun saveRecipFilm(name: String) = viewModelScope.launch {
         _recipFilm.value = name; repo.setSetting("recip_film", name)
