@@ -1052,9 +1052,13 @@ private fun ExposureLadder(
     val colors = FilmTheme.colors
     val state = rememberLazyListState()
     val selectedIndex = rungs.indexOfFirst { it.shutter == selectedShutter }
-    // Keep the chosen rung on screen as the light changes and the ladder shifts
+    // Keep the chosen rung on screen as the light changes and the ladder shifts.
+    // Scrolling instantly rather than animating avoids a visible layout glitch
+    // when a frame log and a ladder recompute land in the same tick: an
+    // animation left mid-flight by one recomposition and retargeted by the
+    // next could leave the row measured against a stale scroll offset.
     LaunchedEffect(selectedIndex, rungs.size) {
-        if (selectedIndex >= 0) state.animateScrollToItem(selectedIndex, -180)
+        if (selectedIndex >= 0) state.scrollToItem(selectedIndex, -180)
     }
     LazyRow(
         state = state,
@@ -1117,8 +1121,9 @@ private fun ShutterDial(
     val colors = FilmTheme.colors
     val state = rememberLazyListState()
     val selectedIndex = rungs.indexOfFirst { it.shutter == selectedShutter }
+    // Instant, not animated — see the matching note on ExposureLadder.
     LaunchedEffect(selectedIndex) {
-        if (selectedIndex >= 0) state.animateScrollToItem(selectedIndex, -180)
+        if (selectedIndex >= 0) state.scrollToItem(selectedIndex, -180)
     }
     LazyRow(
         state = state,
