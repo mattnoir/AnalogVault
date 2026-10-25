@@ -649,15 +649,7 @@ fun VaultSheet(
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // confirmValueChange = { it != Hidden } prevents the sheet from closing via swipe —
-    // the state transition to Hidden is rejected so the sheet snaps back to Expanded.
-    // Dismiss is still possible by tapping the scrim or the explicit ✕ button.
-    // This avoids accidental data loss on form sheets where a stray downward gesture
-    // would silently discard unsaved input.
-    val sheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true,
-        confirmValueChange    = { it != SheetValue.Hidden }
-    )
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val colors = FilmTheme.colors
     ModalBottomSheet(
         onDismissRequest = onDismiss,
