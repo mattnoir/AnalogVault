@@ -14,6 +14,7 @@ are added and releases are cut.
 - **Manual mode in the meter**: next to A and S, **M** lets you set the shutter and the aperture yourself. A needle shows how many stops over or under the reading you are, and the log button records the frame as you set it. Switching to M keeps the speed or stop the meter had just worked out, and settings your camera or lens can't reach are hatched.
 - **Custom timers linked to your chemistry**: each step of a custom timer can be linked to a chemical or a kit bath from the Chemistry tab. The step then keeps your own time, agitation and role, and lengthens by its per-roll amount as that chemistry wears. A pencil on the "From your chemistry" and "Your kits" timer cards opens that timer as a custom one, already linked, so you can change its agitation and times or add stop, fix and wash steps. A timer linked to a kit is listed under that kit in "Your kits".
 - **Swap lenses in the meter**: on an interchangeable-lens camera, the meter lists every lens that fits the mount (natively or through an adapter) and meters against the one you pick. The roll keeps its own lens.
+- **Meter frames keep a photo**: logging a frame from the light meter with the camera on attaches what the viewfinder showed at that moment to the shot, so you can see what each frame was of in the shot log, contact sheet and map.
 
 ### Changed
 - Exposures outside what the camera or lens can be set to stay hatched on the meter's ladder but can now be picked and logged; the log button marks them "beyond gear".

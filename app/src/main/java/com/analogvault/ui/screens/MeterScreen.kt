@@ -219,6 +219,8 @@ fun MeterContent(
     var cameraCtrl   by remember { mutableStateOf<CameraControl?>(null) }
     var cameraInfoObj by remember { mutableStateOf<CameraInfo?>(null) }
     var providerRef  by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    // Kept so a logged frame can carry what the viewfinder showed at that moment.
+    var previewView  by remember { mutableStateOf<PreviewView?>(null) }
     var appliedRegionKey by remember { mutableStateOf<String?>(null) }
     /** Null until the camera binds and we can ask the characteristics. */
     var aeRegionsSupported by remember { mutableStateOf<Boolean?>(null) }
@@ -371,6 +373,7 @@ fun MeterContent(
                         val pv = PreviewView(ctx).apply {
                             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                         }
+                        previewView = pv
                         val future = ProcessCameraProvider.getInstance(ctx)
                         future.addListener({
                             val provider = future.get()
@@ -989,7 +992,14 @@ fun MeterContent(
             beyondGear = beyondGear,
             offLabel = manualOff?.let { offLabel(it) },
             onLog = { sh, ap ->
-                roll?.let { vm.quickLogShot(it.id, shutter = sh, aperture = ap, iso = filmIso.toString()) }
+                // The frame as shown — same crop as the viewfinder, not the full
+                // sensor. Null when the camera is off or no frame has arrived yet.
+                val photo = previewView
+                    ?.takeIf { cameraOn && hasCamPerm && it.isAttachedToWindow }
+                    ?.bitmap
+                roll?.let {
+                    vm.quickLogShot(it.id, shutter = sh, aperture = ap, iso = filmIso.toString(), photo = photo)
+                } ?: photo?.recycle()
             },
             onUseInShot = onUseInShot,
         )
