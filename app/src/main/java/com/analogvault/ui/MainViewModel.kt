@@ -32,6 +32,7 @@ import com.analogvault.util.Constants
 import com.analogvault.util.Exposure
 import com.analogvault.util.legacyPhotoCacheDir
 import com.analogvault.util.photoDir
+import com.analogvault.util.saveShotPhoto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -89,11 +91,12 @@ class MainViewModel @Inject constructor(
     // Which half of the exposure the meter holds still while the light moves.
     // Aperture priority holds the lens wide open by default and lets the
     // shutter follow; shutter priority holds the speed last picked off the
-    // ladder. Stored under its own key: the 0.5.0 selector's `meter_mode` and
+    // ladder; manual holds both and only reports how far off the light they
+    // are. Stored under its own key: the 0.5.0 selector's `meter_mode` and
     // `meter_aperture` rows are still in older databases, and reading them back
     // would resurrect a choice made against a different screen.
-    private val _meterAperturePriority = MutableStateFlow(true)
-    val meterAperturePriority: StateFlow<Boolean> = _meterAperturePriority.asStateFlow()
+    private val _meterPriority = MutableStateFlow(MeterPriority.APERTURE)
+    val meterPriority: StateFlow<MeterPriority> = _meterPriority.asStateFlow()
     // Contrast of the meter's black-and-white preview, in tenths (13 = 1.3×).
     // A touch above flat by default: the point of the grey preview is to see
     // where the tones separate, and a straight desaturation looks muddier than
@@ -102,6 +105,15 @@ class MainViewModel @Inject constructor(
     val meterMonoContrast: StateFlow<Int> = _meterMonoContrast.asStateFlow()
     private val _recipFilm = MutableStateFlow("Other B&W (generic)")
     val recipFilm: StateFlow<String> = _recipFilm.asStateFlow()
+    // The shape the meter's viewfinder crops the preview to: a METER_FRAMES
+    // key, AUTO (the roll's camera) or FILL. Vertical stands the long side up.
+    private val _meterFrame = MutableStateFlow(Constants.METER_FRAME_AUTO)
+    val meterFrame: StateFlow<String> = _meterFrame.asStateFlow()
+    private val _meterFrameVertical = MutableStateFlow(false)
+    val meterFrameVertical: StateFlow<Boolean> = _meterFrameVertical.asStateFlow()
+    // Thirds grid over the meter's preview. On unless switched off.
+    private val _meterGrid = MutableStateFlow(true)
+    val meterGrid: StateFlow<Boolean> = _meterGrid.asStateFlow()
 
     // ── Meter live state — hoisted here so readings, EV lock and zone marks
     //    survive tab navigation (previously reset on every visit) ────────────
@@ -223,10 +235,13 @@ class MainViewModel @Inject constructor(
             _meterIso.value      = repo.getSetting("meter_iso")?.toIntOrNull() ?: 400
             _meterShutter.value  = repo.getSetting("meter_shutter") ?: "1/125"
             _meterMetering.value = Constants.normaliseMetering(repo.getSetting("meter_metering"))
-            _meterAperturePriority.value = repo.getSetting("meter_priority") != "shutter"
+            _meterPriority.value = MeterPriority.fromKey(repo.getSetting("meter_priority"))
             _meterMonoContrast.value = repo.getSetting("meter_mono_contrast")?.toIntOrNull()
                 ?.coerceIn(Constants.MONO_CONTRAST_RANGE) ?: Constants.MONO_CONTRAST_DEFAULT
             _recipFilm.value     = repo.getSetting("recip_film") ?: "Other B&W (generic)"
+            _meterFrame.value    = Constants.normaliseMeterFrame(repo.getSetting("meter_frame"))
+            _meterFrameVertical.value = repo.getSetting("meter_frame_vertical") == "true"
+            _meterGrid.value     = repo.getSetting("meter_grid") != "false"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
             // Seed default zoom levels if empty
@@ -266,15 +281,24 @@ class MainViewModel @Inject constructor(
     fun saveMeterMetering(m: String) = viewModelScope.launch {
         _meterMetering.value = m; repo.setSetting("meter_metering", m)
     }
-    fun saveMeterAperturePriority(on: Boolean) = viewModelScope.launch {
-        _meterAperturePriority.value = on
-        repo.setSetting("meter_priority", if (on) "aperture" else "shutter")
+    fun saveMeterPriority(p: MeterPriority) = viewModelScope.launch {
+        _meterPriority.value = p
+        repo.setSetting("meter_priority", p.key)
     }
     fun saveMeterMonoContrast(tenths: Int) = viewModelScope.launch {
         _meterMonoContrast.value = tenths; repo.setSetting("meter_mono_contrast", tenths.toString())
     }
     fun saveRecipFilm(name: String) = viewModelScope.launch {
         _recipFilm.value = name; repo.setSetting("recip_film", name)
+    }
+    fun saveMeterFrame(frame: String) = viewModelScope.launch {
+        _meterFrame.value = frame; repo.setSetting("meter_frame", frame)
+    }
+    fun saveMeterFrameVertical(on: Boolean) = viewModelScope.launch {
+        _meterFrameVertical.value = on; repo.setSetting("meter_frame_vertical", on.toString())
+    }
+    fun saveMeterGrid(on: Boolean) = viewModelScope.launch {
+        _meterGrid.value = on; repo.setSetting("meter_grid", on.toString())
     }
 
     /**
@@ -380,9 +404,22 @@ class MainViewModel @Inject constructor(
         shutter: String? = null,
         aperture: String? = null,
         iso: String? = null,
+        /** What the meter's viewfinder showed when the frame was logged. */
+        photo: android.graphics.Bitmap? = null,
     ) = viewModelScope.launch {
-        val roll = repo.rolls.first().find { it.id == rollId } ?: return@launch
-        if (roll.finished || roll.developed) return@launch
+        // Written before the roll is read, so the roll appended to below is
+        // never one that went stale while the JPEG was being encoded.
+        val photoFile = photo?.let { bmp ->
+            withContext(Dispatchers.IO) {
+                saveShotPhoto(appContext, bmp, "meter").also { bmp.recycle() }
+            }
+        }
+        val roll = repo.rolls.first().find { it.id == rollId }
+        if (roll == null || roll.finished || roll.developed) {
+            photoFile?.delete()
+            return@launch
+        }
+        val photoPath = photoFile?.absolutePath
         val last = roll.shots.lastOrNull()
         val film = films.value.find { it.id == roll.filmId }
         val shot = Shot(
@@ -394,7 +431,8 @@ class MainViewModel @Inject constructor(
             weather  = (weatherState.value as? WeatherState.Success)?.data
                 ?.let { formatWeatherString(it, isMetric.value) } ?: "",
             date     = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
-                .format(java.util.Date())
+                .format(java.util.Date()),
+            photoThumbPath = photoPath.orEmpty(),
         )
         repo.upsertRoll(roll.copy(shots = roll.shots + shot))
 
@@ -922,6 +960,18 @@ class MainViewModel @Inject constructor(
 }
 
 fun uid() = UUID.randomUUID().toString()
+
+/**
+ * What the meter holds still while the light moves. [key] is the `meter_priority`
+ * setting; anything unrecognised reads as aperture priority, the default.
+ */
+enum class MeterPriority(val key: String) {
+    APERTURE("aperture"), SHUTTER("shutter"), MANUAL("manual");
+
+    companion object {
+        fun fromKey(key: String?): MeterPriority = entries.find { it.key == key } ?: APERTURE
+    }
+}
 
 data class DarkroomTimerState(
     val timer: DevTimer,
