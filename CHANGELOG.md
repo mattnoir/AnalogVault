@@ -7,6 +7,8 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-25
+
 ### Fixed
 - Closing a bottom sheet with a flick takes a faster, more deliberate flick. Scrolling a long form back to its top no longer carries on into closing the sheet; pull it down with a new gesture from the top.
 
