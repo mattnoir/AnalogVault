@@ -651,8 +651,12 @@ fun VaultSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val colors = FilmTheme.colors
+    // Read in the activity's window: the sheet's own dialog window doesn't report
+    // the status bar, so a full-height sheet would run up under the clock.
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier         = Modifier.padding(top = statusBarTop),
         sheetState       = sheetState,
         containerColor   = colors.film,
         shape            = RectangleShape,
