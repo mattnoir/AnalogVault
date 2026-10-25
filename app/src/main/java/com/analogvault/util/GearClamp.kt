@@ -104,19 +104,37 @@ object GearClamp {
                 // Shutter first: it is the limit the user can feel (the dial has
                 // a hard stop), and naming it beats naming the aperture that only
                 // went out of range as a consequence of the speed.
-                reason = when {
-                    limits.fastestShutterSec != null && sec < limits.fastestShutterSec * 0.99 ->
-                        Reason.SHUTTER_TOO_FAST
-                    limits.slowestShutterSec != null && sec > limits.slowestShutterSec * 1.01 ->
-                        Reason.SHUTTER_TOO_SLOW
-                    limits.widestAperture != null && snapped < limits.widestAperture * 0.99 ->
-                        Reason.LENS_TOO_SLOW
-                    limits.narrowestAperture != null && snapped > limits.narrowestAperture * 1.01 ->
-                        Reason.LENS_WONT_STOP_DOWN
-                    else -> null
-                },
+                reason = shutterReason(sec, limits) ?: apertureReason(snapped, limits),
             )
         }
+
+    /** Why the body cannot be set to [sec], or null when it can. */
+    fun shutterReason(sec: Double, limits: Limits): Reason? = when {
+        limits.fastestShutterSec != null && sec < limits.fastestShutterSec * 0.99 ->
+            Reason.SHUTTER_TOO_FAST
+        limits.slowestShutterSec != null && sec > limits.slowestShutterSec * 1.01 ->
+            Reason.SHUTTER_TOO_SLOW
+        else -> null
+    }
+
+    /** Why the lens cannot be set to [aperture], or null when it can. */
+    fun apertureReason(aperture: Double, limits: Limits): Reason? = when {
+        limits.widestAperture != null && aperture < limits.widestAperture * 0.99 ->
+            Reason.LENS_TOO_SLOW
+        limits.narrowestAperture != null && aperture > limits.narrowestAperture * 1.01 ->
+            Reason.LENS_WONT_STOP_DOWN
+        else -> null
+    }
+
+    /**
+     * How far a manually set exposure is from the one the light asks for, in
+     * stops: positive is over (more light than metered), negative is under.
+     *
+     * The match needle on a manual body, as a number. [ev] is the scene EV at the
+     * ISO 100 reference, as everywhere else here.
+     */
+    fun stopsOff(iso: Int, ev: Double, shutterSec: Double, aperture: Double): Double =
+        ev + log2(iso / 100.0) - log2(aperture * aperture / shutterSec)
 
     /**
      * The rung an aperture-priority meter lands on with [aperture] held.

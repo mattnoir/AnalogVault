@@ -8,18 +8,23 @@ are added and releases are cut.
 ## [Unreleased]
 
 ### Added
+- **Meter frame shape**: the light meter's viewfinder can crop the preview to the shape of the negative — 3:2, 4:3, 5:4, 1:1, 16:9, XPan or 3:1 — and turn it horizontal or vertical. AUTO (the default) takes the shape from the roll's camera: 3:2 for 35mm, square for a 6x6, 5:4 for a 6x7 or 4x5, and so on. When the camera doesn't say, as with a 120 body that has no shooting format, it comes from the film instead: a 16-exposure 120 roll is 6x4.5, a 12-exposure one 6x6. FILL keeps the old uncropped view. A GRID switch next to it hides or shows the thirds grid. Because the phone's sensor doesn't turn, a horizontal frame on an upright phone is a strip of a tall image, and the other way round.
 - **Chemistry kits**: save a kit like Cinestill Cs41 or Kodak Flexicolor as one item with its own baths, temperature and shared roll count. It shows up under Timers as the full process, and each bath is lengthened by its own per-roll amount as the kit wears.
 - **Fixed-lens aperture**: a fixed-lens camera can now carry its lens's widest and narrowest aperture. The light meter hatches exposures the lens can't reach, and the shot log's aperture list starts at the lens's widest stop.
 - **Meter priority lock**: the light meter can hold the aperture or the shutter while the light changes. Aperture priority opens the lens wide by default and picks the speed whose aperture is at or just wider than wide open; ↺ goes back to wide open after a rung was tapped.
+- **Manual mode in the meter**: next to A and S, **M** lets you set the shutter and the aperture yourself. A needle shows how many stops over or under the reading you are, and the log button records the frame as you set it. Switching to M keeps the speed or stop the meter had just worked out, and settings your camera or lens can't reach are hatched.
 - **Custom timers linked to your chemistry**: each step of a custom timer can be linked to a chemical or a kit bath from the Chemistry tab. The step then keeps your own time, agitation and role, and lengthens by its per-roll amount as that chemistry wears. A pencil on the "From your chemistry" and "Your kits" timer cards opens that timer as a custom one, already linked, so you can change its agitation and times or add stop, fix and wash steps. A timer linked to a kit is listed under that kit in "Your kits".
 - **Shutter priority dial**: in shutter priority the light meter now has a dial with every shutter speed, third stops included. Set any speed and the meter works out the aperture, the way the S mode on a camera does. Speeds the body can't run are hatched but can still be set, and when the light leaves no aperture on the scale the log button says so.
 - **Swap lenses in the meter**: on an interchangeable-lens camera, the meter lists every lens that fits the mount (natively or through an adapter) and meters against the one you pick. The roll keeps its own lens.
+- **Meter frames keep a photo**: logging a frame from the light meter with the camera on attaches what the viewfinder showed at that moment to the shot, so you can see what each frame was of in the shot log, contact sheet and map.
 
 ### Changed
 - Exposures outside what the camera or lens can be set to stay hatched on the meter's ladder but can now be picked and logged; the log button marks them "beyond gear".
 
 ### Fixed
 - 120 and 220 rolls now get the frame count of the camera they're loaded into (8 in a 6x9, 10 in a 6x7, 16 in a 6x4.5, doubled for 220) instead of always 12. Rolls already in a camera are corrected too, unless more frames are logged than the new count allows.
+- Bottom sheets close again when flicked or dragged down, or when you tap outside them. Before, they followed your finger and then snapped back, and a tap outside did nothing. It takes a real flick or a long pull: a slow or short drag springs back, so resting a hand on a form won't throw it away.
+- Tall bottom sheets stop below the status bar instead of running up under the clock.
 
 [v0.5.0] - 2026-07-02
 -

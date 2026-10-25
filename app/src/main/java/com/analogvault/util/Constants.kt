@@ -71,6 +71,11 @@ object Constants {
         "1/15","1/8","1/4","1/2","1s","2s","4s","8s","15s","30s"
     )
     val APERTURES = listOf(0.95,1.0,1.1,1.2,1.4,1.6,1.8,2.0,2.2,2.5,2.8,3.2,3.5,4.0,4.5,5.0,5.6,6.3,7.1,8.0,9.0,10.0,11.0,13.0,14.0,16.0,18.0,20.0,22.0,25.0,29.0,32.0)
+    /**
+     * The whole-stop subset of [APERTURES] — the clicks a lens ring is engraved
+     * with, and what the meter's manual mode offers as its aperture dial.
+     */
+    val WHOLE_STOP_APERTURES = listOf(1.0,1.4,2.0,2.8,4.0,5.6,8.0,11.0,16.0,22.0,32.0)
     // Short, single-word labels. The old names ("Evaluative/Matrix",
     // "Center-Weighted") were wider than the dropdown they live in and wrapped
     // mid-word to "Evaluativ / e/Matrix". These are also the words the labels on
@@ -110,6 +115,28 @@ object Constants {
         val CAMERA_FORMATS = listOf("35mm","120 (MF)","4x5","110","Instant")
     val CONDITIONS = listOf("Mint","Excellent","Good","Fair","Needs CLA")
     val LENS_CONDITIONS = listOf("Mint","Excellent","Good","Fair")
+
+    /**
+     * Shapes the meter's viewfinder can crop the preview to, as long side over
+     * short side. Whether the long side runs across or up is a separate choice,
+     * so one entry covers both a horizontal and a vertical frame.
+     */
+    val METER_FRAMES = linkedMapOf(
+        "3:2"  to 3f / 2f,
+        "4:3"  to 4f / 3f,
+        "5:4"  to 5f / 4f,
+        "1:1"  to 1f,
+        "16:9" to 16f / 9f,
+        "XPAN" to 65f / 24f,
+        "3:1"  to 3f,
+    )
+    /** The shape of the roll's camera, else of its film, else [METER_FRAME_FILL]. */
+    const val METER_FRAME_AUTO = "AUTO"
+    /** No crop: the preview fills the viewfinder, as it did before frames existed. */
+    const val METER_FRAME_FILL = "FILL"
+
+    fun normaliseMeterFrame(stored: String?): String =
+        stored?.takeIf { it == METER_FRAME_FILL || it in METER_FRAMES } ?: METER_FRAME_AUTO
 
     val FILM_DB = listOf(
         // Kodak Color
