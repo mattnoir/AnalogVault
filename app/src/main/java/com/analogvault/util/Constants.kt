@@ -71,6 +71,11 @@ object Constants {
         "1/15","1/8","1/4","1/2","1s","2s","4s","8s","15s","30s"
     )
     val APERTURES = listOf(0.95,1.0,1.1,1.2,1.4,1.6,1.8,2.0,2.2,2.5,2.8,3.2,3.5,4.0,4.5,5.0,5.6,6.3,7.1,8.0,9.0,10.0,11.0,13.0,14.0,16.0,18.0,20.0,22.0,25.0,29.0,32.0)
+    /**
+     * The whole-stop subset of [APERTURES] — the clicks a lens ring is engraved
+     * with, and what the meter's manual mode offers as its aperture dial.
+     */
+    val WHOLE_STOP_APERTURES = listOf(1.0,1.4,2.0,2.8,4.0,5.6,8.0,11.0,16.0,22.0,32.0)
     // Short, single-word labels. The old names ("Evaluative/Matrix",
     // "Center-Weighted") were wider than the dropdown they live in and wrapped
     // mid-word to "Evaluativ / e/Matrix". These are also the words the labels on

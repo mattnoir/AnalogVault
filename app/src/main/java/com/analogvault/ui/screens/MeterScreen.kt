@@ -64,6 +64,7 @@ import com.analogvault.data.model.Roll
 import com.analogvault.data.model.ZoomLevel
 import com.analogvault.data.model.fixedLens
 import com.analogvault.ui.MainViewModel
+import com.analogvault.ui.MeterPriority
 import com.analogvault.ui.components.VaultButton
 import com.analogvault.ui.components.VaultDropdown
 import com.analogvault.ui.components.VaultSheet
@@ -188,7 +189,9 @@ fun MeterContent(
     val meterIso    by vm.meterIso.collectAsState()
     val shutter     by vm.meterShutter.collectAsState()
     val metering    by vm.meterMetering.collectAsState()
-    val aperturePriority by vm.meterAperturePriority.collectAsState()
+    val priority    by vm.meterPriority.collectAsState()
+    val aperturePriority = priority == MeterPriority.APERTURE
+    val manual = priority == MeterPriority.MANUAL
     val calibThirds by vm.meterCalibThirds.collectAsState()
     val recipFilm   by vm.recipFilm.collectAsState()
     // Draft tracks the ruler while dragging; persisted on release
@@ -253,13 +256,20 @@ fun MeterContent(
 
     // ── The clamp ─────────────────────────────────────────────────────────────
     val limits = remember(camera, lens) { GearClamp.limitsOf(camera, lens) }
-    // Aperture priority holds the lens wide open unless a rung was tapped.
-    // The tap lasts until the meter closes or the lens changes: opening the
-    // meter again means wide open again, whatever was dialled last time.
+    // Aperture priority and manual hold the lens wide open unless a rung or a
+    // stop on the manual dial was tapped. The tap lasts until the meter closes
+    // or the lens changes: opening the meter again means wide open again,
+    // whatever was dialled last time.
     var heldApertureTap by remember(lens?.id, lens?.maxAperture) { mutableStateOf<Double?>(null) }
     val heldAperture = heldApertureTap ?: limits.widestAperture ?: FALLBACK_HELD_APERTURE
     val heldIsWideOpen = heldApertureTap == null && limits.widestAperture != null
-    val rungs = remember(filmIso, effectiveEV, limits, aperturePriority, shutter) {
+    // Holding the widest stop goes back to following the lens, so a later lens
+    // swap opens wide on the new glass.
+    val holdAperture = { ap: Double ->
+        val wideOpen = limits.widestAperture?.let { abs(log2(ap / it)) < 0.1 } == true
+        heldApertureTap = if (wideOpen) null else ap
+    }
+    val rungs = remember(filmIso, effectiveEV, limits, priority, shutter) {
         GearClamp.ladder(filmIso, effectiveEV, limits)
             // Rungs needing an aperture no lens has are noise on every ladder,
             // clamped or not. Filter on the exact value, not the snapped one:
@@ -270,12 +280,16 @@ fun MeterContent(
             .filter { it.apertureExact >= 0.95 && it.apertureExact <= 32.0 }
             .filter {
                 it.shutter in Constants.WHOLE_STOP_SHUTTERS ||
-                    (!aperturePriority && it.shutter == shutter)
+                    (priority == MeterPriority.SHUTTER && it.shutter == shutter)
             }
     }
-    val selected =
-        if (aperturePriority) GearClamp.rungForAperture(rungs, filmIso, effectiveEV, heldAperture)
-        else rungs.find { it.shutter == shutter }
+    // Manual picks no rung: both halves are dialled, and the light only gets
+    // to say how far off they are.
+    val selected = when (priority) {
+        MeterPriority.APERTURE -> GearClamp.rungForAperture(rungs, filmIso, effectiveEV, heldAperture)
+        MeterPriority.SHUTTER  -> rungs.find { it.shutter == shutter }
+        MeterPriority.MANUAL   -> null
+    }
     // The speed the readouts and the commit bar name. Under aperture priority
     // it is whatever the light asks of the held aperture, not the stored one.
     val activeShutter = selected?.shutter
@@ -288,9 +302,14 @@ fun MeterContent(
 
     // Shutter seconds the reciprocity helper should correct
     val displaySec = selected?.shutterSec ?: Constants.evalShutter(activeShutter)
-    val apExact = selected?.apertureExact
-        ?: GearClamp.apertureFor(filmIso, displaySec, effectiveEV)
-    val apSnapped = selected?.aperture ?: Constants.nearestStandardAperture(apExact)
+    // Manual takes the held stop as it is: an f/1.7 lens set wide open is f/1.7,
+    // not the f/1.8 the third-stop scale would snap it to.
+    val apExact = if (manual) heldAperture
+        else selected?.apertureExact ?: GearClamp.apertureFor(filmIso, displaySec, effectiveEV)
+    val apSnapped = if (manual) heldAperture
+        else selected?.aperture ?: Constants.nearestStandardAperture(apExact)
+    // Signed stops between what is dialled and what the light asks for. Manual only.
+    val manualOff = if (manual) GearClamp.stopsOff(filmIso, effectiveEV, displaySec, heldAperture) else null
     // Why the frame cannot be committed, or null when it can.
     //
     // Only a missing rung blocks. As the light moves, the stored shutter can
@@ -299,12 +318,19 @@ fun MeterContent(
     // scale's floor. A rung outside the gear's range does not block: it is
     // hatched and the banner says why, but choosing it is the photographer's
     // call — a third wider than the lens is a third under at full aperture.
+    // Manual never blocks: whatever is dialled is the frame.
     val blockedLabel = when {
-        selected != null -> null
-        aperturePriority -> "NO SPEED FITS"
-        else             -> "PICK A SPEED"
+        manual || selected != null -> null
+        aperturePriority           -> "NO SPEED FITS"
+        else                       -> "PICK A SPEED"
     }
-    val beyondGear = advice != null || selected?.achievable == false
+    // Under manual only the dialled values count. A scene the gear cannot
+    // expose correctly is the banner's business; a frame set inside the gear's
+    // range and logged two stops under on purpose is not beyond it.
+    val beyondGear = if (manual) {
+        GearClamp.shutterReason(displaySec, limits) != null ||
+            GearClamp.apertureReason(heldAperture, limits) != null
+    } else advice != null || selected?.achievable == false
     val unreachable = blockedLabel != null || beyondGear
     // A dash, not a snapped number, once the answer leaves the scale: rounding
     // f/0.1 up to f/0.95 prints an f-stop that exists and is still four stops out.
@@ -589,7 +615,8 @@ fun MeterContent(
                     )
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        "EXACT f/${"%.1f".format(apExact)} · ISO $filmIso · $activeShutter",
+                        (manualOff?.let { offLabel(it) } ?: "EXACT f/${"%.1f".format(apExact)}") +
+                            " · ISO $filmIso · $activeShutter",
                         style = FilmTheme.type.rebate,
                         color = colors.dim,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -614,18 +641,59 @@ fun MeterContent(
             // from: everything below it adjusts the reading, this is where you
             // choose the frame. The design sketch put it last, on a mockup that
             // had no manual-EV ruler and no film-speed row above it.
-            MeterEyebrow("Equivalent exposures")
+            MeterEyebrow(if (manual) "Manual exposure" else "Equivalent exposures")
             PriorityToggle(
-                aperturePriority = aperturePriority,
+                priority = priority,
                 heldAperture = heldAperture,
                 heldIsWideOpen = heldIsWideOpen,
                 canReopen = heldApertureTap != null && limits.widestAperture != null,
                 heldShutter = shutter,
-                onPriority = { vm.saveMeterAperturePriority(it) },
+                onPriority = { p ->
+                    // Manual takes over from where the meter was, the way flicking
+                    // a body from auto to M leaves the dials where auto put them:
+                    // the speed aperture priority found, or the stop shutter
+                    // priority solved for.
+                    if (p == MeterPriority.MANUAL && !manual) {
+                        if (aperturePriority) vm.saveMeterShutter(activeShutter)
+                        else if (blockedLabel == null && apExact in 0.95..32.0) holdAperture(apSnapped)
+                    }
+                    vm.saveMeterPriority(p)
+                },
                 onWideOpen = { heldApertureTap = null },
             )
             Spacer(Modifier.height(8.dp))
-            if (rungs.isEmpty()) {
+            if (manualOff != null) {
+                MatchNeedle(manualOff)
+                Spacer(Modifier.height(10.dp))
+                ManualDial(
+                    title = "SHUTTER",
+                    values = (Constants.WHOLE_STOP_SHUTTERS + shutter)
+                        .filter { it != "B" }
+                        .distinct()
+                        .sortedBy { Constants.evalShutter(it) },
+                    isSelected = { it == shutter },
+                    label = { it },
+                    achievable = { GearClamp.shutterReason(Constants.evalShutter(it), limits) == null },
+                    onSelect = { vm.saveMeterShutter(it) },
+                )
+                Spacer(Modifier.height(8.dp))
+                ManualDial(
+                    title = "APERTURE",
+                    // Whole stops, plus the lens's own wide-open value and the
+                    // stop being held, either of which may sit between them.
+                    values = (Constants.WHOLE_STOP_APERTURES +
+                        listOfNotNull(limits.widestAperture, heldAperture))
+                        .sorted()
+                        .fold(emptyList<Double>()) { acc, ap ->
+                            if (acc.lastOrNull()?.let { abs(log2(ap / it)) < 0.1 } == true) acc
+                            else acc + ap
+                        },
+                    isSelected = { abs(log2(it / heldAperture)) < 0.1 },
+                    label = { GearClamp.formatAperture(it) },
+                    achievable = { GearClamp.apertureReason(it, limits) == null },
+                    onSelect = holdAperture,
+                )
+            } else if (rungs.isEmpty()) {
                 // No standard shutter maps onto an aperture any lens carries.
                 // The banner above says what to do; this only has to explain why
                 // the ladder is not there.
@@ -639,13 +707,8 @@ fun MeterContent(
                     rungs = rungs,
                     selectedShutter = selected?.shutter,
                     onSelect = { rung ->
-                        if (aperturePriority) {
-                            // Tapping the wide-open rung goes back to following the
-                            // lens, so a later lens swap opens wide on the new glass.
-                            heldApertureTap = rung.aperture.takeUnless { ap ->
-                                limits.widestAperture?.let { abs(log2(ap / it)) < 0.1 } == true
-                            }
-                        } else vm.saveMeterShutter(rung.shutter)
+                        if (aperturePriority) holdAperture(rung.aperture)
+                        else vm.saveMeterShutter(rung.shutter)
                     },
                 )
             }
@@ -924,6 +987,7 @@ fun MeterContent(
             ev = effectiveEV,
             blockedLabel = blockedLabel,
             beyondGear = beyondGear,
+            offLabel = manualOff?.let { offLabel(it) },
             onLog = { sh, ap ->
                 roll?.let { vm.quickLogShot(it.id, shutter = sh, aperture = ap, iso = filmIso.toString()) }
             },
@@ -1128,6 +1192,8 @@ private fun CommitBar(
     blockedLabel: String?,
     /** The chosen exposure is outside what the body or lens can be set to. */
     beyondGear: Boolean,
+    /** How far a manual exposure is from the reading. Null outside manual. */
+    offLabel: String?,
     onLog: (shutter: String, aperture: String) -> Unit,
     onUseInShot: ((String, String, String) -> Unit)?,
 ) {
@@ -1145,6 +1211,7 @@ private fun CommitBar(
     }
     val subtitle = listOfNotNull(
         "BEYOND GEAR".takeIf { beyondGear && blockedLabel == null },
+        offLabel,
         film?.name?.takeIf { it.isNotBlank() }?.uppercase(),
         camera?.name?.takeIf { it.isNotBlank() }?.uppercase(),
         apertureLabel,
@@ -1210,7 +1277,7 @@ private fun CommitBar(
 
 /**
  * Which half of the exposure stays put while the light moves, with the value
- * being held written on the control itself.
+ * being held written on the control itself. M holds both.
  *
  * Aperture priority opens wide by default; once a rung has stopped it down, a
  * small reset returns it to wide open rather than making the user hunt for the
@@ -1218,12 +1285,12 @@ private fun CommitBar(
  */
 @Composable
 private fun PriorityToggle(
-    aperturePriority: Boolean,
+    priority: MeterPriority,
     heldAperture: Double,
     heldIsWideOpen: Boolean,
     canReopen: Boolean,
     heldShutter: String,
-    onPriority: (Boolean) -> Unit,
+    onPriority: (MeterPriority) -> Unit,
     onWideOpen: () -> Unit,
 ) {
     val colors = FilmTheme.colors
@@ -1234,23 +1301,155 @@ private fun PriorityToggle(
         MeterSegment(
             label = "A · ${GearClamp.formatAperture(heldAperture).uppercase()}" +
                 if (heldIsWideOpen) " OPEN" else "",
-            selected = aperturePriority,
+            selected = priority == MeterPriority.APERTURE,
             accent = colors.cyan,
             modifier = Modifier.weight(1f),
-            onClick = { onPriority(true) },
+            onClick = { onPriority(MeterPriority.APERTURE) },
         )
         MeterSegment(
             label = "S · $heldShutter",
-            selected = !aperturePriority,
+            selected = priority == MeterPriority.SHUTTER,
             accent = colors.cyan,
             modifier = Modifier.weight(1f),
-            onClick = { onPriority(false) },
+            onClick = { onPriority(MeterPriority.SHUTTER) },
         )
-        if (aperturePriority && canReopen) {
+        MeterSegment(
+            label = "M",
+            selected = priority == MeterPriority.MANUAL,
+            accent = colors.cyan,
+            modifier = Modifier.width(52.dp),
+            onClick = { onPriority(MeterPriority.MANUAL) },
+        )
+        if (priority == MeterPriority.APERTURE && canReopen) {
             MeterSegment("↺", false, colors.cyan, Modifier.width(44.dp), onClick = onWideOpen)
         }
     }
 }
+
+// ─── Manual mode ──────────────────────────────────────────────────────────────
+
+/**
+ * The match needle of a manual body: centred when the dialled exposure is what
+ * the light asks for, pushed right when over, left when under.
+ *
+ * Three stops either way is the whole scale. Past that the nub pins to the end
+ * and turns the warning colour; the number still says how far.
+ */
+@Composable
+private fun MatchNeedle(stopsOff: Double) {
+    val colors = FilmTheme.colors
+    val label = offLabel(stopsOff)
+    val onNeedle = abs(stopsOff) < NEEDLE_TOLERANCE
+    val pinned = abs(stopsOff) > NEEDLE_RANGE
+    val nub = when {
+        onNeedle -> colors.cyan
+        pinned   -> colors.mask
+        else     -> colors.yellow
+    }
+    Column(Modifier.padding(horizontal = 14.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("UNDER ◂  MATCH THE NEEDLE  ▸ OVER", style = FilmTheme.type.rebate, color = colors.dim)
+            Text(label, style = FilmTheme.type.data, color = nub)
+        }
+        Spacer(Modifier.height(7.dp))
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .clipToBounds()
+                .background(colors.film)
+                .border(1.dp, colors.edge)
+                .semantics { contentDescription = "Exposure against the reading: $label" }
+        ) {
+            // A tick per third, a taller one per whole stop, the centre brightest.
+            val thirds = (NEEDLE_RANGE * 3).toInt()
+            for (i in -thirds..thirds) {
+                val x = size.width * (0.5f + i / (2f * thirds))
+                val whole = i % 3 == 0
+                val top = if (whole) 0f else size.height * 0.55f
+                drawLine(
+                    if (i == 0) colors.dim else colors.dead,
+                    Offset(x, top), Offset(x, size.height), 1.dp.toPx(),
+                )
+            }
+            val frac = (0.5 + stopsOff.coerceIn(-NEEDLE_RANGE, NEEDLE_RANGE) / (2 * NEEDLE_RANGE)).toFloat()
+            drawLine(nub, Offset(size.width * frac, 0f), Offset(size.width * frac, size.height), 3.dp.toPx())
+        }
+    }
+}
+
+/**
+ * One of the two manual dials: a row of settings, the dialled one marked, the
+ * ones the gear cannot be set to hatched as they are on the ladder — and, as
+ * there, still tappable.
+ */
+@Composable
+private fun <T> ManualDial(
+    title: String,
+    values: List<T>,
+    isSelected: (T) -> Boolean,
+    label: (T) -> String,
+    achievable: (T) -> Boolean,
+    onSelect: (T) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    val state = rememberLazyListState()
+    val selectedIndex = values.indexOfFirst(isSelected)
+    LaunchedEffect(selectedIndex, values.size) {
+        if (selectedIndex >= 0) state.animateScrollToItem(selectedIndex, -180)
+    }
+    Text(
+        title, style = FilmTheme.type.rebate, color = colors.dim,
+        modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 5.dp),
+    )
+    LazyRow(
+        state = state,
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        items(values, key = { label(it) }) { v ->
+            val sel = isSelected(v)
+            val ok = achievable(v)
+            val tint = when {
+                sel -> colors.magenta
+                !ok -> colors.dead
+                else -> colors.halide
+            }
+            Box(
+                Modifier
+                    .width(64.dp)
+                    .clipToBounds()
+                    .background(colors.film)
+                    .then(if (!ok) Modifier.hazardHatch(colors.filmRaised, stripe = 4.dp) else Modifier)
+                    .border(1.dp, if (sel) colors.magenta else if (!ok) colors.dead else colors.edge)
+                    .clickable { onSelect(v) }
+                    .semantics { this.selected = sel }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label(v), style = FilmTheme.type.data.copy(fontSize = 15.sp),
+                    color = tint, maxLines = 1, softWrap = false,
+                )
+            }
+        }
+    }
+}
+
+/** "CORRECT", "+1.3 OVER", "-0.7 UNDER" — the needle as words. */
+private fun offLabel(stopsOff: Double): String = when {
+    abs(stopsOff) < NEEDLE_TOLERANCE -> "CORRECT"
+    stopsOff > 0 -> "${formatStops(stopsOff)} OVER"
+    else         -> "${formatStops(stopsOff)} UNDER"
+}
+
+/**
+ * A sixth of a stop: inside it the needle reads as centred. It is the most a
+ * third-stop dial can be off the reading while sitting on its nearest click.
+ */
+private const val NEEDLE_TOLERANCE = 1.0 / 6
+/** Stops either side of centre the needle scale shows. */
+private const val NEEDLE_RANGE = 3.0
 
 /**
  * Held aperture when nothing says how wide the lens opens: a fixed-lens body
