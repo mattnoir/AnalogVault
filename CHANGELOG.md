@@ -19,7 +19,7 @@ are added and releases are cut.
 
 ### Fixed
 - 120 and 220 rolls now get the frame count of the camera they're loaded into (8 in a 6x9, 10 in a 6x7, 16 in a 6x4.5, doubled for 220) instead of always 12. Rolls already in a camera are corrected too, unless more frames are logged than the new count allows.
-- Bottom sheets close again when flicked or dragged down, or when you tap outside them. Before, they followed your finger and then snapped back, and a tap outside did nothing. A small drag still springs back.
+- Bottom sheets close again when flicked or dragged down, or when you tap outside them. Before, they followed your finger and then snapped back, and a tap outside did nothing. It takes a real flick or a long pull: a slow or short drag springs back, so resting a hand on a form won't throw it away.
 - Tall bottom sheets stop below the status bar instead of running up under the clock.
 
 [v0.5.0] - 2026-07-02
