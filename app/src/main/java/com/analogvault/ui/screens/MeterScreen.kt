@@ -363,6 +363,9 @@ fun MeterContent(
             val frameModifier = Modifier
                 .align(Alignment.Center)
                 .then(if (frameRatio == null) Modifier.fillMaxSize() else Modifier.aspectRatio(frameRatio))
+                // FILL_CENTER scales the TextureView past the frame; without a clip
+                // the overflow paints into the letterbox.
+                .clipToBounds()
             if (cameraOn && hasCamPerm) {
                 AndroidView(
                     factory = { ctx ->
