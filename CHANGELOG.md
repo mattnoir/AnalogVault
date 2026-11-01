@@ -7,7 +7,11 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+### Added
+- **Buffer frames when cutting bulk film**: the "Cut rolls" sheet has a Buffer frames field for the film your bulk loader fogs while loading each roll. Those frames come off the canister (and count toward each roll's cost) but not toward the roll's exposures. Change the number and a "Save as default?" button appears; saving makes it the value the field starts with next time.
+
 ### Fixed
+- The LOAD ROLL button on bulk film cards in the Stash was missing whenever the card's tags didn't fit on one line: the wrapped line was cut off. Roll cards had the same problem with long tag lists.
 - Backup, restore and shot-log export results now pop up at the bottom of the Backup screen instead of appearing below the cards, where they were missed unless you scrolled. Successes clear after a few seconds; errors stay until you close them.
 
 ## [0.7.1] - 2026-10-25

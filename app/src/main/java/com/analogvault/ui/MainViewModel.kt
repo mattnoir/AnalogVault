@@ -76,6 +76,10 @@ class MainViewModel @Inject constructor(
     val customIsos: StateFlow<List<Int>> = _customIsos.asStateFlow()
     private val _highRefresh = MutableStateFlow(true)
     val highRefresh: StateFlow<Boolean> = _highRefresh.asStateFlow()
+    // Frames a bulk loader fogs per roll while it is being loaded; pre-fills
+    // the "Buffer frames" field when cutting rolls from a bulk canister.
+    private val _bulkBufferFrames = MutableStateFlow(0)
+    val bulkBufferFrames: StateFlow<Int> = _bulkBufferFrames.asStateFlow()
 
     // Meter settings — persisted so the per-device calibration (and last-used
     // ISO/shutter/metering) survive app restarts. Calibration is stored as a
@@ -215,6 +219,8 @@ class MainViewModel @Inject constructor(
             _currency.value = repo.getSetting("currency") ?: "€"
             _isMetric.value = (repo.getSetting("is_metric") ?: "true") == "true"
             _highRefresh.value = (repo.getSetting("high_refresh") ?: "true") == "true"
+            _bulkBufferFrames.value = repo.getSetting("bulk_buffer_frames")?.toIntOrNull()
+                ?.coerceAtLeast(0) ?: 0
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
             _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
@@ -489,8 +495,13 @@ class MainViewModel @Inject constructor(
     fun upsertBulkRoll(b: BulkRoll) = viewModelScope.launch { repo.upsertBulkRoll(b) }
     fun deleteBulkRoll(b: BulkRoll) = viewModelScope.launch { repo.deleteBulkRoll(b) }
 
-    fun cutFromBulk(bulk: BulkRoll, frames: Int, quantity: Int, expiryDate: String) =
-        viewModelScope.launch { repo.cutFromBulk(bulk, frames, quantity, expiryDate) }
+    fun cutFromBulk(bulk: BulkRoll, frames: Int, bufferFrames: Int, quantity: Int, expiryDate: String) =
+        viewModelScope.launch { repo.cutFromBulk(bulk, frames, bufferFrames, quantity, expiryDate) }
+
+    fun saveBulkBufferFrames(frames: Int) = viewModelScope.launch {
+        val v = frames.coerceAtLeast(0)
+        _bulkBufferFrames.value = v; repo.setSetting("bulk_buffer_frames", v.toString())
+    }
 
     // ─── Home layout ─────────────────────────────────────────────────────────
     //
