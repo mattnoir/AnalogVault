@@ -241,6 +241,14 @@ data class DevStep(
     val durationSec: Int,
     val role: StepRole = StepRole.DEVELOP,
     val agitation: DevTime.Agitation = DevTime.Agitation.STANDARD,
+    /**
+     * The chemistry this step runs in, or blank. A linked step wears with it:
+     * [durationSec] is the time for fresh chemistry, and [adjPerRollSec] is
+     * added for every roll already through it when the timer is started — see
+     * [withChemistry].
+     */
+    val chemicalId: String = "",
+    val adjPerRollSec: Int = 0,
 )
 
 data class DevTimer(
@@ -327,16 +335,127 @@ fun Chemical.kitTimer(rolls: Int): DevTimer {
                 name = step.name.ifBlank { role.kitLabel() },
                 durationSec = sec,
                 role = role,
-                // The kit leaflet's rhythm is not stored, so take the presets':
-                // colour kits agitate harder and more often than B&W.
-                agitation = when (role) {
-                    StepRole.DEVELOP, StepRole.FIX ->
-                        if (colour) DevTime.Agitation(initialSec = 30, everySec = 30, burstSec = 5)
-                        else DevTime.Agitation.STANDARD
-                    StepRole.STOP -> DevTime.Agitation.CONTINUOUS
-                    StepRole.WASH, StepRole.FINISH -> DevTime.Agitation.NONE
-                },
+                agitation = kitAgitation(role, colour),
             )
+        },
+    )
+}
+
+/**
+ * The kit leaflet's rhythm is not stored, so take the presets': colour kits
+ * agitate harder and more often than B&W. A custom timer made from the kit is
+ * where someone whose leaflet says otherwise changes it.
+ */
+private fun kitAgitation(role: StepRole, colour: Boolean): DevTime.Agitation = when (role) {
+    StepRole.DEVELOP, StepRole.FIX ->
+        if (colour) DevTime.Agitation(initialSec = 30, everySec = 30, burstSec = 5)
+        else DevTime.Agitation.STANDARD
+    StepRole.STOP -> DevTime.Agitation.CONTINUOUS
+    StepRole.WASH, StepRole.FINISH -> DevTime.Agitation.NONE
+}
+
+/**
+ * The step role a single chemical of [type] plays, or null when its type says
+ * nothing about it ("Custom") and the step should keep the role it has.
+ */
+fun chemicalRole(type: String): StepRole? = when (type) {
+    "Developer" -> StepRole.DEVELOP
+    "Stop Bath" -> StepRole.STOP
+    "Fixer", "Blix", "Bleach" -> StepRole.FIX
+    "Stabiliser", "Wetting Agent" -> StepRole.FINISH
+    else -> null
+}
+
+/** Minutes as typed on the chemistry sheet, in whole seconds; null when unreadable. */
+private fun minutesToSec(text: String): Int? = parseMinutes(text)?.let { (it * 60).roundToInt() }
+
+/**
+ * One step a custom timer can be linked to: a single chemical, or one bath of
+ * a kit. The step stores only the chemical's id; the bath is where its name,
+ * role and times are copied from when the link is made.
+ */
+data class ChemistrySource(
+    val chemical: Chemical,
+    val label: String,
+    val name: String,
+    /** Null when the chemistry does not say, so linking leaves the step's role alone. */
+    val role: StepRole?,
+    val baseSec: Int?,
+    val adjPerRollSec: Int,
+)
+
+/** Everything on the chemistry tab a step could run in, one entry per kit bath. */
+fun chemistrySources(chemicals: List<Chemical>): List<ChemistrySource> {
+    val out = chemicals.flatMap { chem ->
+        val title = chem.name.ifBlank { if (chem.isKit) "Kit" else chem.type }
+        if (!chem.isKit) listOf(ChemistrySource(
+            chemical = chem, label = title, name = title, role = chemicalRole(chem.type),
+            baseSec = minutesToSec(chem.baseDevTime),
+            adjPerRollSec = minutesToSec(chem.timeAdjPerRoll) ?: 0,
+        ))
+        else chem.kitSteps.map { bath ->
+            val role = runCatching { StepRole.valueOf(bath.role) }.getOrDefault(StepRole.DEVELOP)
+            val bathName = bath.name.ifBlank { role.kitLabel() }
+            ChemistrySource(
+                chemical = chem, label = "$title · $bathName", name = bathName, role = role,
+                baseSec = minutesToSec(bath.baseTime),
+                adjPerRollSec = minutesToSec(bath.adjPerRoll) ?: 0,
+            )
+        }
+    }
+    // The picker hands back a label, so two chemicals with one name must not share one.
+    val seen = mutableMapOf<String, Int>()
+    return out.map { src ->
+        val n = (seen[src.label] ?: 0) + 1
+        seen[src.label] = n
+        if (n == 1) src else src.copy(label = "${src.label} (${n})")
+    }
+}
+
+/**
+ * This chemistry's own timer as a new custom timer to change and keep, every
+ * step linked back to it so the copy goes on wearing with the chemistry. Times
+ * are for fresh chemistry; the per-roll extension is carried on each step.
+ */
+fun Chemical.toCustomTimer(): DevTimer {
+    val colour = isKit && kitSpec().isFixedTemperature
+    val steps = if (isKit) kitSteps.mapNotNull { bath ->
+        val base = minutesToSec(bath.baseTime)?.takeIf { it > 0 } ?: return@mapNotNull null
+        val role = runCatching { StepRole.valueOf(bath.role) }.getOrDefault(StepRole.DEVELOP)
+        DevStep(
+            name = bath.name.ifBlank { role.kitLabel() }, durationSec = base, role = role,
+            agitation = kitAgitation(role, colour),
+            chemicalId = id, adjPerRollSec = minutesToSec(bath.adjPerRoll) ?: 0,
+        )
+    } else listOfNotNull(minutesToSec(baseDevTime)?.takeIf { it > 0 }?.let { base ->
+        val role = chemicalRole(type) ?: StepRole.DEVELOP
+        DevStep(
+            name = name.ifBlank { type }, durationSec = base, role = role,
+            agitation = defaultAgitation(role),
+            chemicalId = id, adjPerRollSec = minutesToSec(timeAdjPerRoll) ?: 0,
+        )
+    })
+    return DevTimer(name = name.ifBlank { if (isKit) "Kit" else type }, steps = steps)
+}
+
+/**
+ * The timer as it runs today: each step linked to a chemistry lengthened for
+ * the [rolls] already through it. A kit also brings its process and its own
+ * temperature, so a custom timer built on Cs41 keeps Cs41's 39 °C even when
+ * its name says nothing about C-41.
+ *
+ * A step whose chemistry has since been deleted runs at its fresh time — the
+ * time it was saved with is still the best thing anyone knows about it.
+ */
+fun DevTimer.withChemistry(chemicals: List<Chemical>, rolls: (Chemical) -> Int): DevTimer {
+    if (steps.none { it.chemicalId.isNotBlank() }) return this
+    val byId = chemicals.associateBy { it.id }
+    val kit = steps.firstNotNullOfOrNull { byId[it.chemicalId]?.takeIf { c -> c.isKit } }
+    return copy(
+        spec = spec ?: kit?.kitSpec(),
+        steps = steps.map { step ->
+            val chem = byId[step.chemicalId] ?: return@map step
+            step.copy(durationSec = (step.durationSec + rolls(chem) * step.adjPerRollSec).coerceAtLeast(1))
         },
     )
 }
@@ -404,6 +523,8 @@ fun encodeTimers(timers: List<DevTimer>): String {
                         addProperty("agitationInitialSec", s.agitation.initialSec)
                         addProperty("agitationEverySec", s.agitation.everySec)
                         addProperty("agitationBurstSec", s.agitation.burstSec)
+                        addProperty("chemicalId", s.chemicalId)
+                        addProperty("adjPerRollSec", s.adjPerRollSec)
                     })
                 }
             })
@@ -438,6 +559,9 @@ fun decodeTimers(stored: String?): List<DevTimer> {
                             everySec = s.get("agitationEverySec")?.asInt ?: default.everySec,
                             burstSec = s.get("agitationBurstSec")?.asInt ?: default.burstSec,
                         ),
+                        // Absent on timers saved before steps could be linked.
+                        chemicalId = s.get("chemicalId")?.asString ?: "",
+                        adjPerRollSec = s.get("adjPerRollSec")?.asInt ?: 0,
                     )
                 }.getOrNull()
             }
@@ -554,6 +678,8 @@ fun TimersTab(vm: MainViewModel) {
     var showCustom by remember { mutableStateOf(false) }
     // Null with showCustom set means a new timer; otherwise the saved one being edited.
     var editingTimer by remember { mutableStateOf<DevTimer?>(null) }
+    // A new timer that starts as a copy of a chemistry's own, linked back to it.
+    var startingFrom by remember { mutableStateOf<DevTimer?>(null) }
 
     timerState?.let { state ->
         ActiveTimerScreen(state = state, vm = vm)
@@ -578,26 +704,39 @@ fun TimersTab(vm: MainViewModel) {
             )
         }
 
-        // Yours before the stock ones: a process someone took the trouble to
-        // save is the one they came back to run.
-        if (savedTimers.isNotEmpty()) {
-            item { DarkroomEyebrow("Your timers") }
-            items(savedTimers, key = { it.id }) { saved ->
-                PresetCard(
-                    saved, tempC,
-                    onEdit = { editingTimer = saved; showCustom = true },
-                ) { vm.startTimer(saved.atTemperature(tempC)) }
-            }
-        }
-
         // Kits are yours too, so they come before the stock presets: the whole
         // process, already extended for how worn the kit is.
         val kits = chemicals.filter { it.isKit }
             .map { it to vm.rolledCount(it) }
             .filter { (kit, rolls) -> kit.kitTimer(rolls).steps.isNotEmpty() }
+        // A saved timer linked to a kit is someone's own version of that kit's
+        // process, so it is listed under the kit, where they go looking for it.
+        val kitIds = kits.map { it.first.id }.toSet()
+        val (kitTimers, ownTimers) = savedTimers.partition { linkedKitId(it, chemicals) in kitIds }
+        val byKit = kitTimers.groupBy { linkedKitId(it, chemicals) }
+
+        // Yours before the stock ones: a process someone took the trouble to
+        // save is the one they came back to run.
+        val savedCard: @Composable (DevTimer) -> Unit = { saved ->
+            // Edited as saved, at fresh-chemistry times; shown and run as
+            // today's, lengthened for the rolls through what it is linked to.
+            val timer = saved.withChemistry(chemicals, vm::rolledCount)
+            PresetCard(
+                timer, tempC,
+                onEdit = { editingTimer = saved; startingFrom = null; showCustom = true },
+                note = linkNote(saved, chemicals, vm::rolledCount),
+            ) { vm.startTimer(timer.atTemperature(tempC)) }
+        }
+        if (ownTimers.isNotEmpty()) {
+            item { DarkroomEyebrow("Your timers") }
+            items(ownTimers, key = { it.id }) { savedCard(it) }
+        }
+
         if (kits.isNotEmpty()) {
             item { DarkroomEyebrow("Your kits") }
-            items(kits, key = { it.first.id }) { (kit, rolls) ->
+        }
+        kits.forEach { (kit, rolls) ->
+            item(key = kit.id) {
                 val timer = kit.kitTimer(rolls)
                 val extended = kit.kitSteps.any { (parseMinutes(it.adjPerRoll) ?: 0.0) > 0 }
                 val cap = kit.maxRolls.toIntOrNull()
@@ -608,8 +747,11 @@ fun TimersTab(vm: MainViewModel) {
                         if (cap != null) append(" OF $cap")
                         if (extended && rolls > 0) append("  ▸  TIMES EXTENDED")
                     },
+                    onEdit = { startingFrom = kit.toCustomTimer(); editingTimer = null; showCustom = true },
+                    editDescription = "Customise the ${timer.name} timer",
                 ) { vm.startTimer(timer.atTemperature(tempC)) }
             }
+            items(byKit[kit.id].orEmpty(), key = { it.id }) { savedCard(it) }
         }
 
         item { DarkroomEyebrow("Process presets") }
@@ -645,6 +787,9 @@ fun TimersTab(vm: MainViewModel) {
                     exhaustedSec = exhaustedSec,
                     finalSec = finalSec,
                     fixedTemperature = timer.process.isFixedTemperature,
+                    onCustomise = chem.toCustomTimer().takeIf { it.steps.isNotEmpty() }?.let { copy ->
+                        { startingFrom = copy; editingTimer = null; showCustom = true }
+                    },
                     onStart = { vm.startTimer(timer) },
                 )
             }
@@ -654,23 +799,61 @@ fun TimersTab(vm: MainViewModel) {
             Spacer(Modifier.height(14.dp))
             Box(Modifier.padding(horizontal = 14.dp)) {
                 DarkroomSegment("+ CUSTOM TIMER", selected = false, accent = colors.cyan,
-                    modifier = Modifier.fillMaxWidth()) { editingTimer = null; showCustom = true }
+                    modifier = Modifier.fillMaxWidth()) {
+                    editingTimer = null; startingFrom = null; showCustom = true
+                }
             }
         }
     }
 
     if (showCustom) {
-        val close = { showCustom = false; editingTimer = null }
+        val close = { showCustom = false; editingTimer = null; startingFrom = null }
         CustomTimerSheet(
-            initial = editingTimer,
+            initial = editingTimer ?: startingFrom,
+            editing = editingTimer != null,
+            chemistry = chemistrySources(chemicals),
+            rolls = vm::rolledCount,
             savedAgitations = savedAgitations,
             onSavePattern = vm::saveAgitationPattern,
             onForgetPattern = vm::deleteAgitationPattern,
             onDismiss = close,
             onSave = { timer -> vm.saveCustomTimer(timer); close() },
             onDelete = editingTimer?.let { t -> { vm.deleteCustomTimer(t.id); close() } },
-            onStart = { timer -> vm.startTimer(timer.atTemperature(tempC)); close() },
+            onStart = { timer ->
+                vm.startTimer(timer.withChemistry(chemicals, vm::rolledCount).atTemperature(tempC))
+                close()
+            },
         )
+    }
+}
+
+/** The kit a timer's steps are linked to — the same one [withChemistry] takes the process from — or null. */
+private fun linkedKitId(timer: DevTimer, chemicals: List<Chemical>): String? =
+    timer.steps.firstNotNullOfOrNull { step ->
+        chemicals.firstOrNull { it.id == step.chemicalId && it.isKit }?.id
+    }
+
+/**
+ * What a saved timer's chemistry links say about it today — which chemistry,
+ * and how many rolls have been through it — or null when it has none.
+ */
+private fun linkNote(timer: DevTimer, chemicals: List<Chemical>, rolls: (Chemical) -> Int): String? {
+    val ids = timer.steps.map { it.chemicalId }.filter { it.isNotBlank() }.distinct()
+    if (ids.isEmpty()) return null
+    val linked = ids.mapNotNull { id -> chemicals.firstOrNull { it.id == id } }
+    val extended = timer.steps.any { step ->
+        step.adjPerRollSec > 0 && linked.any { it.id == step.chemicalId && rolls(it) > 0 }
+    }
+    return buildString {
+        append(linked.joinToString(" + ") { chem ->
+            val n = rolls(chem)
+            "${chem.name.ifBlank { chem.type }.uppercase()} · $n ROLL${if (n != 1) "S" else ""}"
+        })
+        if (linked.size < ids.size) {
+            if (linked.isNotEmpty()) append("  ▸  ")
+            append("LINKED CHEMISTRY DELETED")
+        }
+        if (extended) append("  ▸  TIMES EXTENDED")
     }
 }
 
@@ -679,6 +862,7 @@ private fun PresetCard(
     preset: DevTimer,
     tempC: Double,
     onEdit: (() -> Unit)? = null,
+    editDescription: String = "Edit ${preset.name}",
     /** An extra line under the totals, e.g. how far through its life a kit is. */
     note: String? = null,
     onStart: () -> Unit,
@@ -700,7 +884,7 @@ private fun PresetCard(
                 color = colors.halide, modifier = Modifier.weight(1f))
             onEdit?.let {
                 IconButton(onClick = it, modifier = Modifier.size(32.dp)) {
-                    DyeIcon(FilmIcons.Edit, "Edit ${preset.name}", size = 16.dp, tint = colors.dim)
+                    DyeIcon(FilmIcons.Edit, editDescription, size = 16.dp, tint = colors.dim)
                 }
                 Spacer(Modifier.width(6.dp))
             }
@@ -755,6 +939,8 @@ private fun ChemistryTimerCard(
     exhaustedSec: Int,
     finalSec: Int,
     fixedTemperature: Boolean,
+    /** Opens this chemistry's timer as a custom one to change; null when it has no time to copy. */
+    onCustomise: (() -> Unit)?,
     onStart: () -> Unit,
 ) {
     val colors = FilmTheme.colors
@@ -775,6 +961,12 @@ private fun ChemistryTimerCard(
                     Spacer(Modifier.height(4.dp))
                     Text(subtitle.uppercase(), style = FilmTheme.type.rebate, color = colors.dim)
                 }
+            }
+            onCustomise?.let {
+                IconButton(onClick = it, modifier = Modifier.size(32.dp)) {
+                    DyeIcon(FilmIcons.Edit, "Customise the $name timer", size = 16.dp, tint = colors.dim)
+                }
+                Spacer(Modifier.width(6.dp))
             }
             Text(formatDuration(finalSec), style = FilmTheme.type.data.copy(fontSize = 18.sp),
                 color = colors.yellow)
@@ -1076,13 +1268,40 @@ private data class StepDraft(
     val agitation: DevTime.Agitation = defaultAgitation(StepRole.DEVELOP),
     /** Non-null while the rhythm is typed by hand; it then wins over [agitation]. */
     val customAgitation: AgitationDraft? = null,
+    /** The chemistry the step runs in, or blank; see [DevStep.chemicalId]. */
+    val chemicalId: String = "",
+    /** Seconds added per roll through [chemicalId]. */
+    val adjPerRoll: String = "0",
 ) {
     val durationSec: Int get() = (mins.toIntOrNull() ?: 0) * 60 + (secs.toIntOrNull() ?: 0)
+    val adjPerRollSec: Int get() = if (chemicalId.isBlank()) 0 else adjPerRoll.toIntOrNull() ?: 0
     val effectiveAgitation: DevTime.Agitation get() = customAgitation?.toAgitation() ?: agitation
     /** Unnamed or untimed rows are not filled in yet, and are left out of the timer. */
     val isFilled: Boolean get() = name.isNotBlank() && durationSec > 0
     fun toStep() = DevStep(id = id, name = name.trim(), durationSec = durationSec,
-        role = role, agitation = effectiveAgitation)
+        role = role, agitation = effectiveAgitation,
+        chemicalId = chemicalId, adjPerRollSec = adjPerRollSec)
+
+    /**
+     * Runs this step in [source]: its time and per-roll extension are copied in
+     * to start from, and so is its role, which brings that role's usual
+     * agitation with it the same way tapping the role chip does. A name the
+     * user already typed is kept.
+     */
+    fun linkedTo(source: ChemistrySource): StepDraft {
+        val newRole = source.role ?: role
+        val roleChanged = newRole != role
+        return copy(
+            chemicalId = source.chemical.id,
+            name = name.ifBlank { source.name },
+            mins = source.baseSec?.let { (it / 60).toString() } ?: mins,
+            secs = source.baseSec?.let { (it % 60).toString() } ?: secs,
+            adjPerRoll = source.adjPerRollSec.toString(),
+            role = newRole,
+            agitation = if (roleChanged) defaultAgitation(newRole) else agitation,
+            customAgitation = if (roleChanged) null else customAgitation,
+        )
+    }
 }
 
 /**
@@ -1094,6 +1313,7 @@ private fun DevStep.toDraft(named: Set<DevTime.Agitation>) = StepDraft(
     mins = (durationSec / 60).toString(), secs = (durationSec % 60).toString(),
     role = role, agitation = agitation,
     customAgitation = if (agitation in named) null else agitation.toDraft(),
+    chemicalId = chemicalId, adjPerRoll = adjPerRollSec.toString(),
 )
 
 /**
@@ -1134,12 +1354,23 @@ private fun secondsField(v: String) = v.filter(Char::isDigit).take(4)
  * developer, "10 s each minute" for the next — so the rhythm can be typed by
  * hand and kept under a name for the next timer.
  *
- * @param initial the saved timer being edited, or null for a new one.
+ * A step can also be linked to something on the chemistry tab. It then wears
+ * with that chemistry: its time is the time for fresh chemistry, and it is
+ * lengthened by its own per-roll amount for every roll already through it —
+ * so a developer can carry a different time and rhythm for each film it runs.
+ *
+ * @param initial the timer to start from: the saved one being edited, a copy
+ *   of a chemistry's own timer, or null for a blank one.
+ * @param editing true when [initial] is a saved timer, so saving replaces it.
+ * @param chemistry what a step can be linked to.
  * @param onDelete shown only when editing.
  */
 @Composable
 fun CustomTimerSheet(
     initial: DevTimer?,
+    editing: Boolean,
+    chemistry: List<ChemistrySource>,
+    rolls: (Chemical) -> Int,
     savedAgitations: List<SavedAgitation>,
     onSavePattern: (SavedAgitation) -> Unit,
     onForgetPattern: (String) -> Unit,
@@ -1154,7 +1385,8 @@ fun CustomTimerSheet(
     var name  by remember { mutableStateOf(initial?.name ?: "") }
     var steps by remember {
         val named = AGITATION_CHOICES.map { it.second }.toSet() + savedAgitations.map { it.agitation }
-        mutableStateOf(initial?.steps?.map { it.toDraft(named) } ?: listOf(StepDraft(mins = "8")))
+        mutableStateOf(initial?.steps?.takeIf { it.isNotEmpty() }?.map { it.toDraft(named) }
+            ?: listOf(StepDraft(mins = "8")))
     }
     var confirmDelete by remember { mutableStateOf(false) }
     // The step whose hand-typed rhythm is being named, and the pattern being forgotten.
@@ -1172,10 +1404,12 @@ fun CustomTimerSheet(
     val timer = if (name.isNotBlank() && filled.isNotEmpty() && badRhythm < 0)
         DevTimer(id = timerId, name = name.trim(), steps = filled.map { it.toStep() }) else null
 
-    VaultSheet(if (initial != null) "Edit Timer" else "Custom Timer", onDismiss) {
+    VaultSheet(if (editing) "Edit Timer" else "Custom Timer", onDismiss) {
         VaultTextField(name, { name = it }, "Process name", placeholder = "e.g. HC-110 Dilution B")
         Spacer(Modifier.height(4.dp))
-        Text("Developer steps are entered at 20 °C and scaled to the working temperature when started.",
+        Text("Developer steps are entered at 20 °C and scaled to the working temperature when started." +
+                if (chemistry.isNotEmpty()) " Steps linked to your chemistry are entered for fresh " +
+                    "chemistry and lengthen as it wears." else "",
             color = colors.dim, fontSize = 11.sp)
         Spacer(Modifier.height(12.dp))
         Text("Steps", color = colors.cyan, fontSize = 13.sp)
@@ -1209,6 +1443,17 @@ fun CustomTimerSheet(
                     VaultTextField(step.secs, { v -> update(i) { it.copy(secs = v) } },
                         "Sec", modifier = Modifier.weight(1f),
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                }
+                if (chemistry.isNotEmpty() || step.chemicalId.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    ChemistryLink(
+                        step = step,
+                        sources = chemistry,
+                        rolls = rolls,
+                        onLink = { src -> update(i) { it.linkedTo(src) } },
+                        onUnlink = { update(i) { it.copy(chemicalId = "", adjPerRoll = "0") } },
+                        onAdjChange = { v -> update(i) { it.copy(adjPerRoll = secondsField(v)) } },
+                    )
                 }
                 Spacer(Modifier.height(8.dp))
                 Text("Role", color = colors.dim, fontSize = 11.sp)
@@ -1251,7 +1496,7 @@ fun CustomTimerSheet(
             Spacer(Modifier.height(8.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VaultButton(if (initial != null) "Save Changes" else "Save", ghost = true,
+            VaultButton(if (editing) "Save Changes" else "Save", ghost = true,
                 enabled = timer != null, modifier = Modifier.weight(1f),
                 onClick = { timer?.let(onSave) })
             VaultButton("Start Timer", enabled = timer != null, modifier = Modifier.weight(1f),
@@ -1305,6 +1550,55 @@ fun CustomTimerSheet(
             onDismiss = { forgetting = null },
         )
     }
+}
+
+private const val NO_CHEMISTRY = "None"
+
+/**
+ * Which chemistry a step runs in, and how much longer it gets per roll through
+ * it. Picking a source copies its time in; the line underneath says what the
+ * step will actually run for today, so the link is never a hidden adjustment.
+ */
+@Composable
+private fun ChemistryLink(
+    step: StepDraft,
+    sources: List<ChemistrySource>,
+    rolls: (Chemical) -> Int,
+    onLink: (ChemistrySource) -> Unit,
+    onUnlink: () -> Unit,
+    onAdjChange: (String) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    val linked = sources.firstOrNull { it.chemical.id == step.chemicalId }?.chemical
+    // Only the chemical is stored, not the bath, so a kit step reads as the
+    // bath it is named after when there is one, and as the kit otherwise.
+    val bath = sources.firstOrNull {
+        it.chemical.id == step.chemicalId && it.name.equals(step.name.trim(), ignoreCase = true)
+    }
+    val shown = when {
+        step.chemicalId.isBlank() -> NO_CHEMISTRY
+        linked == null -> "Deleted chemistry"
+        bath != null -> bath.label
+        else -> linked.name.ifBlank { linked.type }
+    }
+    VaultDropdown("Chemistry", shown, listOf(NO_CHEMISTRY) + sources.map { it.label }, { label ->
+        sources.firstOrNull { it.label == label }?.let(onLink) ?: onUnlink()
+    }, modifier = Modifier.fillMaxWidth())
+    if (step.chemicalId.isBlank()) return
+
+    Spacer(Modifier.height(6.dp))
+    VaultTextField(step.adjPerRoll, onAdjChange, "+Sec per roll", modifier = Modifier.fillMaxWidth(),
+        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number, placeholder = "0")
+    Spacer(Modifier.height(4.dp))
+    val line = if (linked == null) {
+        "That chemistry was deleted, so this step runs at the time above"
+    } else {
+        val n = rolls(linked)
+        val today = step.durationSec + n * step.adjPerRollSec
+        "$n roll${if (n != 1) "s" else ""} through · runs ${formatDuration(today)} today" +
+            if (step.adjPerRollSec == 0) " · does not lengthen as it wears" else ""
+    }
+    Text(line.uppercase(), style = FilmTheme.type.rebate, color = colors.dim)
 }
 
 /**

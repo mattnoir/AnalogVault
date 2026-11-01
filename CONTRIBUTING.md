@@ -80,6 +80,12 @@ How releases are cut, tagged and built is not settled yet: the existing
 version bump (`appVersion` plus dating the `[Unreleased]` changelog section)
 happens in its own commit, never inside a feature or fix PR.
 
+The workflow writes each GitHub release's notes from `CHANGELOG.md`
+(`.github/scripts/release_notes.py`): the section headed `## [X.Y.Z] - date`
+for the tag `vX.Y.Z`. If a tag is pushed before its section was dated, the
+notes are the `[Unreleased]` entries no earlier tag had — but date the section
+anyway, or the changelog itself stops saying what shipped when.
+
 ## Before opening a PR
 
 - Run a debug build (`./gradlew :app:assembleDebug`) and try the change on a device.

@@ -16,7 +16,20 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import android.os.SystemClock
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -642,6 +655,57 @@ private fun VoidSystemBars() {
     }
 }
 
+/**
+ * Decides whether the end of a drag may close the sheet.
+ *
+ * Material3 closes a sheet released after 56dp of pull or while moving down at
+ * 125dp/s — a hand resting on a form does that — and neither threshold can be
+ * set. This vetoes such moves from the sheet's confirmValueChange. It samples the
+ * sheet's own position while a finger is down, not the finger's, so scrolling the
+ * form counts for nothing, and lets a release close the sheet only after a long
+ * pull or a real flick. A scrim tap follows no drag on the sheet, so it passes.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+private class SheetDismissGate(density: Density) {
+    private val pullPx       = with(density) { 200.dp.toPx() }
+    private val flickSpeedPx = with(density) { 2000.dp.toPx() }
+    private val flickPullPx  = with(density) { 64.dp.toPx() }
+
+    lateinit var state: SheetState
+    private val tracker = VelocityTracker()
+    private var downOffset = 0f
+    private var releaseSpeed = 0f
+    private var releasedAt = -1L
+    /** The gesture began with the form scrolled: it scrolls the form and never moves the sheet. */
+    var startedScrolled = false
+        private set
+
+    fun onDown(timeMs: Long, formScrolled: Boolean) {
+        tracker.resetTracking()
+        downOffset = state.requireOffset()
+        startedScrolled = formScrolled
+        sample(timeMs)
+    }
+
+    fun sample(timeMs: Long) = tracker.addPosition(timeMs, Offset(0f, state.requireOffset()))
+
+    fun onUp(timeMs: Long) {
+        sample(timeMs)
+        releaseSpeed = tracker.calculateVelocity().y
+        releasedAt = timeMs
+    }
+
+    fun allowsHide(): Boolean {
+        // The sheet settles in the same frame the finger lifts; anything later is
+        // a scrim tap or a programmatic hide.
+        val settlingRelease = releasedAt >= 0 && SystemClock.uptimeMillis() - releasedAt < 300
+        releasedAt = -1L
+        if (!settlingRelease) return true
+        val pull = state.requireOffset() - downOffset
+        return pull >= pullPx || (releaseSpeed >= flickSpeedPx && pull >= flickPullPx)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultSheet(
@@ -649,18 +713,34 @@ fun VaultSheet(
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // confirmValueChange = { it != Hidden } prevents the sheet from closing via swipe —
-    // the state transition to Hidden is rejected so the sheet snaps back to Expanded.
-    // Dismiss is still possible by tapping the scrim or the explicit ✕ button.
-    // This avoids accidental data loss on form sheets where a stray downward gesture
-    // would silently discard unsaved input.
+    val density = LocalDensity.current
+    val gate = remember { SheetDismissGate(density) }
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
-        confirmValueChange    = { it != SheetValue.Hidden }
+        confirmValueChange    = { it != SheetValue.Hidden || gate.allowsHide() },
     )
+    gate.state = sheetState
+    val formScroll = rememberScrollState()
+    // Scrolling a long form back to its top must not run on into pulling the
+    // sheet down: the leftover drag and fling of a gesture that began scrolled
+    // are swallowed here, before the sheet sees them. Pulling the sheet takes a
+    // new gesture from the top.
+    val keepScrollInForm = remember(gate) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource) =
+                if (gate.startedScrolled && available.y > 0f) Offset(0f, available.y) else Offset.Zero
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity) =
+                if (gate.startedScrolled && available.y > 0f) Velocity(0f, available.y) else Velocity.Zero
+        }
+    }
     val colors = FilmTheme.colors
+    // Read in the activity's window: the sheet's own dialog window doesn't report
+    // the status bar, so a full-height sheet would run up under the clock.
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier         = Modifier.padding(top = statusBarTop),
         sheetState       = sheetState,
         containerColor   = colors.film,
         shape            = RectangleShape,
@@ -671,9 +751,24 @@ fun VaultSheet(
         VoidSystemBars()
         Column(modifier = Modifier
             .fillMaxWidth()
+            // Watch every gesture on the sheet without consuming it; the sheet's
+            // own drag still does the moving.
+            .pointerInput(gate) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    gate.onDown(down.uptimeMillis, formScrolled = formScroll.value > 0)
+                    while (true) {
+                        val change = awaitPointerEvent(PointerEventPass.Initial)
+                            .changes.firstOrNull { it.id == down.id } ?: break
+                        if (change.pressed) gate.sample(change.uptimeMillis)
+                        else { gate.onUp(change.uptimeMillis); break }
+                    }
+                }
+            }
             .padding(horizontal = 16.dp)
             .padding(bottom = 32.dp)
-            .verticalScroll(rememberScrollState())
+            .nestedScroll(keepScrollInForm)
+            .verticalScroll(formScroll)
         ) {
             // Title row with explicit close button
             Row(

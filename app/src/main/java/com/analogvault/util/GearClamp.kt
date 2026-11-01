@@ -104,19 +104,77 @@ object GearClamp {
                 // Shutter first: it is the limit the user can feel (the dial has
                 // a hard stop), and naming it beats naming the aperture that only
                 // went out of range as a consequence of the speed.
-                reason = when {
-                    limits.fastestShutterSec != null && sec < limits.fastestShutterSec * 0.99 ->
-                        Reason.SHUTTER_TOO_FAST
-                    limits.slowestShutterSec != null && sec > limits.slowestShutterSec * 1.01 ->
-                        Reason.SHUTTER_TOO_SLOW
-                    limits.widestAperture != null && snapped < limits.widestAperture * 0.99 ->
-                        Reason.LENS_TOO_SLOW
-                    limits.narrowestAperture != null && snapped > limits.narrowestAperture * 1.01 ->
-                        Reason.LENS_WONT_STOP_DOWN
-                    else -> null
-                },
+                reason = shutterReason(sec, limits) ?: apertureReason(snapped, limits),
             )
         }
+
+    /** Why the body cannot be set to [sec], or null when it can. */
+    fun shutterReason(sec: Double, limits: Limits): Reason? = when {
+        limits.fastestShutterSec != null && sec < limits.fastestShutterSec * 0.99 ->
+            Reason.SHUTTER_TOO_FAST
+        limits.slowestShutterSec != null && sec > limits.slowestShutterSec * 1.01 ->
+            Reason.SHUTTER_TOO_SLOW
+        else -> null
+    }
+
+    /** Why the lens cannot be set to [aperture], or null when it can. */
+    fun apertureReason(aperture: Double, limits: Limits): Reason? = when {
+        limits.widestAperture != null && aperture < limits.widestAperture * 0.99 ->
+            Reason.LENS_TOO_SLOW
+        limits.narrowestAperture != null && aperture > limits.narrowestAperture * 1.01 ->
+            Reason.LENS_WONT_STOP_DOWN
+        else -> null
+    }
+
+    /**
+     * How far a manually set exposure is from the one the light asks for, in
+     * stops: positive is over (more light than metered), negative is under.
+     *
+     * The match needle on a manual body, as a number. [ev] is the scene EV at the
+     * ISO 100 reference, as everywhere else here.
+     */
+    fun stopsOff(iso: Int, ev: Double, shutterSec: Double, aperture: Double): Double =
+        ev + log2(iso / 100.0) - log2(aperture * aperture / shutterSec)
+
+    /**
+     * The rung an aperture-priority meter lands on with [aperture] held.
+     *
+     * The time the held aperture needs rarely falls on a dial speed. This takes
+     * the rung whose own aperture is the held one or the nearest *wider* — the
+     * next faster speed — and shows that rung's aperture as it is. An f/3.5
+     * lens that wants 1/600 lands on f/2.8 at 1/1000: wider than the lens can
+     * open, hatched as such, and the honest answer to "what does wide open
+     * need?" rather than a slower speed that quietly reads as stopped down.
+     *
+     * A fifth of a stop of slack sits on the wide edge. A rung tapped off the
+     * ladder holds its *snapped* aperture, up to a sixth of a stop off its exact
+     * one, and without the slack that rung could read as a hair too narrow and
+     * jump the selection a whole stop to the next speed.
+     *
+     * When the body cannot run that speed, the nearest speed it can run wins
+     * instead — the aperture moves off the held value, which is what you would
+     * do with the camera in hand. Null only when the ladder is empty.
+     */
+    fun rungForAperture(rungs: List<Rung>, iso: Int, ev: Double, aperture: Double): Rung? {
+        if (rungs.isEmpty()) return null
+        val needed = shutterSecFor(iso, aperture, ev)
+        // Faster than needed means a wider aperture for the same exposure.
+        // With the held aperture near the bottom of the scale the wider rung
+        // may not exist — it would need f/0.8, and the ladder drops those — so
+        // the nearest rung on the other side stands in rather than nothing.
+        val wider = rungs
+            .filter { it.shutterSec <= needed * 2.0.pow(0.2) }
+            .maxByOrNull { it.shutterSec }
+            ?: rungs.minByOrNull { kotlin.math.abs(log2(it.shutterSec / needed)) }
+            ?: return null
+        val shutterBlocked = { r: Rung ->
+            r.reason == Reason.SHUTTER_TOO_FAST || r.reason == Reason.SHUTTER_TOO_SLOW
+        }
+        if (!shutterBlocked(wider)) return wider
+        return rungs.filterNot(shutterBlocked)
+            .minByOrNull { kotlin.math.abs(log2(it.shutterSec / needed)) }
+            ?: wider
+    }
 
     // ── The way out ──────────────────────────────────────────────────────────
 

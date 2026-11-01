@@ -60,3 +60,24 @@ fun downscalePhotoInPlace(file: File) {
         // keep the original file untouched on any failure
     }
 }
+
+/**
+ * Write [bitmap] into [photoDir] as a shot photo, scaled to at most
+ * [MAX_THUMB_DIM] px on the long edge like every other shot photo.
+ * Returns the file, or null if it could not be written.
+ */
+fun saveShotPhoto(context: Context, bitmap: Bitmap, prefix: String): File? {
+    val file = File(photoDir(context), "${prefix}_${System.currentTimeMillis()}.jpg")
+    return try {
+        val scale = (MAX_THUMB_DIM.toFloat() / maxOf(bitmap.width, bitmap.height)).coerceAtMost(1f)
+        val out = if (scale < 1f) Bitmap.createScaledBitmap(
+            bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true
+        ) else bitmap
+        file.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, THUMB_JPEG_QUALITY, it) }
+        if (out !== bitmap) out.recycle()
+        file
+    } catch (_: Exception) {
+        file.delete()
+        null
+    }
+}
