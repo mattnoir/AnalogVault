@@ -2,11 +2,6 @@
 package com.analogvault.ui.screens
 
 import androidx.compose.foundation.*
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +25,7 @@ import com.analogvault.ui.film.FilmChip
 import com.analogvault.ui.film.FilmChipRow
 import com.analogvault.ui.film.FilmMeter
 import com.analogvault.ui.film.FilmStockCard
+import com.analogvault.ui.film.WarpVisibility
 import com.analogvault.ui.film.StockAccent
 import com.analogvault.ui.film.rebateLine
 import com.analogvault.ui.film.rememberStockAccent
@@ -894,17 +890,13 @@ fun LoadFromBulkSheet(
             }
         }
         // Appears once the value differs from the saved default; saving makes
-        // the two equal again, which hides it.
-        AnimatedVisibility(
+        // the two equal again, which hides it. Warps in rather than sliding.
+        WarpVisibility(
             visible = bufferInt != null && bufferInt != defaultBuffer,
-            enter   = expandVertically() + fadeIn(),
-            exit    = shrinkVertically() + fadeOut(),
+            padding = PaddingValues(top = 8.dp),
         ) {
-            Column {
-                Spacer(Modifier.height(8.dp))
-                VaultButton("Save as default?", small = true, ghost = true,
-                    onClick = { bufferInt?.let(onSaveDefaultBuffer) })
-            }
+            VaultButton("Save as default?", small = true, ghost = true,
+                onClick = { bufferInt?.let(onSaveDefaultBuffer) })
         }
         Spacer(Modifier.height(12.dp))
 
