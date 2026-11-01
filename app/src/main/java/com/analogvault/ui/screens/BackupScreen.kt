@@ -43,6 +43,15 @@ fun BackupScreen() {
     val result        by vm.result.collectAsState()
     val busy          by vm.busy.collectAsState()
     var includePhotos by remember { mutableStateOf(true) }
+    val snackbar = remember { SnackbarHostState() }
+
+    // Results float over the bottom of the screen so they're seen however far
+    // the page is scrolled. Errors stay until dismissed; successes time out after 4 s.
+    LaunchedEffect(result) {
+        val res = result ?: return@LaunchedEffect
+        snackbar.showSnackbar(ResultVisuals(res))
+        vm.clearResult()
+    }
 
     // SAF launchers
     val exportLauncher = rememberLauncherForActivityResult(
@@ -57,123 +66,129 @@ fun BackupScreen() {
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri -> uri?.let { vm.exportAllCsv(context, it) } }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        SectionTitle("Backup & Restore")
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            SectionTitle("Backup & Restore")
 
-        // Info card
-        InfoCard(
-            icon = FilmIcons.Bulb,
-            text = "Backup saves all your film stocks, cameras, lenses, rolls, shot logs, " +
-                    "chemicals, and settings to a single .avault file you can store anywhere. " +
-                    "Shot photos are included when the toggle below is on.",
-            color = FilmTheme.colors.violet
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        // Export section
-        SectionCard(title = "Export / Backup") {
-            Text(
-                "Creates a .avault file (ZIP containing your data + photos). " +
-                "Store it anywhere — Downloads, Google Drive, a USB drive.",
-                color = FilmTheme.colors.dim, fontSize = 12.sp
+            // Info card
+            InfoCard(
+                icon = FilmIcons.Bulb,
+                text = "Backup saves all your film stocks, cameras, lenses, rolls, shot logs, " +
+                        "chemicals, and settings to a single .avault file you can store anywhere. " +
+                        "Shot photos are included when the toggle below is on.",
+                color = FilmTheme.colors.violet
             )
-            Spacer(Modifier.height(10.dp))
-            Row(
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Switch(
-                    checked = includePhotos,
-                    onCheckedChange = { includePhotos = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = FilmTheme.colors.void,
-                        checkedTrackColor = FilmTheme.colors.cyan,
-                        uncheckedThumbColor = FilmTheme.colors.dim,
-                        uncheckedTrackColor = FilmTheme.colors.film,
-                    )
+
+            Spacer(Modifier.height(24.dp))
+
+            // Export section
+            SectionCard(title = "Export / Backup") {
+                Text(
+                    "Creates a .avault file (ZIP containing your data + photos). " +
+                    "Store it anywhere — Downloads, Google Drive, a USB drive.",
+                    color = FilmTheme.colors.dim, fontSize = 12.sp
                 )
-                androidx.compose.material3.Text(
-                    if (includePhotos) "Include shot photos (larger file)" else "Exclude photos (smaller file)",
-                    color = FilmTheme.colors.dim,
-                    fontSize = 12.sp
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Switch(
+                        checked = includePhotos,
+                        onCheckedChange = { includePhotos = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = FilmTheme.colors.void,
+                            checkedTrackColor = FilmTheme.colors.cyan,
+                            uncheckedThumbColor = FilmTheme.colors.dim,
+                            uncheckedTrackColor = FilmTheme.colors.film,
+                        )
+                    )
+                    androidx.compose.material3.Text(
+                        if (includePhotos) "Include shot photos (larger file)" else "Exclude photos (smaller file)",
+                        color = FilmTheme.colors.dim,
+                        fontSize = 12.sp
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                VaultButton(
+                    text = if (busy) "Exporting…" else "Export Backup",
+                icon = if (busy) null else FilmIcons.Backup,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                        exportLauncher.launch("analogvault_$timestamp.avault")
+                    }
                 )
             }
-            Spacer(Modifier.height(10.dp))
-            VaultButton(
-                text = if (busy) "Exporting…" else "Export Backup",
-            icon = if (busy) null else FilmIcons.Backup,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
-                    exportLauncher.launch("analogvault_$timestamp.avault")
-                }
-            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // Import section
+            SectionCard(title = "Import / Restore") {
+                Text(
+                    "Opens a .avault backup file, or an older .json export. " +
+                    "Existing records with the same ID are overwritten; " +
+                    "everything else is merged in — nothing is deleted.",
+                    color = FilmTheme.colors.dim, fontSize = 12.sp
+                )
+                Spacer(Modifier.height(14.dp))
+                VaultButton(
+                    text = if (busy) "Importing…" else "Import Backup",
+                icon = if (busy) null else FilmIcons.LoadRoll,
+                    modifier = Modifier.fillMaxWidth(),
+                    ghost = true,
+                    onClick = { importLauncher.launch(arrayOf("application/zip", "application/json", "*/*")) }
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Shot-log export (analysis in a spreadsheet; per-roll exports live on each roll)
+            SectionCard(title = "Shot Log Export") {
+                Text(
+                    "Every shot from every roll as one CSV — film, camera, exposure, " +
+                    "location, notes. Per-roll CSV/PDF exports are on each roll's detail screen.",
+                    color = FilmTheme.colors.dim, fontSize = 12.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                VaultButton(
+                    text = "Export All Shot Logs (CSV)",
+                icon = FilmIcons.ContactSheet,
+                    modifier = Modifier.fillMaxWidth(),
+                    ghost = true,
+                    onClick = {
+                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                        allCsvLauncher.launch("analogvault_shotlogs_$timestamp.csv")
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            // Notes
+            SectionCard(title = "Notes") {
+                NoteRow("File format", ".avault — ZIP with version-tagged JSON + photos")
+                NoteRow("Shot photos", "Included when the export toggle is on")
+                NoteRow("Older backups", "Plain .json exports import fine too")
+                NoteRow("Merge behaviour", "Import is additive; same ID = overwrite")
+                NoteRow("OWM API key", "Included in backup")
+                NoteRow("Restore to new device", "Install the app, import the file, done")
+            }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // Import section
-        SectionCard(title = "Import / Restore") {
-            Text(
-                "Opens a .avault backup file, or an older .json export. " +
-                "Existing records with the same ID are overwritten; " +
-                "everything else is merged in — nothing is deleted.",
-                color = FilmTheme.colors.dim, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(14.dp))
-            VaultButton(
-                text = if (busy) "Importing…" else "Import Backup",
-            icon = if (busy) null else FilmIcons.LoadRoll,
-                modifier = Modifier.fillMaxWidth(),
-                ghost = true,
-                onClick = { importLauncher.launch(arrayOf("application/zip", "application/json", "*/*")) }
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // Shot-log export (analysis in a spreadsheet; per-roll exports live on each roll)
-        SectionCard(title = "Shot Log Export") {
-            Text(
-                "Every shot from every roll as one CSV — film, camera, exposure, " +
-                "location, notes. Per-roll CSV/PDF exports are on each roll's detail screen.",
-                color = FilmTheme.colors.dim, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            VaultButton(
-                text = "Export All Shot Logs (CSV)",
-            icon = FilmIcons.ContactSheet,
-                modifier = Modifier.fillMaxWidth(),
-                ghost = true,
-                onClick = {
-                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
-                    allCsvLauncher.launch("analogvault_shotlogs_$timestamp.csv")
-                }
-            )
-        }
-
-        // Result banner
-        result?.let { res ->
-            Spacer(Modifier.height(20.dp))
-            ResultBanner(res, onDismiss = { vm.clearResult() })
-        }
-
-        Spacer(Modifier.height(32.dp))
-
-        // Notes
-        SectionCard(title = "Notes") {
-            NoteRow("File format", ".avault — ZIP with version-tagged JSON + photos")
-            NoteRow("Shot photos", "Included when the export toggle is on")
-            NoteRow("Older backups", "Plain .json exports import fine too")
-            NoteRow("Merge behaviour", "Import is additive; same ID = overwrite")
-            NoteRow("OWM API key", "Included in backup")
-            NoteRow("Restore to new device", "Install the app, import the file, done")
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        ) { data ->
+            val res = (data.visuals as? ResultVisuals)?.result ?: return@SnackbarHost
+            ResultBanner(res, onDismiss = { data.dismiss() })
         }
     }
 }
@@ -197,6 +212,20 @@ private fun InfoCard(icon: FilmIconSpec, text: String, color: Color) {
     }
 }
 
+/** Carries the whole result so the snackbar can draw it as the success/error banner. */
+private class ResultVisuals(val result: BackupResult) : SnackbarVisuals {
+    override val message = when (result) {
+        is BackupResult.Success -> result.message
+        is BackupResult.Error   -> result.message
+    }
+    override val actionLabel: String? = null
+    override val withDismissAction = true
+    override val duration = when (result) {
+        is BackupResult.Success -> SnackbarDuration.Short
+        is BackupResult.Error   -> SnackbarDuration.Indefinite
+    }
+}
+
 @Composable
 private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
     val (bg, border, textColor) = when (result) {
@@ -214,7 +243,9 @@ private fun ResultBanner(result: BackupResult, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            
+            // Floats over the scrolling cards now — the void underneath keeps
+            // the tint reading as it did on the bare screen.
+            .background(FilmTheme.colors.void)
             .background(bg)
             .border(1.dp, border)
             .padding(12.dp),

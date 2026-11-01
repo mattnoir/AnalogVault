@@ -7,6 +7,9 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+### Fixed
+- Backup, restore and shot-log export results now pop up at the bottom of the Backup screen instead of appearing below the cards, where they were missed unless you scrolled. Successes clear after a few seconds; errors stay until you close them.
+
 ## [0.7.1] - 2026-10-25
 
 ### Fixed
