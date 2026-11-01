@@ -25,6 +25,7 @@ import com.analogvault.ui.film.FilmChip
 import com.analogvault.ui.film.FilmChipRow
 import com.analogvault.ui.film.FilmMeter
 import com.analogvault.ui.film.FilmStockCard
+import com.analogvault.ui.film.WarpVisibility
 import com.analogvault.ui.film.StockAccent
 import com.analogvault.ui.film.rebateLine
 import com.analogvault.ui.film.rememberStockAccent
@@ -174,7 +175,8 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     val bulkRolls     by vm.bulkRolls.collectAsState()
     val currency      by vm.currency.collectAsState()
     val isMetric      by vm.isMetric.collectAsState()
-    var showBulkSheet   by remember { mutableStateOf(false) }
+    val bulkBufferDefault by vm.bulkBufferFrames.collectAsState()
+    var showBulkSheet  by remember { mutableStateOf(false) }
     var editingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
     var loadingBulk     by remember { mutableStateOf<BulkRoll?>(null) }
     var confirmDeleteBulk by remember { mutableStateOf<BulkRoll?>(null) }
@@ -407,10 +409,12 @@ fun FilmStashTab(films: List<FilmStock>, vm: MainViewModel) {
     }
     loadingBulk?.let { bulk ->
         LoadFromBulkSheet(
-            bulk      = bulk,
-            onDismiss = { loadingBulk = null },
-            onLoad    = { frames, qty, expiry ->
-                vm.cutFromBulk(bulk, frames, qty, expiry)
+            bulk          = bulk,
+            defaultBuffer = bulkBufferDefault,
+            onSaveDefaultBuffer = { vm.saveBulkBufferFrames(it) },
+            onDismiss     = { loadingBulk = null },
+            onLoad        = { frames, buffer, qty, expiry ->
+                vm.cutFromBulk(bulk, frames, buffer, qty, expiry)
                 loadingBulk = null
             }
         )
@@ -803,12 +807,15 @@ fun BulkRollSheet(
 }@Composable
 fun LoadFromBulkSheet(
     bulk: BulkRoll,
+    defaultBuffer: Int,
+    onSaveDefaultBuffer: (Int) -> Unit,
     onDismiss: () -> Unit,
-    onLoad: (frames: Int, quantity: Int, expiryDate: String) -> Unit
+    onLoad: (frames: Int, bufferFrames: Int, quantity: Int, expiryDate: String) -> Unit
 ) {
     val remaining = (bulk.totalFrames - bulk.usedFrames).coerceAtLeast(0)
 
     var frames    by remember { mutableStateOf("36") }
+    var buffer    by remember { mutableStateOf(defaultBuffer.toString()) }
     var quantity  by remember { mutableStateOf("1") }
     var expiryDate by remember { mutableStateOf(bulk.expiryDate) }
     var showExpPicker by remember { mutableStateOf(false) }
@@ -820,8 +827,10 @@ fun LoadFromBulkSheet(
             ?: (java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1)) }
 
     val framesInt   = frames.toIntOrNull() ?: 0
+    val bufferInt   = buffer.toIntOrNull()            // null while the field is empty
     val quantityInt = quantity.toIntOrNull()?.coerceAtLeast(1) ?: 1
-    val totalFramesNeeded = framesInt * quantityInt
+    // Each roll takes its frames plus the buffer the loader fogs while loading.
+    val totalFramesNeeded = (framesInt + (bufferInt ?: 0)) * quantityInt
     val afterLoad   = (remaining - totalFramesNeeded).coerceAtLeast(0)
     val overBudget  = totalFramesNeeded > remaining
 
@@ -864,6 +873,30 @@ fun LoadFromBulkSheet(
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                 placeholder = "e.g. 18"
             )
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Buffer frames — film the bulk loader fogs per roll while loading.
+        // Comes off the canister but isn't shootable.
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            VaultTextField(buffer, { buffer = it.filter(Char::isDigit).take(3) }, "Buffer frames",
+                modifier = Modifier.weight(1f),
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                placeholder = "0")
+            Column(Modifier.weight(1f)) {
+                Text("Fogged per roll while loading", color = FilmTheme.colors.dim, fontSize = 11.sp)
+                Text("Default: $defaultBuffer", color = FilmTheme.colors.dim, fontSize = 11.sp)
+            }
+        }
+        // Appears once the value differs from the saved default; saving makes
+        // the two equal again, which hides it. Warps in rather than sliding.
+        WarpVisibility(
+            visible = bufferInt != null && bufferInt != defaultBuffer,
+            padding = PaddingValues(top = 8.dp),
+        ) {
+            VaultButton("Save as default?", small = true, ghost = true,
+                onClick = { bufferInt?.let(onSaveDefaultBuffer) })
         }
         Spacer(Modifier.height(12.dp))
 
@@ -912,7 +945,7 @@ fun LoadFromBulkSheet(
             modifier = Modifier.fillMaxWidth(),
             onClick  = {
                 if (framesInt > 0 && !overBudget) {
-                    onLoad(framesInt, quantityInt, expiryDate)
+                    onLoad(framesInt, bufferInt ?: 0, quantityInt, expiryDate)
                 }
             }
         )

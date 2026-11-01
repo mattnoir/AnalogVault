@@ -93,20 +93,29 @@ class VaultRepository @Inject constructor(
     /**
      * Cut rolls from a bulk canister and add them to the film stash.
      * Creates [quantity] individual FilmStock entries (quantity=1 each) and
-     * deducts frames×quantity from the canister. No Roll or camera involvement —
-     * that happens later when the user loads one of the new stash entries.
+     * deducts (frames + bufferFrames)×quantity from the canister. No Roll or
+     * camera involvement — that happens later when the user loads one of the
+     * new stash entries.
+     *
+     * [bufferFrames] is the film the bulk loader fogs per roll while loading:
+     * it comes off the canister but isn't shootable, so the stash entry still
+     * counts only [frames].
      */
     suspend fun cutFromBulk(
         bulk: BulkRoll,
         frames: Int,
+        bufferFrames: Int,
         quantity: Int,
         expiryDate: String
     ) {
+        val buffer = bufferFrames.coerceAtLeast(0)
+        val usedPerRoll = frames + buffer
         // Amortise the canister price over the rolls it can produce so each cut roll
         // carries its share of the cost (otherwise per-roll cost shows €0 for bulk film).
+        // The fogged buffer is part of what each roll costs.
         val perRollCost =
             if (bulk.totalCost > 0.0 && bulk.totalFrames > 0 && frames > 0)
-                bulk.totalCost * frames / bulk.totalFrames
+                bulk.totalCost * usedPerRoll / bulk.totalFrames
             else 0.0
         repeat(quantity) {
             val stock = FilmStock(
@@ -126,6 +135,6 @@ class VaultRepository @Inject constructor(
             )
             filmDao.upsert(stock)
         }
-        bulkRollDao.upsert(bulk.copy(usedFrames = bulk.usedFrames + (frames * quantity)))
+        bulkRollDao.upsert(bulk.copy(usedFrames = bulk.usedFrames + (usedPerRoll * quantity)))
     }
 }

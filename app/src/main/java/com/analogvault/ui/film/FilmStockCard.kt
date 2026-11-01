@@ -5,10 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,6 +20,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,24 +77,25 @@ fun FilmStockCard(
         borderColor = if (dead) colors.edge.copy(alpha = 0.6f) else colors.edge,
         onClick = onClick,
     ) {
+        val spineBrush = spine?.takeIf { !dead }
         Row(
             Modifier
                 .padding(end = 4.dp, top = 10.dp, bottom = 4.dp)
-                .height(IntrinsicSize.Min),
+                // The spine runs the height of the card's body. It is painted
+                // behind the row rather than laid out as a fillMaxHeight child,
+                // because that needs the row to measure its intrinsic height —
+                // and a FlowRow's intrinsic height is a single line of chips, so
+                // any chip that wrapped onto a second line was cut off (that is
+                // how the bulk card's LOAD ROLL chip went missing).
+                .then(
+                    if (spineBrush != null) Modifier.drawBehind {
+                        drawRect(spineBrush, size = Size(4.dp.toPx(), size.height))
+                    } else Modifier
+                ),
             verticalAlignment = Alignment.Top,
         ) {
-            // The spine runs the height of the card's body, which is why the row
-            // measures its own intrinsic height: a fillMaxHeight inside a Column
-            // that wraps its content would otherwise collapse to nothing.
-            if (spine != null && !dead) {
-                Box(
-                    Modifier
-                        .width(4.dp)
-                        .fillMaxHeight()
-                        .background(spine)
-                )
-            }
-            Spacer(Modifier.width(if (spine != null && !dead) 10.dp else 14.dp))
+            // 4 dp of spine + 10 dp of gap, or the same 14 dp of plain margin.
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = stockName.uppercase(),
