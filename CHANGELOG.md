@@ -7,6 +7,9 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+### Fixed
+- Backup, restore and shot-log export results now pop up at the bottom of the Backup screen instead of appearing below the cards, where they were missed unless you scrolled. Successes clear after a few seconds; errors stay until you close them.
+
 ## [0.7.0] - 2026-10-25
 
 ### Fixed
@@ -46,7 +49,6 @@ are added and releases are cut.
 - **Fixed-lens aperture**: a fixed-lens camera can now carry its lens's widest and narrowest aperture. The light meter hatches exposures the lens can't reach, and the shot log's aperture list starts at the lens's widest stop.
 
 ### Fixed
-- Backup, restore and shot-log export results now pop up at the bottom of the Backup screen instead of appearing below the cards, where they were missed unless you scrolled. Successes clear after a few seconds; errors stay until you close them.
 - 120 and 220 rolls now get the frame count of the camera they're loaded into (8 in a 6x9, 10 in a 6x7, 16 in a 6x4.5, doubled for 220) instead of always 12. Rolls already in a camera are corrected too, unless more frames are logged than the new count allows.
 
 [v0.5.0] - 2026-07-02
