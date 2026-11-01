@@ -33,6 +33,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -385,16 +387,15 @@ private fun RollListCard(
         Row(
             Modifier
                 .padding(end = 4.dp, top = 10.dp, bottom = 8.dp)
-                .height(IntrinsicSize.Min),
+                // Painted, not laid out: a fillMaxHeight spine needs the row's
+                // intrinsic height, which counts one line of chips and clips any
+                // that wrap (see FilmStockCard).
+                .drawBehind {
+                    drawRect(stock.verticalBrush(), size = Size(4.dp.toPx(), size.height))
+                },
             verticalAlignment = Alignment.Top,
         ) {
-            Box(
-                Modifier
-                    .width(4.dp)
-                    .fillMaxHeight()
-                    .background(stock.verticalBrush())
-            )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     (film?.name ?: "Unknown film").uppercase(),
