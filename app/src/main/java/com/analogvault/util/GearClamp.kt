@@ -219,6 +219,31 @@ object GearClamp {
             ?: wider
     }
 
+    /** Whether [aperture] is one of the lens's own clicks, rather than a ring set between two. */
+    fun isLensStop(aperture: Double, limits: Limits): Boolean =
+        limits.lensStops.any { abs(log2(it / aperture)) < 0.05 }
+
+    /**
+     * Aperture priority with the ring turned between two clicks — f/6.3 on a
+     * lens engraved f/5.6 and f/8.
+     *
+     * No rung shows that aperture, since rungs sit on the lens's stops, so this
+     * makes one: the dial speed nearest what the held aperture needs, carrying
+     * the held aperture as set. Its [Rung.offStops] is then the error the
+     * between-stop setting leaves, which is the reason to set one at all.
+     * Speeds the body cannot run are skipped while any it can run remain.
+     */
+    fun rungBetweenStops(rungs: List<Rung>, iso: Int, ev: Double, aperture: Double, limits: Limits): Rung? {
+        val needed = shutterSecFor(iso, aperture, ev)
+        val nearest = { list: List<Rung> -> list.minByOrNull { abs(log2(it.shutterSec / needed)) } }
+        val base = nearest(rungs.filter { shutterReason(it.shutterSec, limits) == null })
+            ?: nearest(rungs) ?: return null
+        return base.copy(
+            aperture = aperture,
+            reason = shutterReason(base.shutterSec, limits) ?: apertureReason(aperture, limits),
+        )
+    }
+
     // ── The way out ──────────────────────────────────────────────────────────
 
     /**

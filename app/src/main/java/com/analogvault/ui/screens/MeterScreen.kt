@@ -86,6 +86,7 @@ import com.analogvault.util.Exposure
 import com.analogvault.util.GearClamp
 import kotlin.math.abs
 import kotlin.math.log2
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import com.analogvault.ui.film.DyeIcon
 import com.analogvault.ui.film.FilmIcons
@@ -333,8 +334,10 @@ fun MeterContent(
     val heldIsWideOpen = heldApertureTap == null && limits.widestAperture != null
     // Holding the widest stop goes back to following the lens, so a later lens
     // swap opens wide on the new glass.
+    // A tenth of a stop (0.05 in log2 N) counts as wide open: any wider and a
+    // ring set a fifth of a stop in from wide open would jump back to it.
     val holdAperture = { ap: Double ->
-        val wideOpen = limits.widestAperture?.let { abs(log2(ap / it)) < 0.1 } == true
+        val wideOpen = limits.widestAperture?.let { abs(log2(ap / it)) < 0.05 } == true
         heldApertureTap = if (wideOpen) null else ap
     }
     // Every speed with its aperture, before any filtering: shutter priority
@@ -361,7 +364,12 @@ fun MeterContent(
     // Manual picks no rung: both halves are dialled, and the light only gets
     // to say how far off they are.
     val selected = when (priority) {
-        MeterPriority.APERTURE -> GearClamp.rungForAperture(rungs, filmIso, effectiveEV, heldAperture)
+        // A ring turned between two clicks has no rung of its own; the speed
+        // nearest what it needs carries it instead.
+        MeterPriority.APERTURE ->
+            if (GearClamp.isLensStop(heldAperture, limits))
+                GearClamp.rungForAperture(rungs, filmIso, effectiveEV, heldAperture)
+            else GearClamp.rungBetweenStops(rungs, filmIso, effectiveEV, heldAperture, limits)
         MeterPriority.SHUTTER  -> fullLadder.find { it.shutter == shutter }
         MeterPriority.MANUAL   -> null
     }
@@ -799,15 +807,15 @@ fun MeterContent(
                     title = "APERTURE",
                     // The lens's own stops — its click spacing, its wide-open
                     // value and any custom stops — with the standard clicks past
-                    // either end hatched, plus the stop being held, which may
-                    // have come off a rung between them.
-                    values = (limits.snapScale + heldAperture)
+                    // either end hatched. A ring set between two of them lives
+                    // on the ring slider below, not as a chip here.
+                    values = limits.snapScale
                         .sorted()
                         .fold(emptyList<Double>()) { acc, ap ->
                             if (acc.lastOrNull()?.let { abs(log2(ap / it)) < 0.1 } == true) acc
                             else acc + ap
                         },
-                    isSelected = { abs(log2(it / heldAperture)) < 0.1 },
+                    isSelected = { abs(log2(it / heldAperture)) < 0.05 },
                     label = { GearClamp.formatAperture(it) },
                     achievable = { GearClamp.apertureReason(it, limits) == null },
                     onSelect = holdAperture,
@@ -824,11 +832,22 @@ fun MeterContent(
             } else {
                 ExposureLadder(
                     rungs = rungs,
-                    selectedShutter = selected?.shutter,
+                    selected = selected,
                     onSelect = { rung ->
                         if (aperturePriority) holdAperture(rung.aperture)
                         else vm.saveMeterShutter(rung.shutter)
                     },
+                )
+            }
+            // Between the clicks: most rings turn freely between their
+            // engraved stops, so where the aperture is the photographer's to
+            // set, it can be set there too.
+            if (aperturePriority || manual) {
+                Spacer(Modifier.height(10.dp))
+                ApertureRing(
+                    stops = limits.lensStops,
+                    value = heldAperture,
+                    onValue = holdAperture,
                 )
             }
             if (!limits.unclamped) {
@@ -1326,10 +1345,11 @@ private fun ClampBanner(advice: GearClamp.Advice) {
 @Composable
 private fun ExposureLadder(
     rungs: List<GearClamp.Rung>,
-    selectedShutter: String?,
+    selected: GearClamp.Rung?,
     onSelect: (GearClamp.Rung) -> Unit,
 ) {
     val colors = FilmTheme.colors
+    val selectedShutter = selected?.shutter
     val state = rememberLazyListState()
     val selectedIndex = rungs.indexOfFirst { it.shutter == selectedShutter }
     // Keep the chosen rung on screen as the light changes and the ladder shifts
@@ -1341,8 +1361,11 @@ private fun ExposureLadder(
         contentPadding = PaddingValues(horizontal = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        items(rungs, key = { it.shutter }) { rung ->
-            val sel = rung.shutter == selectedShutter
+        items(rungs, key = { it.shutter }) { ladderRung ->
+            val sel = ladderRung.shutter == selectedShutter
+            // The chosen rung shows the chosen exposure: with the ring set
+            // between two clicks that is not the stop the rung snapped to.
+            val rung = if (sel && selected != null) selected else ladderRung
             val border = when {
                 sel              -> colors.magenta
                 !rung.achievable -> colors.dead
@@ -1820,6 +1843,111 @@ private fun MeterSegment(
                 .height(3.dp)
                 .background(if (selected) accent else Color.Transparent)
         )
+    }
+}
+
+/**
+ * The aperture ring, for setting it between its clicks.
+ *
+ * Most rings turn freely between the engraved stops, so a full-stop lens can
+ * be set to an unmarked f/6.3 between f/5.6 and f/8. This is a strip in the
+ * same style as the EV ruler: a tall tick per click on the lens, a short one
+ * per third, and a nub at the held aperture, scrubbed in tenths of a stop.
+ * Within an eighth of a stop of a click the nub drops onto it, so the engraved
+ * stops stay easy to hit.
+ *
+ * [stops] are the lens's own clicks, widest first; the strip runs from the
+ * first to the last.
+ */
+@Composable
+private fun ApertureRing(
+    stops: List<Double>,
+    value: Double,
+    onValue: (Double) -> Unit,
+) {
+    if (stops.size < 2) return
+    val colors = FilmTheme.colors
+    // Position along the ring in stops (2·log2 N), so every stop is the same width.
+    val lo = 2 * log2(stops.first())
+    val hi = 2 * log2(stops.last())
+    val span = (hi - lo).toFloat()
+    val pos = (2 * log2(value)).coerceIn(lo, hi)
+    val onStop = stops.firstOrNull { abs(2 * log2(it) - pos) < 0.1 }
+    val prev = stops.lastOrNull { 2 * log2(it) <= pos }
+    val label = when {
+        onStop != null -> GearClamp.formatAperture(onStop)
+        prev != null -> GearClamp.formatAperture(value) + " · +" +
+            "%.1f".format(java.util.Locale.US, pos - 2 * log2(prev)) +
+            " PAST " + GearClamp.formatAperture(prev).uppercase()
+        else -> GearClamp.formatAperture(value)
+    }
+    // Inset so the end clicks and a nub on them are not clipped.
+    val insetDp = 8.dp
+    fun apertureAt(frac: Float): Double {
+        // Tenths of a stop, then onto a click if one is within an eighth.
+        val stopsIn = kotlin.math.round((lo + frac.coerceIn(0f, 1f) * span) * 10) / 10.0
+        stops.firstOrNull { abs(2 * log2(it) - stopsIn) < 0.125 }?.let { return it }
+        // One decimal, as a between-stop setting is written down: f/6.3, f/13.5.
+        return kotlin.math.round(2.0.pow(stopsIn / 2) * 10) / 10.0
+    }
+    Column(Modifier.padding(horizontal = 14.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("RING · BETWEEN THE CLICKS", style = FilmTheme.type.rebate, color = colors.dim)
+            Text(label, style = FilmTheme.type.data, color = colors.halide)
+        }
+        Spacer(Modifier.height(7.dp))
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(30.dp)
+                .clipToBounds()
+                .background(colors.film)
+                .border(1.dp, colors.edge)
+                .semantics {
+                    contentDescription = "Aperture ring. $label"
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current = (pos - lo).toFloat(),
+                        range = 0f..span,
+                    )
+                    setProgress { target ->
+                        onValue(apertureAt(target / span))
+                        true
+                    }
+                }
+                .pointerInput(stops) {
+                    val inset = insetDp.toPx()
+                    detectHorizontalDragGestures { change, _ ->
+                        change.consume()
+                        onValue(apertureAt((change.position.x - inset) / (size.width - 2 * inset)))
+                    }
+                }
+                .pointerInput(stops) {
+                    val inset = insetDp.toPx()
+                    detectTapGestures(onTap = { ofs ->
+                        onValue(apertureAt((ofs.x - inset) / (size.width - 2 * inset)))
+                    })
+                }
+        ) {
+            val inset = insetDp.toPx()
+            val w = size.width - 2 * inset
+            fun xOf(at: Double) = inset + w * ((at - lo) / span).toFloat()
+            var t = kotlin.math.ceil(lo * 3) / 3
+            while (t <= hi + 1e-9) {
+                drawLine(colors.dead, Offset(xOf(t), size.height * 0.6f), Offset(xOf(t), size.height), 1.dp.toPx())
+                t += 1.0 / 3
+            }
+            stops.forEach { st ->
+                val x = xOf(2 * log2(st))
+                drawLine(colors.dim, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
+            }
+            val nub = if (onStop != null) colors.cyan else colors.yellow
+            drawLine(nub, Offset(xOf(pos), 0f), Offset(xOf(pos), size.height), 3.dp.toPx())
+        }
+        Spacer(Modifier.height(3.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(GearClamp.formatAperture(stops.first()).uppercase(), style = FilmTheme.type.rebate, color = colors.dim)
+            Text(GearClamp.formatAperture(stops.last()).uppercase(), style = FilmTheme.type.rebate, color = colors.dim)
+        }
     }
 }
 
