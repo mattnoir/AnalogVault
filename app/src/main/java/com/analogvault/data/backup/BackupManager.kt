@@ -114,7 +114,10 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
             kitTempC = c.kitTempC ?: ""
         )
     },
-    zoomLevels  = (zoomLevels ?: emptyList()).filter { it.id != null },
+    // Backups from before v12 carry no zoom ratio (Gson leaves it 0): work it
+    // out the same way the database migration does.
+    zoomLevels  = (zoomLevels ?: emptyList()).filter { it.id != null }
+        .map { z -> z.copy(label = z.label ?: "").upgradedFromLegacy() },
     owmKey      = owmKey ?: "",
     savedTimers = savedTimers,
     savedAgitations = savedAgitations

@@ -164,13 +164,28 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
+/**
+ * Store each meter focal preset as a zoom ratio (v11 → v12).
+ *
+ * Presets used to be a focal length divided by a hard-coded 23 mm. The ratio
+ * starts at 0, which the app reads as "work it out from the old row" and fills
+ * in on the next launch (ZoomLevel.upgradedFromLegacy), so the zoom applied
+ * stays what it was.
+ */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE zoom_levels ADD COLUMN ratio REAL NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE zoom_levels ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 11,
+    version = 12,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true

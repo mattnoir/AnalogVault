@@ -8,6 +8,8 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.analogvault.data.camera.CameraOptics
+import com.analogvault.data.camera.CameraRig
 import com.analogvault.data.export.ExportResult
 import com.analogvault.data.export.RollExporter
 import com.analogvault.data.model.*
@@ -116,6 +118,22 @@ class MainViewModel @Inject constructor(
     private val _meterFrameVertical = MutableStateFlow(false)
     val meterFrameVertical: StateFlow<Boolean> = _meterFrameVertical.asStateFlow()
     // Thirds grid over the meter's preview. On unless switched off.
+    // What the back cameras say about their lenses; null until read, or when
+    // there is no back camera. Drives the meter's zoom and focal presets.
+    private val _cameraRig = MutableStateFlow<CameraRig?>(null)
+    val cameraRig: StateFlow<CameraRig?> = _cameraRig.asStateFlow()
+    private val _cameraOptics = _cameraRig.map { it?.main }
+    val cameraOptics: StateFlow<CameraOptics?> =
+        _cameraOptics.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val _cameraOpticsChecked = MutableStateFlow(false)
+    /**
+     * Some preset's focal length is the 23 mm guess rather than the phone's
+     * lens data or a value typed in by hand.
+     */
+    val zoomFocalsUnverified: StateFlow<Boolean> =
+        combine(zoomLevels, _cameraOptics, _cameraOpticsChecked) { levels, optics, checked ->
+            checked && optics?.equivMm == null && levels.any { !it.manual }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private val _meterGrid = MutableStateFlow(true)
     val meterGrid: StateFlow<Boolean> = _meterGrid.asStateFlow()
 
@@ -250,16 +268,17 @@ class MainViewModel @Inject constructor(
             _meterGrid.value     = repo.getSetting("meter_grid") != "false"
             val raw = repo.getSetting("custom_isos") ?: ""
             _customIsos.value = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
-            // Seed default zoom levels if empty
+            val rig = withContext(Dispatchers.Default) { CameraRig.detect(appContext) }
+            _cameraRig.value = rig
+            _cameraOpticsChecked.value = true
+            // Seed default zoom levels if empty — the ratios these cameras reach
             val zooms = repo.zoomLevels.first()
             if (zooms.isEmpty()) {
-                listOf(
-                    ZoomLevel(uid(), "0.6x", 13),
-                    ZoomLevel(uid(), "1x", 23),
-                    ZoomLevel(uid(), "3x", 70),
-                    ZoomLevel(uid(), "10x", 230)
-                ).forEach { repo.upsertZoomLevel(it) }
+                defaultZoomRatios(rig).forEach { r ->
+                    repo.upsertZoomLevel(zoomLevelFor(uid(), "", r, null, rig?.main))
+                }
             }
+            keepZoomLevelsInStep()
         }
     }
 
@@ -489,6 +508,60 @@ class MainViewModel @Inject constructor(
 
     // ─── Zoom levels ─────────────────────────────────────────────────────────
     fun upsertZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.upsertZoomLevel(z) }
+
+    /**
+     * Rows from before v12 get their ratio, and every preset not set by hand
+     * gets its focal length from the phone's lens data — again whenever rows
+     * arrive from a restore or the bound camera turns out to be another one.
+     */
+    private fun keepZoomLevelsInStep() = viewModelScope.launch {
+        combine(repo.zoomLevels, _cameraOptics) { levels, optics -> levels to optics }
+            .collect { (_, optics) ->
+                // Read the table afresh: every write below re-emits, and working
+                // from a stale emission can delete a row's last copy.
+                val levels = repo.zoomLevels.first()
+                val equiv = optics?.equivMm
+                val fixed = levels.map { z ->
+                    val up = z.upgradedFromLegacy()
+                    z to if (!up.manual && equiv != null)
+                        up.copy(mm = Math.round(up.ratio * equiv).toInt()) else up
+                }
+                // Seeds from every install a backup came from merge in by id,
+                // so the same preset piles up. Keep one of each.
+                val seen = HashSet<List<Any>>()
+                fixed.forEach { (old, new) ->
+                    when {
+                        !seen.add(listOf(new.label, new.ratio, new.mm, new.manual)) ->
+                            repo.deleteZoomLevel(old)
+                        new != old -> repo.upsertZoomLevel(new)
+                    }
+                }
+            }
+    }
+
+    /** Focal length a ratio gives on this phone; the 23 mm guess when it does not say. */
+    fun autoMmFor(ratio: Double): Int =
+        Math.round(ratio * (_cameraRig.value?.main?.equivMm ?: CameraOptics.FALLBACK_EQUIV_MM)).toInt()
+
+    /**
+     * Add ([existing] null) or edit a preset from the sheet's three fields.
+     * A ratio alone takes its focal length from the phone. A focal length alone
+     * becomes the ratio that frames like it. Both together pin the focal length
+     * by hand — unless it is exactly what the phone's lens data gives anyway.
+     * Returns false when neither field holds a number.
+     */
+    fun saveZoomLevel(existing: ZoomLevel?, label: String, ratioText: String, mmText: String): Boolean {
+        val ratioIn = ZoomLevel.ratioFromLabel(ratioText.trim().let { if (it.endsWith("x", true) || it.endsWith("×")) it else "${it}x" })
+        val mmIn = mmText.trim().toIntOrNull()?.takeIf { it > 0 }
+        val optics = _cameraRig.value?.main
+        val ratio = ratioIn ?: mmIn?.let { it / (optics?.equivMm ?: CameraOptics.FALLBACK_EQUIV_MM) }
+            ?: return false
+        // A preset asked for by focal length is named after it ("50mm"), not
+        // after the odd ratio that frames like it.
+        val name = label.ifBlank { if (ratioIn == null && mmIn != null) "${mmIn}mm" else "" }
+        upsertZoomLevel(zoomLevelFor(existing?.id ?: uid(), name, ratio, mmIn.takeIf { ratioIn != null }, optics))
+        return true
+    }
     fun deleteZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.deleteZoomLevel(z) }
 
     // ─── Bulk Rolls ───────────────────────────────────────────────────────────
@@ -1041,4 +1114,36 @@ sealed class WeatherState {
     object Loading : WeatherState()
     data class Success(val data: com.analogvault.data.network.WeatherResponse) : WeatherState()
     data class Error(val message: String) : WeatherState()
+}
+
+/**
+ * Ratios to start a fresh install with: the widest the cameras reach, each
+ * telephoto's own focal length, then common steps in between.
+ */
+internal fun defaultZoomRatios(rig: CameraRig?): List<Double> {
+    if (rig == null) return listOf(1.0, 2.0, 3.0)
+    fun tenth(r: Double) = Math.round(r * 10) / 10.0
+    val wide = rig.minZoom.takeIf { it < 0.95 }?.let(::tenth)
+    val teles = rig.lenses.map { tenth(rig.baseRatio(it)) }.filter { it > 1.0 }
+    // A round step right next to a real lens ("3x" beside a 2.9x tele) is noise.
+    val steps = listOf(1.0, 2.0, 3.0, 5.0, 10.0).filter { s -> teles.none { kotlin.math.abs(it - s) < 0.3 } }
+    return (listOfNotNull(wide) + teles + steps)
+        .filter { rig.inRange(it) }
+        .distinct().sorted()
+        .ifEmpty { listOf(1.0) }
+}
+
+/** A preset for [ratio]; [manualMm] pins its focal length unless the phone already gives that. */
+internal fun zoomLevelFor(id: String, label: String, ratio: Double, manualMm: Int?, optics: CameraOptics?): ZoomLevel {
+    val r = ratio.coerceIn(0.1, 100.0)
+    val equiv = optics?.equivMm
+    val autoMm = Math.round(r * (equiv ?: CameraOptics.FALLBACK_EQUIV_MM)).toInt()
+    val manual = manualMm != null && (equiv == null || manualMm != autoMm)
+    return ZoomLevel(
+        id = id,
+        label = label.trim().ifBlank { ZoomLevel.labelFor(r) },
+        mm = if (manual) manualMm!! else autoMm,
+        ratio = r,
+        manual = manual,
+    )
 }

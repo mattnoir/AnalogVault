@@ -64,7 +64,7 @@ interface BulkRollDao {
 
 @Dao
 interface ZoomLevelDao {
-    @Query("SELECT * FROM zoom_levels ORDER BY mm ASC")
+    @Query("SELECT * FROM zoom_levels ORDER BY ratio ASC, mm ASC, id ASC")
     fun getAll(): Flow<List<ZoomLevel>>
     @Upsert suspend fun upsert(z: ZoomLevel)
     @Delete suspend fun delete(z: ZoomLevel)

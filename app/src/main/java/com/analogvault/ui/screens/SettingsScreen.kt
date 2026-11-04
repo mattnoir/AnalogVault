@@ -40,6 +40,10 @@ fun SettingsScreen(vm: MainViewModel) {
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
     val remindChemicals   by vm.remindChemicals.collectAsState()
+    val zoomLevels        by vm.zoomLevels.collectAsState()
+    val cameraOptics      by vm.cameraOptics.collectAsState()
+    val focalsUnverified  by vm.zoomFocalsUnverified.collectAsState()
+    var showZoomEdit      by remember { mutableStateOf(false) }
 
     // Enabling reminders needs POST_NOTIFICATIONS on API 33+; the worker also
     // re-checks before posting, so a denied permission just means silence.
@@ -231,6 +235,29 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
+        // ── Light meter ──────────────────────────────────────────────────────
+        SectionCard("Light meter") {
+            val equiv = cameraOptics?.equivMm
+            Text(
+                when {
+                    focalsUnverified ->
+                        "This phone doesn't report its lens data, so the meter's focal " +
+                            "lengths are a guess. Set each zoom level for your phone."
+                    equiv != null ->
+                        "Focal presets are worked out from this phone's lens data " +
+                            "(main camera ≈ ${String.format(java.util.Locale.US, "%.1f", equiv)} mm " +
+                            "equivalent). Adjust any zoom level by hand if it doesn't match."
+                    else ->
+                        "Each zoom level's focal length is set by hand."
+                },
+                color = if (focalsUnverified) FilmTheme.colors.yellow else FilmTheme.colors.dim,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            VaultButton("Zoom levels (${zoomLevels.size})", small = true,
+                onClick = { showZoomEdit = true })
+        }
+
         // ── Reminders ────────────────────────────────────────────────────────
         SectionCard("Reminders") {
             Text(
@@ -288,6 +315,10 @@ fun SettingsScreen(vm: MainViewModel) {
                 VaultButton("Save", small = true, onClick = { vm.saveOwmKey(owmDraft) })
             }
         }
+    }
+
+    if (showZoomEdit) {
+        ZoomEditSheet(zoomLevels.sortedBy { it.zoomRatio }, vm) { showZoomEdit = false }
     }
 }
 
