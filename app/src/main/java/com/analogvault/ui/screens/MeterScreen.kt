@@ -100,7 +100,7 @@ fun MeterScreen(
 ) {
     val zoomLevels by vm.zoomLevels.collectAsState()
     val displayZooms = remember(zoomLevels) {
-        zoomLevels.distinctBy { it.label to it.mm }.sortedBy { it.mm }
+        zoomLevels.distinctBy { it.label to it.mm }.sortedBy { it.zoomRatio }
     }
     val context = LocalContext.current
     var hasCamPerm by remember {
@@ -258,6 +258,7 @@ fun MeterContent(
     // leaves the meter.
     DisposableEffect(Unit) { onDispose { providerRef?.unbindAll() } }
 
+
     // Base EV before zone placement: locked → manual, live → calibrated reading
     val baseEV = when {
         evLocked            -> manualEV
@@ -268,8 +269,58 @@ fun MeterContent(
     val effectiveEV = if (zoneActive) baseEV + Exposure.zoneOffsetEv(zone) else baseEV
 
     // ── Zoom ──────────────────────────────────────────────────────────────────
-    var activeZoom   by remember { mutableStateOf<ZoomLevel?>(null) }
     var showZoomEdit by remember { mutableStateOf(false) }
+    val rig by vm.cameraRig.collectAsState()
+    val focalsUnverified by vm.zoomFocalsUnverified.collectAsState()
+    // The zoom as the stock camera app counts it: 1.0x is the main camera,
+    // below that the ultrawide, further up the teles. The presets and the
+    // slider both set it; it is back at 1.0x whenever the meter opens.
+    var zoom by remember { mutableFloatStateOf(1f) }
+    // Which camera to bind for it, and the ratio to set on that camera
+    val zoomPick = remember(rig, zoom) { rig?.pick(zoom.toDouble()) }
+    val targetCameraId = zoomPick?.first?.cameraId
+    var boundCameraId by remember { mutableStateOf<String?>(null) }
+    var previewUc by remember { mutableStateOf<Preview?>(null) }
+    /** The ratio last sent to the camera; null forces a resend after a (re)bind. */
+    var appliedZoomRatio by remember { mutableStateOf<Float?>(null) }
+    // Bind the camera the zoom wants, and bind again when the zoom crosses
+    // onto another lens. Falls back to CameraX's default back camera when that
+    // one cannot be bound, or when the phone's lenses could not be read.
+    LaunchedEffect(providerRef, previewUc, targetCameraId) {
+        val provider = providerRef ?: return@LaunchedEffect
+        val preview = previewUc ?: return@LaunchedEffect
+        if (cameraCtrl != null && boundCameraId != null && boundCameraId == targetCameraId) return@LaunchedEffect
+        val wanted = targetCameraId?.let { id ->
+            CameraSelector.Builder().addCameraFilter { infos ->
+                infos.filter {
+                    try { Camera2CameraInfo.from(it).cameraId == id } catch (_: Exception) { false }
+                }
+            }.build()
+        }
+        try {
+            provider.unbindAll()
+            val cam = try {
+                provider.bindToLifecycle(lifecycleOwner, wanted ?: CameraSelector.DEFAULT_BACK_CAMERA, preview)
+            } catch (e: Exception) {
+                if (wanted == null) throw e
+                provider.unbindAll()
+                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview)
+            }
+            cameraCtrl    = cam.cameraControl
+            cameraInfoObj = cam.cameraInfo
+            boundCameraId = try { Camera2CameraInfo.from(cam.cameraInfo).cameraId } catch (_: Exception) { null }
+            appliedRegionKey = null   // re-apply AE region on (re)bind
+            appliedZoomRatio = null   // and the zoom
+            // A spot reading has to be a real AE region. Ask the
+            // sensor how many it will accept before promising one.
+            aeRegionsSupported = try {
+                (Camera2CameraInfo.from(cam.cameraInfo)
+                    .getCameraCharacteristic(
+                        CameraCharacteristics.CONTROL_MAX_REGIONS_AE
+                    ) ?: 0) > 0
+            } catch (_: Exception) { false }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
 
     // ── The clamp ─────────────────────────────────────────────────────────────
     val limits = remember(camera, lens) { GearClamp.limitsOf(camera, lens) }
@@ -459,24 +510,10 @@ fun MeterContent(
                             Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(captureCallback)
                             val preview = previewBuilder.build().also { it.setSurfaceProvider(pv.surfaceProvider) }
 
-                            try {
-                                provider.unbindAll()
-                                val cam = provider.bindToLifecycle(
-                                    lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview
-                                )
-                                cameraCtrl    = cam.cameraControl
-                                cameraInfoObj = cam.cameraInfo
-                                providerRef   = provider
-                                appliedRegionKey = null   // re-apply AE region on (re)bind
-                                // A spot reading has to be a real AE region. Ask the
-                                // sensor how many it will accept before promising one.
-                                aeRegionsSupported = try {
-                                    (Camera2CameraInfo.from(cam.cameraInfo)
-                                        .getCameraCharacteristic(
-                                            CameraCharacteristics.CONTROL_MAX_REGIONS_AE
-                                        ) ?: 0) > 0
-                                } catch (_: Exception) { false }
-                            } catch (e: Exception) { e.printStackTrace() }
+                            // Binding happens in the effect keyed on the camera the
+                            // zoom wants: an ultrawide or a tele is its own camera.
+                            previewUc   = preview
+                            providerRef = provider
                         }, ContextCompat.getMainExecutor(ctx))
                         // A new frame resizes the view, and a metering point maps
                         // through the view's size: re-aim the AE region once the
@@ -490,11 +527,16 @@ fun MeterContent(
                     },
                     update = { pv ->
                         pv.applyMonoFilter(if (mono) contrastDraft / 10f else null)
-                        // Apply zoom
-                        activeZoom?.mm?.toFloat()?.let { mm ->
-                            cameraInfoObj?.zoomState?.value?.let { state ->
-                                val ratio = (mm / 23f).coerceIn(state.minZoomRatio, state.maxZoomRatio)
-                                cameraCtrl?.setZoomRatio(ratio)
+                        // Apply zoom on whichever camera is bound. If binding the
+                        // wanted camera failed and the main one stands in, its own
+                        // digital zoom gets as close as it can.
+                        cameraInfoObj?.zoomState?.value?.let { state ->
+                            val local = if (zoomPick != null && boundCameraId == targetCameraId)
+                                zoomPick.second else zoom
+                            val want = local.coerceIn(state.minZoomRatio, state.maxZoomRatio)
+                            if (want != appliedZoomRatio) {
+                                appliedZoomRatio = want
+                                cameraCtrl?.setZoomRatio(want)
                             }
                         }
                         // Drive a real CONTROL_AE_REGIONS rectangle at the reticle.
@@ -865,6 +907,7 @@ fun MeterContent(
                     onClick = {
                         if (cameraOn) {
                             providerRef?.unbindAll(); providerRef = null
+                            previewUc = null; boundCameraId = null
                             cameraCtrl = null; cameraInfoObj = null
                             appliedRegionKey = null; aeRegionsSupported = null
                             cameraOn = false
@@ -958,18 +1001,34 @@ fun MeterContent(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(zoomLevels, key = { it.id }) { z ->
-                        val sel = activeZoom?.id == z.id
+                        val sel = abs(zoom - z.zoomRatio) < 0.005
+                        // The camera clamps a ratio it cannot reach, so the preset
+                        // would frame like some other focal length. Say so.
+                        val reachable = rig?.inRange(z.zoomRatio) != false
+                        val guessed = focalsUnverified && !z.manual
                         Column(
                             Modifier
                                 .background(colors.film)
                                 .border(1.dp, if (sel) colors.violet else colors.edge)
-                                .clickable { activeZoom = if (sel) null else z }
+                                .clickable { zoom = if (sel) 1f else z.zoomRatio.toFloat() }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(z.label, style = FilmTheme.type.data,
-                                color = if (sel) colors.violet else colors.halide)
-                            Text("${z.mm} MM", style = FilmTheme.type.rebate, color = colors.dim)
+                                color = when {
+                                    sel        -> colors.violet
+                                    !reachable -> colors.dead
+                                    else       -> colors.halide
+                                })
+                            Text(
+                                when {
+                                    !reachable -> "OUT OF RANGE"
+                                    guessed    -> "${z.mm} MM ?"
+                                    else       -> "${z.mm} MM"
+                                },
+                                style = FilmTheme.type.rebate,
+                                color = if (guessed && reachable) colors.yellow else colors.dim,
+                            )
                         }
                     }
                     item {
@@ -985,6 +1044,22 @@ fun MeterContent(
                             Text("EDIT", style = FilmTheme.type.rebate, color = colors.dim)
                         }
                     }
+                }
+                val r = rig
+                if (cameraOn && hasCamPerm && r != null && r.maxZoom > r.minZoom + 0.01) {
+                    ZoomSlider(zoom, r) { zoom = it }
+                }
+                if (focalsUnverified) {
+                    Text(
+                        "This phone doesn't report its lens data, so these focal lengths " +
+                            "assume a 23 mm main camera and may be off. Tap EDIT to set " +
+                            "each one for your phone.",
+                        color = colors.yellow,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .clickable { showZoomEdit = true },
+                    )
                 }
             }
 
@@ -1957,48 +2032,118 @@ private fun DrawScope.drawMeteringOverlay(
 
 // ─── Zoom Edit Sheet ──────────────────────────────────────────────────────────
 
+/**
+ * The phone's focal presets. Each is a zoom ratio; its focal length comes from
+ * the phone's lens data unless typed in by hand, which is how a phone that
+ * reports nothing (or reports it wrong) is put right.
+ */
 @Composable
 fun ZoomEditSheet(zoomLevels: List<ZoomLevel>, vm: MainViewModel, onDismiss: () -> Unit) {
     val colors = FilmTheme.colors
+    val rig by vm.cameraRig.collectAsState()
     var newLabel  by remember { mutableStateOf("") }
+    var newRatio  by remember { mutableStateOf("") }
     var newMm     by remember { mutableStateOf("") }
     var editingId by remember { mutableStateOf<String?>(null) }
     var editLabel by remember { mutableStateOf("") }
+    var editRatio by remember { mutableStateOf("") }
     var editMm    by remember { mutableStateOf("") }
+    val decimalKb = androidx.compose.ui.text.input.KeyboardType.Decimal
+    val numberKb  = androidx.compose.ui.text.input.KeyboardType.Number
 
-    VaultSheet("Edit Zoom Levels", onDismiss) {
+    VaultSheet("Zoom Levels", onDismiss) {
+        val o = rig?.main
+        val equiv = o?.equivMm
+        Text(
+            if (o != null && equiv != null) {
+                buildString {
+                    append("Main camera ≈ ${fmtMm(equiv)} mm equivalent")
+                    val focal = o.focalMm
+                    val sensor = o.sensorMm
+                    val crop = o.cropFactor
+                    if (o.source == "sensor" && focal != null && sensor != null && crop != null) {
+                        append(" — ${fmtMm(focal)} mm lens on a ")
+                        append("${fmtMm(sensor.first)} × ${fmtMm(sensor.second)} mm sensor, ")
+                        append("crop ×${String.format(java.util.Locale.US, "%.2f", crop)}")
+                    } else if (o.source == "calibration") {
+                        append(" — from the lens calibration")
+                    }
+                    append(".")
+                    rig?.lenses?.filter { it.cameraId != o.cameraId }?.forEach { l ->
+                        val k = rig!!.kind(l).lowercase().replaceFirstChar { it.uppercase() }
+                        append(" $k ≈ ${fmtMm(l.equivMm ?: 0.0)} mm (${fmtRatio(rig!!.baseRatio(l))}×).")
+                    }
+                    rig?.let { append(" Zoom ${fmtRatio(it.minZoom)}–${fmtRatio(it.maxZoom)}×.") }
+                    append(" Focal lengths follow from that unless you type one in.")
+                }
+            } else {
+                "This phone doesn't report its lens data. Focal lengths below assume a " +
+                    "23 mm main camera — type in the real value for each zoom level " +
+                    "(the phone's spec sheet lists them)."
+            },
+            color = if (equiv != null) colors.dim else colors.yellow,
+            fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(10.dp))
         zoomLevels.forEach { z ->
             if (editingId == z.id) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         VaultTextField(editLabel, { editLabel = it }, "Label", modifier = Modifier.weight(1f))
+                        VaultTextField(editRatio, { editRatio = it }, "Zoom ×", modifier = Modifier.weight(0.7f),
+                            keyboardType = decimalKb)
                         VaultTextField(editMm, { editMm = it }, "mm", modifier = Modifier.weight(0.7f),
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                            keyboardType = numberKb,
+                            placeholder = editRatio.replace(',', '.').toDoubleOrNull()
+                                ?.let { "${vm.autoMmFor(it)}" }.orEmpty())
                     }
+                    Text(
+                        if (equiv != null) "Leave mm empty to take it from the phone's lens data."
+                        else "Set mm to what this zoom gives on your phone.",
+                        color = colors.dim, fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         VaultButton("Save", small = true, modifier = Modifier.weight(1f), onClick = {
-                            if (editLabel.isNotBlank()) {
-                                vm.upsertZoomLevel(z.copy(label = editLabel.trim(), mm = editMm.toIntOrNull() ?: z.mm))
-                                editingId = null
-                            }
+                            if (vm.saveZoomLevel(z, editLabel, editRatio, editMm)) editingId = null
                         })
                         VaultButton("Cancel", small = true, ghost = true, modifier = Modifier.weight(1f),
                             onClick = { editingId = null })
                     }
                 }
             } else {
+                val reachable = rig?.inRange(z.zoomRatio) != false
+                val guessed = !z.manual && equiv == null
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("${z.label}  ${z.mm}mm", color = colors.halide, fontSize = 13.sp)
+                    Column(Modifier.weight(1f)) {
+                        Text("${z.label}  ·  ${fmtRatio(z.zoomRatio)}×  ·  ${z.mm} mm",
+                            color = if (reachable) colors.halide else colors.dead, fontSize = 13.sp)
+                        Text(
+                            when {
+                                !reachable -> "Out of this phone's zoom range"
+                                z.manual   -> "Set by hand"
+                                guessed    -> "Guessed — set the real value"
+                                else       -> "From the phone's lens data"
+                            },
+                            color = if (guessed && reachable) colors.yellow else colors.dim,
+                            fontSize = 11.sp,
+                        )
+                    }
                     Row {
-                        IconButton(onClick = { editingId = z.id; editLabel = z.label; editMm = z.mm.toString() },
-                            Modifier.size(28.dp)) {
-                            DyeIcon(FilmIcons.Edit, null, size = 14.dp, tint = colors.dim)
+                        IconButton(onClick = {
+                            editingId = z.id; editLabel = z.label
+                            editRatio = fmtRatio(z.zoomRatio)
+                            // An automatic value stays blank, so saving keeps it automatic
+                            editMm = if (z.manual) z.mm.toString() else ""
+                        }, Modifier.size(28.dp)) {
+                            DyeIcon(FilmIcons.Edit, "Edit ${z.label}", size = 14.dp, tint = colors.dim)
                         }
                         IconButton(onClick = { vm.deleteZoomLevel(z) }, Modifier.size(28.dp)) {
-                            DyeIcon(FilmIcons.Trash, null, size = 14.dp, tint = colors.mask.copy(alpha = 0.55f))
+                            DyeIcon(FilmIcons.Trash, "Delete ${z.label}", size = 14.dp,
+                                tint = colors.mask.copy(alpha = 0.55f))
                         }
                     }
                 }
@@ -2007,19 +2152,73 @@ fun ZoomEditSheet(zoomLevels: List<ZoomLevel>, vm: MainViewModel, onDismiss: () 
         Spacer(Modifier.height(10.dp))
         HorizontalDivider(color = colors.edge)
         Spacer(Modifier.height(10.dp))
-        Text("Add zoom level", color = colors.dim, fontSize = 12.sp)
+        Text("Add zoom level — a zoom, a focal length to frame like, or both",
+            color = colors.dim, fontSize = 12.sp)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VaultTextField(newLabel, { newLabel = it }, "Label (e.g. 2x)", modifier = Modifier.weight(1f))
+            VaultTextField(newLabel, { newLabel = it }, "Label", modifier = Modifier.weight(1f),
+                placeholder = "optional")
+            VaultTextField(newRatio, { newRatio = it }, "Zoom ×", modifier = Modifier.weight(0.7f),
+                keyboardType = decimalKb)
             VaultTextField(newMm, { newMm = it }, "mm", modifier = Modifier.weight(0.7f),
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                keyboardType = numberKb)
         }
         Spacer(Modifier.height(8.dp))
         VaultButton("Add", modifier = Modifier.fillMaxWidth(), onClick = {
-            if (newLabel.isNotBlank() && newMm.isNotBlank()) {
-                vm.upsertZoomLevel(ZoomLevel(uid(), newLabel.trim(), newMm.toIntOrNull() ?: 0))
-                newLabel = ""; newMm = ""
+            if (vm.saveZoomLevel(null, newLabel, newRatio, newMm)) {
+                newLabel = ""; newRatio = ""; newMm = ""
             }
         })
     }
+}
+
+/**
+ * Continuous zoom across all the back cameras, on a log scale so 0.6x–1x gets
+ * as much travel as 5x–8x. Says which lens is in use and what it frames like.
+ */
+@Composable
+private fun ZoomSlider(zoom: Float, rig: com.analogvault.data.camera.CameraRig, onZoom: (Float) -> Unit) {
+    val colors = FilmTheme.colors
+    val lo = rig.minZoom.toFloat()
+    val hi = rig.maxZoom.toFloat()
+    val span = kotlin.math.ln(hi / lo)
+    val pos = (kotlin.math.ln(zoom.coerceIn(lo, hi) / lo) / span).coerceIn(0f, 1f)
+    val lens = rig.pick(zoom.toDouble()).first
+    val equiv = rig.main.equivMm
+    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp).padding(top = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${fmtRatio(zoom.toDouble())}×", style = FilmTheme.type.data, color = colors.halide)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                buildString {
+                    append(rig.kind(lens))
+                    if (equiv != null) append(" · ${Math.round(zoom * equiv)} MM")
+                },
+                style = FilmTheme.type.rebate, color = colors.dim,
+            )
+        }
+        androidx.compose.material3.Slider(
+            value = pos,
+            onValueChange = { p ->
+                // Snap onto 1.0x, where the main camera takes over, so it is
+                // easy to land on
+                val z = lo * kotlin.math.exp(p * span)
+                onZoom(if (abs(z - 1f) < 0.03f) 1f else Math.round(z * 100) / 100f)
+            },
+            colors = androidx.compose.material3.SliderDefaults.colors(
+                thumbColor = colors.violet,
+                activeTrackColor = colors.violet,
+                inactiveTrackColor = colors.edge,
+            ),
+            modifier = Modifier.semantics { contentDescription = "Zoom" },
+        )
+    }
+}
+
+private fun fmtMm(v: Double) =
+    String.format(java.util.Locale.US, if (v >= 10) "%.1f" else "%.2f", v)
+
+private fun fmtRatio(v: Double): String {
+    val r = Math.round(v * 100) / 100.0
+    return if (r == Math.floor(r)) r.toInt().toString() else r.toString()
 }

@@ -350,12 +350,64 @@ data class BulkRoll(
 
 // ─── Zoom Level (for light meter) ─────────────────────────────────────────────
 
+/**
+ * One focal preset on the meter: a zoom ratio of the phone's back camera and
+ * the 35 mm-equivalent focal length it frames like.
+ *
+ * The ratio is what is applied to the camera. [mm] follows it — ratio × the
+ * camera's equivalent at 1.0× — unless [manual], when it is whatever the user
+ * typed for their phone and is left alone.
+ */
 @Entity(tableName = "zoom_levels")
 data class ZoomLevel(
     @PrimaryKey val id: String,
     val label: String,
-    val mm: Int
-)
+    val mm: Int,
+    /** Zoom ratio applied to the camera. 0 = a row from before v12, see [zoomRatio]. */
+    val ratio: Double = 0.0,
+    /** [mm] was set by hand and is not recomputed from the phone's lens data. */
+    val manual: Boolean = false
+) {
+    /** The ratio to apply, rows from before ratios were stored included. */
+    val zoomRatio: Double
+        get() = if (ratio > 0.0) ratio else legacyRatio(label, mm)
+
+    /**
+     * A row from before v12 (or from an older backup) as a ratio-based one.
+     * Those rows applied mm / 23 to the camera, so the ratio keeps doing exactly
+     * that, except where the label names the ratio outright ("3x"). The mm is
+     * taken as typed by hand only when it is neither one of the seeded defaults
+     * nor what the old 23 mm rule gives for the ratio — anything else was the
+     * old guess and is recomputed from the phone's lens data.
+     */
+    fun upgradedFromLegacy(): ZoomLevel {
+        if (ratio > 0.0) return this
+        val r = legacyRatio(label, mm)
+        val seeded = (label to mm) in LEGACY_SEEDS
+        val guessed = mm == Math.round(r * LEGACY_EQUIV_MM).toInt()
+        return copy(ratio = r, manual = !seeded && !guessed)
+    }
+
+    companion object {
+        private const val LEGACY_EQUIV_MM = 23.0
+        private val LEGACY_SEEDS = setOf("0.6x" to 13, "1x" to 23, "3x" to 70, "10x" to 230)
+        private val RATIO_LABEL = Regex("""^\s*(\d+(?:[.,]\d+)?)\s*[x×]\s*$""", RegexOption.IGNORE_CASE)
+
+        /** "3x", "0.6×", "2,5x" → that ratio; anything else → null. */
+        fun ratioFromLabel(label: String): Double? =
+            RATIO_LABEL.find(label)?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
+                ?.takeIf { it > 0.0 }
+
+        private fun legacyRatio(label: String, mm: Int): Double =
+            ratioFromLabel(label) ?: (mm / LEGACY_EQUIV_MM).takeIf { it > 0.0 } ?: 1.0
+
+        /** "0.6x", "1x", "2.5x". */
+        fun labelFor(ratio: Double): String {
+            val r = Math.round(ratio * 10) / 10.0
+            return (if (r == Math.floor(r)) r.toInt().toString() else r.toString()) + "x"
+        }
+    }
+}
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
