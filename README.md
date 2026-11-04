@@ -1,329 +1,223 @@
-# Analog Vault (Android)
+# Analog Vault
 
-A film-photography companion app for Android built with **Kotlin + Jetpack Compose**.
-
-Analog Vault helps you manage film stocks, gear, active rolls, darkroom chemistry, metering, weather notes, and backups in one offline-first app.
-
----
+Android app for film photographers. It tracks film, cameras and lenses, logs shots per roll, meters light with the phone camera, and runs darkroom timers. Data is stored locally on the device and the app works offline, except for weather lookups.
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Core Features](#core-features)
-- [Screens and Workflow](#screens-and-workflow)
-- [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [Data Model](#data-model)
-- [Backup & Restore](#backup--restore)
-- [Weather Integration](#weather-integration)
+- [Features](#features)
+- [Installation](#installation)
+- [Basic usage](#basic-usage)
+- [Navigation](#navigation)
+- [Optional configuration](#optional-configuration)
 - [Permissions](#permissions)
-- [Requirements](#requirements)
-- [Quick Install (Recommended)](#quick-install-recommended)
-- [Getting Started (For Developers)](#getting-started-for-developers)
-- [Build & Run (Developer)](#build--run-developer)
-- [Release Build / Signing](#release-build--signing)
-- [Project Structure](#project-structure)
-- [Roadmap / Known Issues](#roadmap--known-issues)
+- [Data storage and backup](#data-storage-and-backup)
+- [Building from source](#building-from-source)
+- [Project structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
 
----
+## Features
 
-## Overview
+**Stash**
+- Film stocks, bulk film, cameras, lenses and accessories
+- Film fields: ISO, type, format, expiry, storage, quantity, purchase date, cost
+- Formats: 135, 120, 220, 4x5, 8x10, Super 8, 110, 126, instant
+- Camera mounts and lens adapters are tracked; only compatible lenses are offered for a camera
+- Bulk film can be cut into rolls, with configurable buffer frames
+- Depth-of-field and hyperfocal calculator on each lens
 
-Analog Vault is designed for photographers who shoot film and want a practical mobile workflow:
+**Rolls**
+- Load film into a camera, with optional shoot-at-ISO (push/pull)
+- Per-shot log: shutter, aperture, ISO, lens, location, notes, weather, photo
+- One-tap quick-log (+1) that reuses the last exposure
+- Roll stages: In camera, To dev, To scan, Done
+- Development log and scan log per roll
+- Per-roll CSV export and printable PDF contact sheet
 
-- Track stash inventory (film, cameras, lenses, accessories)
-- Load and manage active rolls
-- Log shots with exposure + notes + optional location/photo
-- Track chemistry and development capacity
-- Use a built-in CameraX light meter
-- Capture weather context for sessions
-- Export/import your vault as JSON backup (optionally with photos)
+**Light meter**
+- Live metering using the phone camera
+- Aperture priority, shutter priority and manual modes
+- Metering modes: matrix, centre-weighted, spot, highlight
+- Zone System placement and scene contrast readout
+- Reciprocity failure correction for exposures of 1 s or longer
+- Viewfinder crop to the negative shape (3:2, 4:3, 5:4, 1:1, 16:9, XPan, 3:1)
+- Black and white preview with contrast ruler
+- Calibration offset in 1/3-stop steps
+- Exposures outside the range of the selected camera or lens are marked on the scale
 
-The app uses a local Room database and works offline for core functionality.
+**Darkroom**
+- Chemistry inventory with mix date, capacity and rolls used
+- Development time increases per roll as chemistry is used
+- Chemistry kits (for example C-41, E-6) with multiple baths
+- Timers generated from chemistry and kits, plus custom timers with per-step agitation
+- Developer times entered at 20 °C are scaled to the working temperature
+- Optional vibration cue for agitation
 
----
+**Other**
+- Weather and golden-hour information (OpenWeatherMap)
+- Statistics: roll and frame counts, cost breakdown, most-used film and camera, aperture and shutter histograms
+- Shot map (OpenStreetMap)
+- Reminders for expiring film, undeveloped rolls and old chemistry
+- Safelight (red) colour scheme
+- Metric and imperial units, configurable currency symbol
+- Rearrangeable Home screen
 
-## Core Features
+## Installation
 
-### 1) Stash Management
+1. Download the latest `AnalogVault-vX.Y.Z.apk` from the [Releases](https://github.com/mattnoir/AnalogVault/releases) page.
+2. Open the file on the device. If prompted, allow installation from the browser or file manager used.
+3. Start Analog Vault.
 
-- Film stocks with ISO, format/shot count, expiry, storage, quantity, notes
-- Cameras with mount system + adapter compatibility fields
-- Lenses with focal length / max aperture / mount
-- Accessories inventory
-- Filtering support for stash lists
+Requires Android 8.0 (API 26) or later.
 
-### 2) Active Rolls
+To build the app yourself, see [Building from source](#building-from-source).
 
-- Load film into camera
-- Track roll lifecycle: **Shooting → Finished → Developed → Scanned**
-- Shot logging per roll with:
-    - shutter, aperture, ISO
-    - lens
-    - location
-    - notes
-    - weather text
-    - optional thumbnail path from captured/selected image
-- Development and scan logs attached to each roll
+## Basic usage
 
-### 3) Darkroom
+The steps below follow one roll from purchase to archive.
 
-- Chemical inventory and usage tracking
-- Auto/manual roll counts per chemical
-- Exhaustion awareness (based on max-roll setup)
-- Development-time adjustment fields (base time + per-roll adjustment)
+**1. Add film and a camera.** Open Stash. Use the Film tab to add a stock and the Cameras tab to add a camera. Names autocomplete from a built-in list. Lenses and accessories have their own tabs.
 
-### 4) Light Meter
+**2. Load the roll.** In Stash, select a film and choose Load roll. Select the camera. Optionally set Shoot at ISO. The frame count is taken from the film and the camera format. Unload returns the roll to the stash.
 
-- Live CameraX-based metering workflow
-- Exposure helpers (ISO/shutter/aperture workflows)
-- Zoom level presets stored in database
+**3. Meter.** Press the round shutter button in the centre of the bottom bar to open the light meter. Select a mode:
+- A: fix the aperture, the meter calculates the shutter speed
+- S: fix the shutter speed, the meter calculates the aperture
+- M: set both; a needle shows the offset from the metered exposure in stops
 
-### 5) Weather
+Use Log to record the frame with the selected exposure. When the camera preview is on, the viewfinder image is attached to the shot.
 
-- OpenWeatherMap current-weather fetch flow
-- API key is entered in-app and saved locally in settings
-- Useful for contextual shooting notes
+**4. Log shots.** Open Rolls and select the roll. Use +1 on the roll card to log a frame with the previous exposure, the current time, cached weather and GPS position (if permission is granted). Open the shot sheet to edit shutter, aperture, ISO, lens, location and notes.
 
-### 6) Statistics
+**5. Finish and develop.** Mark the roll Finished, then record development (process, chemistry, cost). To time development, open More > Darkroom > Timers and start a timer.
 
-- Summary metrics across rolls/shots and statuses
-- Rankings / breakdown views for film and camera usage
+**6. Scan.** Record the scan method and cost. The roll moves to Done.
 
-### 7) Backup & Restore
+**7. Export and back up.** From a roll's detail screen, export a CSV or PDF contact sheet. To back up the whole vault, open More > Backup and choose Export Backup.
 
-- Export full vault data to JSON
-- Import from JSON
-- Optional photo embedding in backup as Base64 (size-limited per image)
+## Navigation
 
----
+```
+Bottom bar:   Home | Stash | [Shutter -> Meter] | Rolls | More
 
-## Screens and Workflow
+More:         Darkroom      timers, chemistry, develop and scan logs
+              Stats         numbers, habits, shot map
+              Weather       forecast and golden hour
+              Backup        export and import
+              Home layout   reorder or hide Home sections
+              Settings      units, currency, safelight, reminders, API key
+```
 
-Main navigation uses a bottom bar for high-frequency tabs plus a drawer for secondary tabs:
+| Screen | Contents |
+|---|---|
+| Home | Loaded roll, pipeline counts, weather, light conditions, nudges (latent image, expiring stock, low bulk film) |
+| Stash | Tabs: Film, Cameras, Lenses, Accessories. Bulk film is listed on the Film tab. |
+| Rolls | Filter chips: In camera, To dev, To scan, Done. Roll detail has shot log, contact sheet and map. |
+| Meter | Full-screen light meter, opened from the shutter button. Back returns to the previous screen. |
+| Darkroom | Tabs: Chemistry, Timers |
+| Stats | Tabs: Numbers, Habits. Shot map opens from here or from a roll. |
 
-- **Bottom tabs:** Home, Rolls, Darkroom, Meter, Stash
-- **Drawer / More:** Weather, Stats, Backup (and full tab list)
+Long-pressing the shutter button toggles Safelight.
 
-Typical usage flow:
+## Optional configuration
 
-1. Add stash items (film/camera/lens)
-2. Load a roll
-3. Log shots while shooting
-4. Mark roll finished, then developed/scanned
-5. Track chemistry usage in darkroom
-6. Review stats and export backup periodically
+**Weather.** Weather uses OpenWeatherMap. Create an API key at <https://openweathermap.org/api> (the free tier is sufficient), then enter it in More > Settings. Without a key, the rest of the app is unaffected.
 
----
+**Reminders.** Disabled by default; enable them in More > Settings. A daily check can notify about:
 
-## Tech Stack
+| Condition | Threshold |
+|---|---|
+| Film expiring | Within 60 days, or already expired |
+| Finished roll not developed | 3 weeks or more |
+| Chemistry age | Mixed 60 days ago or more |
 
-- **Language:** Kotlin (JVM target 17)
-- **UI:** Jetpack Compose + Material 3
-- **DI:** Hilt
-- **Database:** Room (SQLite)
-- **Camera / metering:** CameraX
-- **Networking:** Retrofit + Gson + OkHttp logging
-- **Images:** Coil
-- **Location:** Google Play Services Fused Location
-- **Map tiles:** osmdroid (OpenStreetMap)
-- **Concurrency:** Kotlin Coroutines + Flow
-
----
-
-## Architecture
-
-The app follows a practical layered approach:
-
-- **UI layer:** Compose screens/components
-- **State layer:** `MainViewModel` + `BackupViewModel`
-- **Data layer:** `VaultRepository`
-- **Persistence/network:** Room DAOs + Retrofit API service
-
-Dependency injection is centralized in `AppModule`.
-
----
-
-## Data Model
-
-Room entities include:
-
-- `FilmStock`
-- `Camera`
-- `Lens`
-- `Accessory`
-- `Roll` (with embedded shot/dev/scan structures via converters)
-- `Chemical`
-- `BulkRoll`
-- `ZoomLevel`
-- `Setting`
-
-JSON/Gson converters are used for list/object fields (e.g., roll shots and logs).
-
----
-
-## Backup & Restore
-
-Backup payload includes:
-
-- films, cameras, lenses, accessories
-- rolls, chemicals, zoom levels
-- weather API key (`owm_key` setting)
-- optional photo map (`path -> base64`)
-
-Backup format is versioned (`version = 2` currently), with compatibility handling for older format versions.
-
----
-
-## Weather Integration
-
-The app consumes OpenWeatherMap via Retrofit.
-
-- You provide your own OWM API key in-app
-- Key is stored in local settings table
-- Weather is used for context in photography logging
-
-Get an API key: <https://openweathermap.org/api>
-
----
+Each category has its own toggle. An item is not notified again for two weeks. On Android 13 and later the app requests notification permission when reminders are enabled.
 
 ## Permissions
 
-Declared permissions include:
+| Permission | Used for |
+|---|---|
+| Camera | Light meter, attaching photos to shots |
+| Location (fine, coarse) | GPS on shots, shot map, local weather |
+| Photos / media | Selecting an existing photo for a shot |
+| Notifications | Reminders |
+| Vibrate | Darkroom timer cues |
+| Internet | Weather requests, map tiles |
 
-- `INTERNET`
-- `CAMERA`
-- `ACCESS_FINE_LOCATION`
-- `ACCESS_COARSE_LOCATION`
-- `READ_MEDIA_IMAGES` (modern Android)
-- `READ_EXTERNAL_STORAGE` (maxSdk 32)
-- `WRITE_EXTERNAL_STORAGE` (maxSdk 29, for osmdroid tile cache compatibility)
+A camera is not required to install the app.
 
-Camera hardware is marked as optional so the app can still install on devices without a camera.
+## Data storage and backup
 
----
+- Data is stored in a local Room (SQLite) database. There are no accounts.
+- Network requests are made to OpenWeatherMap (only when a key is set) and to OpenStreetMap for map tiles.
+- Backups are `.avault` files: a ZIP containing version-tagged JSON and, optionally, shot photos. The OpenWeatherMap key is included.
+- Import is additive: records with the same ID are overwritten, other records are merged in, and nothing is deleted. Older plain `.json` exports can also be imported.
+- To move to another device, install the app and import the backup file.
+- "Export All Shot Logs" in Backup writes all shots from all rolls to one CSV.
+- User data is included in Android device backups; device-specific map preferences are excluded.
 
-## Requirements
+## Building from source
 
-- **Android minSdk:** 26
-- **targetSdk / compileSdk:** 35
-- **JDK:** 17
-- **Android Studio:** recent stable (Hedgehog+ recommended)
-
----
-
-## Quick Install (Recommended)
-
-The primary distribution channel for Analog Vault is the prebuilt **release APK** included with releases.
-
-1. Download the latest release APK from the project’s GitHub Releases page.
-2. On Android, allow install from your browser/file manager if prompted.
-3. Open the downloaded `.apk` and install.
-
-If you only want to use the app (not develop it), this is the recommended path.
-
----
-
-## Getting Started (For Developers)
-
-1. Clone the repository:
-
-   ```bash
-   git clone <your-fork-or-repo-url>
-   cd AnalogVault
-   ```
-
-2. Open in Android Studio.
-
-3. Let Gradle sync complete.
-
-4. Run on emulator or device.
-
----
-
-## Build & Run (Developer)
-
-### Debug APK
+Requirements: Android Studio (recent stable), JDK 17, Android SDK 35.
 
 ```bash
+git clone https://github.com/mattnoir/AnalogVault.git
+cd AnalogVault
 ./gradlew assembleDebug
 ```
 
-Generated APK (typical path):
-
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
-
-### Install on connected device
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. To install on a connected device or emulator:
 
 ```bash
 ./gradlew installDebug
 ```
 
----
+On Windows, use `gradlew.bat`. The project can also be opened and run directly from Android Studio.
 
-## Release Build / Signing
+Debug builds use the application ID `com.analogvault.debug` and the label "Analog Vault ·debug", so they can be installed alongside the release app.
 
-Release signing can be configured via environment variables:
+**Release build.** Set `KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`, then run `./gradlew assembleRelease`. If `KEYSTORE_PATH` is not set, the release build is signed with the debug key. Pushing a tag matching `v*` runs the GitHub Actions workflow, which builds the APK and creates a release with notes taken from `CHANGELOG.md`.
 
-- `KEYSTORE_PATH`
-- `STORE_PASSWORD`
-- `KEY_ALIAS`
-- `KEY_PASSWORD`
+**Stack:** Kotlin (JVM 17), Jetpack Compose with Material 3, Hilt, Room, CameraX, Retrofit with Gson and OkHttp, Coil, WorkManager, Google Play Services Location, osmdroid.
 
-Then run:
+**SDK levels:** minSdk 26, targetSdk 35, compileSdk 35.
 
-```bash
-./gradlew assembleRelease
-```
-
-If `KEYSTORE_PATH` is not set, release build falls back to debug signing configuration in current setup.
-
----
-
-## Project Structure
+## Project structure
 
 ```text
-com.analogvault/
-├── MainActivity.kt               # App entry, nav shell, tab/drawer scaffold
-├── AppModule.kt                  # Hilt module bindings/providers
+app/src/main/java/com/analogvault/
+├── MainActivity.kt          Entry point, tab scaffold, shutter and meter navigation
+├── AppModule.kt             Hilt providers
 ├── data/
-│   ├── model/Models.kt           # Room entities + converters
-│   ├── db/                       # Database + DAOs
-│   ├── repo/VaultRepository.kt   # Data access facade
-│   ├── network/WeatherApi.kt     # Retrofit weather API
-│   └── backup/BackupManager.kt   # Export/import implementation
-└── ui/
-    ├── screens/                  # Feature screens (stash, active, darkroom, etc.)
-    ├── components/               # Shared Compose components + OSM map wrapper
-    └── theme/                    # App theme/colors/typography
+│   ├── model/Models.kt      Room entities and type converters
+│   ├── db/                  AppDatabase and DAOs (schemas exported to app/schemas)
+│   ├── repo/                VaultRepository
+│   ├── network/             OpenWeatherMap API
+│   ├── backup/              .avault export and import
+│   └── export/              Per-roll CSV and PDF contact sheet
+├── ui/
+│   ├── MainViewModel.kt     App state (BackupViewModel handles backups)
+│   ├── screens/             Home, Stash, Rolls, Meter, Darkroom, Stats, Weather, Backup, Settings, Shot map
+│   ├── film/                Film-themed UI components
+│   ├── components/          Shared components and map wrapper
+│   └── theme/               Colours and typography
+├── util/                    Exposure maths, development time, gear limits, constants
+└── work/ReminderWorker.kt   Daily reminder check
 ```
-
----
-
-## Roadmap / Known Issues
-
-See `CHANGELOG.md` for version history and known issues.
-
-Current notes include ongoing smoothness/navigation tuning and feature expansion around formats and workflow details.
-
----
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for branch names, commit and PR
-titles, versioning, the changelog and how a release is cut. In short:
+Report bugs and request features through [GitHub Issues](https://github.com/mattnoir/AnalogVault/issues). For code changes, see [CONTRIBUTING.md](./CONTRIBUTING.md) for branch names, commit and PR titles, versioning and the changelog. In summary:
 
-1. Branch off `redesign` as `feature/…`, `fix/…` or `chore/…`
-2. Title commits and the PR `feat: …`, `fix: …` or `chore: …`
-3. Add a line under `## [Unreleased]` in `CHANGELOG.md` for anything a user will notice
-4. Run a debug build and try it on a device; include screenshots for UI changes
+1. Branch from `redesign` as `feature/…`, `fix/…` or `chore/…`.
+2. Title commits and the PR `feat: …`, `fix: …` or `chore: …`.
+3. Add an entry under `## [Unreleased]` in `CHANGELOG.md` for user-visible changes.
+4. Run a debug build and test on a device. Include screenshots for UI changes.
 
----
+Version history is in [CHANGELOG.md](./CHANGELOG.md).
+
+Bundled fonts (Big Shoulders Display, Space Grotesk, Space Mono) are licensed under the SIL Open Font License; the license texts are in `app/licenses/`.
 
 ## License
 
-This project is licensed under the terms in [`LICENSE`](./LICENSE).
+MIT. See [LICENSE](./LICENSE).
