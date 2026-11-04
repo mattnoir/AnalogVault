@@ -179,13 +179,32 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
     }
 }
 
+/**
+ * Give every lens, and every fixed-lens body's built-in one, its own aperture
+ * scale (v12 → v13): how far apart the ring's clicks are, and any stops it has
+ * off the standard scale.
+ *
+ * Existing rows get whole-stop clicks and no custom stops. The meter used to
+ * offer third stops on every lens, which is what made its ladder drift from
+ * f/5.6 to f/5 as the light dropped; whole stops are what most manual rings are
+ * engraved with, and a lens with finer clicks is one dropdown away.
+ */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        for (table in listOf("lenses", "cameras")) {
+            db.execSQL("ALTER TABLE $table ADD COLUMN apertureStep TEXT NOT NULL DEFAULT 'full'")
+            db.execSQL("ALTER TABLE $table ADD COLUMN customApertures TEXT NOT NULL DEFAULT '[]'")
+        }
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 12,
+    version = 13,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true

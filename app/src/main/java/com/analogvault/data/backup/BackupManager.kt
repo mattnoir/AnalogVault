@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.analogvault.data.model.*
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.util.ApertureScale
 import com.analogvault.util.Constants
 import com.analogvault.util.photoDir
 import com.google.gson.Gson
@@ -75,10 +76,21 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
             fastestShutter = c.fastestShutter ?: "",
             slowestShutter = c.slowestShutter ?: "",
             maxAperture    = c.maxAperture ?: "",
-            minAperture    = c.minAperture ?: ""
+            minAperture    = c.minAperture ?: "",
+            apertureStep   = c.apertureStep ?: ApertureScale.DEFAULT.key,
+            customApertures = (c.customApertures ?: emptyList()).filter { it != null }
         )
     },
-    lenses      = (lenses ?: emptyList()).filter { it.id != null },
+    // Backups from before per-lens aperture scales restore with whole-stop
+    // clicks and no custom stops, as the database migration gives old rows.
+    lenses      = (lenses ?: emptyList()).filter { it.id != null }.map { l ->
+        l.copy(
+            maxAperture     = l.maxAperture ?: "",
+            minAperture     = l.minAperture ?: "",
+            apertureStep    = l.apertureStep ?: ApertureScale.DEFAULT.key,
+            customApertures = (l.customApertures ?: emptyList()).filter { it != null }
+        )
+    },
     accessories = (accessories ?: emptyList()).filter { it.id != null },
     rolls       = (rolls ?: emptyList()).filter { it.id != null }.map { roll ->
         roll.copy(

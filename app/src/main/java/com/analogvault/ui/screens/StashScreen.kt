@@ -34,8 +34,11 @@ import com.analogvault.ui.film.toStoredValue
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.uid
+import com.analogvault.util.ApertureScale
 import com.analogvault.util.Constants
 import com.analogvault.util.toDecimalOrNull
+import kotlin.math.abs
+import kotlin.math.log2
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
@@ -56,6 +59,53 @@ private const val UNKNOWN_LIMIT = "—"
 /** Bare aperture number as the lens fields store it ("8", "5.6"). */
 private fun apertureNum(a: Double): String =
     if (a == a.toLong().toDouble()) a.toLong().toString() else a.toString()
+
+/**
+ * How a lens's ring clicks: the spacing between its stops and any it has off
+ * the standard scale. The stops they make are spelled out underneath — those
+ * are exactly what the meter and the shot sheet will offer for this lens.
+ *
+ * [widest] and [narrowest] are the range fields as typed, so the preview
+ * follows them while the sheet is still open.
+ */
+@Composable
+private fun ApertureScaleFields(
+    step: ApertureScale.Step,
+    onStep: (ApertureScale.Step) -> Unit,
+    custom: String,
+    onCustom: (String) -> Unit,
+    widest: String,
+    narrowest: String,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        VaultDropdown("Clicks", step.label, ApertureScale.Step.entries.map { it.label },
+            { onStep(ApertureScale.Step.ofLabel(it)) }, modifier = Modifier.weight(1f))
+        VaultTextField(custom, onCustom, "Custom stops", modifier = Modifier.weight(1f),
+            placeholder = "e.g. 4.5, 6.3")
+    }
+    val wide = widest.toDecimalOrNull()
+    val narrow = narrowest.toDecimalOrNull()
+    val parsed = ApertureScale.parseCustom(custom)
+    val stops = ApertureScale.onLens(step, wide, narrow, parsed)
+    // A custom stop past either end of the ring is dropped by the scale; say so
+    // rather than let it vanish.
+    val leftOff = parsed.filter { c -> stops.none { abs(log2(it / c)) < 0.05 } }
+    Spacer(Modifier.height(6.dp))
+    Text("Ring: " + stops.joinToString(" · ") { "f/" + apertureNum(it) },
+        color = FilmTheme.colors.dim, fontSize = 10.sp)
+    if (leftOff.isNotEmpty()) {
+        Text("Outside the lens's range, left off: " + leftOff.joinToString(", ") { "f/" + apertureNum(it) },
+            color = FilmTheme.colors.mask, fontSize = 10.sp)
+    }
+}
+
+/** Stored custom stops as the text field shows them. */
+private fun customStopsText(values: List<String>?): String =
+    ApertureScale.parseStored(values).sorted().joinToString(", ") { apertureNum(it) }
+
+/** The text field's custom stops as the gear rows store them. */
+private fun customStopsStored(text: String): List<String> =
+    ApertureScale.parseCustom(text).map { ApertureScale.store(it) }
 
 @Composable
 fun StashScreen(vm: MainViewModel) {
@@ -1149,10 +1199,7 @@ fun LensStashTab(lenses: List<Lens>, vm: MainViewModel) {
 @Composable
 fun DofDialog(lens: Lens, onDismiss: () -> Unit) {
     val focal = lens.focalLength.toDoubleOrNull() ?: 50.0
-    val maxAp = lens.maxAperture.toDoubleOrNull()
-    val apertureOptions = remember(maxAp) {
-        Constants.APERTURES.filter { maxAp == null || it >= maxAp - 0.01 }
-    }
+    val apertureOptions = remember(lens) { lens.apertureStops() }
     fun apLabel(a: Double) = if (a == a.toLong().toDouble()) "f/${a.toLong()}" else "f/$a"
     fun m(v: Double) = "${((v * 100).toInt() / 100.0)} m"   // Double.toString → '.' on all locales
 
@@ -1579,6 +1626,8 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
     var hasBulb    by remember { mutableStateOf(ed?.hasBulb ?: false) }
     var maxAperture by remember { mutableStateOf(ed?.maxAperture ?: "") }
     var minAperture by remember { mutableStateOf(ed?.minAperture ?: "") }
+    var apertureStep by remember { mutableStateOf(ApertureScale.Step.of(ed?.apertureStep)) }
+    var customStops by remember { mutableStateOf(customStopsText(ed?.customApertures)) }
 
     fun onCameraSelected(modelName: String) {
         name = modelName
@@ -1674,6 +1723,9 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                     listOf(UNKNOWN_LIMIT) + Constants.APERTURES.filter { it >= 4.0 }.map { apertureNum(it) },
                     { minAperture = if (it == UNKNOWN_LIMIT) "" else it }, modifier = Modifier.weight(1f))
             }
+            Spacer(Modifier.height(10.dp))
+            ApertureScaleFields(apertureStep, { apertureStep = it }, customStops, { customStops = it },
+                maxAperture, minAperture)
         }
         // Shutter range. Left blank the meter suggests whatever the light asks
         // for, which is the old behaviour; filled in it stops offering speeds the
@@ -1711,7 +1763,9 @@ fun CameraSheet(ed: Camera?, onDismiss: () -> Unit, onSave: (Camera) -> Unit) {
                 fastestShutter = fastest, slowestShutter = slowest, hasBulb = hasBulb,
                 // Kept only while fixed: an interchangeable body's aperture lives on its lens.
                 maxAperture = if (lensSystem == "fixed") maxAperture else "",
-                minAperture = if (lensSystem == "fixed") minAperture else ""))
+                minAperture = if (lensSystem == "fixed") minAperture else "",
+                apertureStep = if (lensSystem == "fixed") apertureStep.key else ApertureScale.DEFAULT.key,
+                customApertures = if (lensSystem == "fixed") customStopsStored(customStops) else emptyList()))
         })
     }
 }
@@ -1723,6 +1777,8 @@ fun LensSheet(ed: Lens?, onDismiss: () -> Unit, onSave: (Lens) -> Unit) {
     var focalLength by remember { mutableStateOf(ed?.focalLength ?: "50") }
     var maxAperture by remember { mutableStateOf(ed?.maxAperture ?: "1.8") }
     var minAperture by remember { mutableStateOf(ed?.minAperture ?: "") }
+    var apertureStep by remember { mutableStateOf(ApertureScale.Step.of(ed?.apertureStep)) }
+    var customStops by remember { mutableStateOf(customStopsText(ed?.customApertures)) }
     var mount       by remember { mutableStateOf(ed?.mount ?: "") }
     var condition   by remember { mutableStateOf(ed?.condition ?: "Good") }
 
@@ -1748,11 +1804,15 @@ fun LensSheet(ed: Lens?, onDismiss: () -> Unit, onSave: (Lens) -> Unit) {
         VaultDropdown("Min Aperture (stops down to)", minAperture.ifBlank { UNKNOWN_LIMIT },
             listOf(UNKNOWN_LIMIT) + Constants.APERTURES.filter { it >= 4.0 }.map { apertureNum(it) },
             { minAperture = if (it == UNKNOWN_LIMIT) "" else it })
+        Spacer(Modifier.height(10.dp))
+        ApertureScaleFields(apertureStep, { apertureStep = it }, customStops, { customStops = it },
+            maxAperture, minAperture)
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Lens", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(Lens(id = ed?.id ?: uid(), name = name, brand = brand, focalLength = focalLength,
                 maxAperture = maxAperture, minAperture = minAperture, mount = mount,
-                condition = condition))
+                condition = condition, apertureStep = apertureStep.key,
+                customApertures = customStopsStored(customStops)))
         })
     }
 }

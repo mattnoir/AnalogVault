@@ -377,12 +377,12 @@ fun MeterContent(
 
     // Shutter seconds the reciprocity helper should correct
     val displaySec = selected?.shutterSec ?: Constants.evalShutter(activeShutter)
-    // Manual takes the held stop as it is: an f/1.7 lens set wide open is f/1.7,
-    // not the f/1.8 the third-stop scale would snap it to.
+    // Manual takes the held stop as it is: it was picked off the lens's own
+    // scale, so there is nothing to snap it to.
     val apExact = if (manual) heldAperture
         else selected?.apertureExact ?: GearClamp.apertureFor(filmIso, displaySec, effectiveEV)
     val apSnapped = if (manual) heldAperture
-        else selected?.aperture ?: Constants.nearestStandardAperture(apExact)
+        else selected?.aperture ?: GearClamp.snapAperture(apExact, limits)
     val apOffScale = apExact < 0.95 || apExact > 32.0
     // Signed stops between what is dialled and what the light asks for. Manual only.
     val manualOff = if (manual) GearClamp.stopsOff(filmIso, effectiveEV, displaySec, heldAperture) else null
@@ -797,10 +797,11 @@ fun MeterContent(
                 Spacer(Modifier.height(8.dp))
                 ManualDial(
                     title = "APERTURE",
-                    // Whole stops, plus the lens's own wide-open value and the
-                    // stop being held, either of which may sit between them.
-                    values = (Constants.WHOLE_STOP_APERTURES +
-                        listOfNotNull(limits.widestAperture, heldAperture))
+                    // The lens's own stops — its click spacing, its wide-open
+                    // value and any custom stops — with the standard clicks past
+                    // either end hatched, plus the stop being held, which may
+                    // have come off a rung between them.
+                    values = (limits.snapScale + heldAperture)
                         .sorted()
                         .fold(emptyList<Double>()) { acc, ap ->
                             if (acc.lastOrNull()?.let { abs(log2(ap / it)) < 0.1 } == true) acc
@@ -1374,6 +1375,18 @@ private fun ExposureLadder(
                 Spacer(Modifier.height(2.dp))
                 Text(rung.shutter, style = FilmTheme.type.rebate, color = if (sel) text else colors.dim,
                     maxLines = 1, softWrap = false)
+                // How far the lens's nearest stop lands from the reading. The
+                // stops stay put as the light moves; this is the part that moves.
+                // Blank rather than absent when on the reading, so every rung
+                // keeps the same height.
+                val off = rung.offStops
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (abs(off) < NEEDLE_TOLERANCE) " " else formatStops(off),
+                    style = FilmTheme.type.rebate,
+                    color = if (sel) text else colors.dim,
+                    maxLines = 1, softWrap = false,
+                )
             }
         }
     }

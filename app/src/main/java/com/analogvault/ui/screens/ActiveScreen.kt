@@ -965,10 +965,10 @@ fun ShotSheet(
     val selectedLens = remember(lensName, lenses, rollCamera) {
         lenses.find { it.name == lensName } ?: rollCamera?.fixedLens()
     }
+    // The stops the lens's ring clicks to — its spacing, wide-open value and
+    // custom stops. With no lens picked, every third stop.
     val apertureOptions = remember(selectedLens) {
-        val maxAp = selectedLens?.maxAperture?.toDoubleOrNull()
-        listOf("") + Constants.APERTURES
-            .filter { maxAp == null || it >= maxAp - 0.01 }
+        listOf("") + (selectedLens?.apertureStops() ?: Constants.APERTURES)
             .map { ap -> if (ap == ap.toLong().toDouble()) "f/${ap.toInt()}" else "f/$ap" }
     }
     val allIsos = remember(customIsos) {
