@@ -2,6 +2,7 @@ package com.analogvault.util
 
 import com.analogvault.data.model.Camera
 import com.analogvault.data.model.Lens
+import kotlin.math.abs
 import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -29,6 +30,17 @@ object GearClamp {
         val hasBulb: Boolean = false,
         val widestAperture: Double? = null,
         val narrowestAperture: Double? = null,
+        /**
+         * Every stop the lens's ring clicks to, widest first — the values the
+         * meter offers as choices. Without a lens, the whole-stop scale.
+         */
+        val lensStops: List<Double> = ApertureScale.standard(ApertureScale.DEFAULT),
+        /**
+         * What a computed aperture snaps to: [lensStops] inside the lens's range
+         * and the standard clicks of its step outside it, so an answer the lens
+         * cannot reach still reads as the stop it would need.
+         */
+        val snapScale: List<Double> = lensStops,
     ) {
         /** Nothing to clamp against — every rung is achievable. */
         val unclamped: Boolean
@@ -50,6 +62,14 @@ object GearClamp {
         val reason: Reason?,
     ) {
         val achievable: Boolean get() = reason == null
+
+        /**
+         * How far setting [aperture] at [shutter] lands from the reading, in
+         * stops: positive is over. A lens that clicks in whole stops cannot
+         * follow the light a third at a time, so the rung keeps its stop and
+         * says how far off it is instead of printing an f/7.1 the ring lacks.
+         */
+        val offStops: Double get() = 2.0 * log2(apertureExact / aperture)
     }
 
     /**
@@ -66,15 +86,27 @@ object GearClamp {
 
     // ── Building the limits ──────────────────────────────────────────────────
 
-    fun limitsOf(camera: Camera?, lens: Lens?): Limits = Limits(
-        fastestShutterSec = camera?.fastestShutter?.takeIf { it.isNotBlank() }
-            ?.let { Constants.evalShutter(it) },
-        slowestShutterSec = camera?.slowestShutter?.takeIf { it.isNotBlank() }
-            ?.let { Constants.evalShutter(it) },
-        hasBulb = camera?.hasBulb ?: false,
-        widestAperture = lens?.maxAperture?.toDecimalOrNull(),
-        narrowestAperture = lens?.minAperture?.toDecimalOrNull(),
-    )
+    fun limitsOf(camera: Camera?, lens: Lens?): Limits {
+        val widest = lens?.maxAperture?.toDecimalOrNull()
+        val narrowest = lens?.minAperture?.toDecimalOrNull()
+        val step = ApertureScale.Step.of(lens?.apertureStep)
+        val custom = ApertureScale.parseStored(lens?.customApertures)
+        return Limits(
+            fastestShutterSec = camera?.fastestShutter?.takeIf { it.isNotBlank() }
+                ?.let { Constants.evalShutter(it) },
+            slowestShutterSec = camera?.slowestShutter?.takeIf { it.isNotBlank() }
+                ?.let { Constants.evalShutter(it) },
+            hasBulb = camera?.hasBulb ?: false,
+            widestAperture = widest,
+            narrowestAperture = narrowest,
+            lensStops = ApertureScale.onLens(step, widest, narrowest, custom),
+            snapScale = ApertureScale.extended(step, widest, narrowest, custom),
+        )
+    }
+
+    /** [exact] on the nearest stop the lens has, or the stop it would need past its range. */
+    fun snapAperture(exact: Double, limits: Limits): Double =
+        ApertureScale.snap(limits.snapScale, exact)
 
     // ── The ladder ───────────────────────────────────────────────────────────
 
@@ -95,7 +127,7 @@ object GearClamp {
             // than physically impossible, and every dark-scene rung would read
             // as the same f/1.0.
             val exact = apertureFor(iso, sec, ev)
-            val snapped = Constants.nearestStandardAperture(exact)
+            val snapped = snapAperture(exact, limits)
             Rung(
                 shutter = s,
                 shutterSec = sec,
@@ -139,15 +171,17 @@ object GearClamp {
     /**
      * The rung an aperture-priority meter lands on with [aperture] held.
      *
-     * The time the held aperture needs rarely falls on a dial speed. This takes
-     * the rung whose own aperture is the held one or the nearest *wider* — the
-     * next faster speed — and shows that rung's aperture as it is. An f/3.5
+     * The time the held aperture needs rarely falls on a dial speed. A rung
+     * whose snapped aperture is the held stop wins outright, the speed nearest
+     * the reading among them. Failing that, this takes the rung whose exact
+     * aperture is the held one or the nearest *wider* — the next faster speed —
+     * and shows that rung's aperture as it is. An f/3.5
      * lens that wants 1/600 lands on f/2.8 at 1/1000: wider than the lens can
      * open, hatched as such, and the honest answer to "what does wide open
      * need?" rather than a slower speed that quietly reads as stopped down.
      *
      * A fifth of a stop of slack sits on the wide edge. A rung tapped off the
-     * ladder holds its *snapped* aperture, up to a sixth of a stop off its exact
+     * ladder holds its *snapped* aperture, a fraction of a stop off its exact
      * one, and without the slack that rung could read as a hair too narrow and
      * jump the selection a whole stop to the next speed.
      *
@@ -158,6 +192,18 @@ object GearClamp {
     fun rungForAperture(rungs: List<Rung>, iso: Int, ev: Double, aperture: Double): Rung? {
         if (rungs.isEmpty()) return null
         val needed = shutterSecFor(iso, aperture, ev)
+        val shutterBlocked = { r: Rung ->
+            r.reason == Reason.SHUTTER_TOO_FAST || r.reason == Reason.SHUTTER_TOO_SLOW
+        }
+        // A rung already showing the held stop is the answer: the ring stays
+        // where it was put and the speed nearest the reading goes with it. With
+        // whole-stop clicks on both dials every rung sits the same fraction off
+        // the light, so the held stop always has a rung of its own; picking a
+        // faster one instead would swap the held f/5.6 for an f/4 the
+        // photographer never touched.
+        rungs.filter { !shutterBlocked(it) && abs(log2(it.aperture / aperture)) < 0.05 }
+            .minByOrNull { abs(log2(it.shutterSec / needed)) }
+            ?.let { return it }
         // Faster than needed means a wider aperture for the same exposure.
         // With the held aperture near the bottom of the scale the wider rung
         // may not exist — it would need f/0.8, and the ladder drops those — so
@@ -165,15 +211,37 @@ object GearClamp {
         val wider = rungs
             .filter { it.shutterSec <= needed * 2.0.pow(0.2) }
             .maxByOrNull { it.shutterSec }
-            ?: rungs.minByOrNull { kotlin.math.abs(log2(it.shutterSec / needed)) }
+            ?: rungs.minByOrNull { abs(log2(it.shutterSec / needed)) }
             ?: return null
-        val shutterBlocked = { r: Rung ->
-            r.reason == Reason.SHUTTER_TOO_FAST || r.reason == Reason.SHUTTER_TOO_SLOW
-        }
         if (!shutterBlocked(wider)) return wider
         return rungs.filterNot(shutterBlocked)
-            .minByOrNull { kotlin.math.abs(log2(it.shutterSec / needed)) }
+            .minByOrNull { abs(log2(it.shutterSec / needed)) }
             ?: wider
+    }
+
+    /** Whether [aperture] is one of the lens's own clicks, rather than a ring set between two. */
+    fun isLensStop(aperture: Double, limits: Limits): Boolean =
+        limits.lensStops.any { abs(log2(it / aperture)) < 0.05 }
+
+    /**
+     * Aperture priority with the ring turned between two clicks — f/6.3 on a
+     * lens engraved f/5.6 and f/8.
+     *
+     * No rung shows that aperture, since rungs sit on the lens's stops, so this
+     * makes one: the dial speed nearest what the held aperture needs, carrying
+     * the held aperture as set. Its [Rung.offStops] is then the error the
+     * between-stop setting leaves, which is the reason to set one at all.
+     * Speeds the body cannot run are skipped while any it can run remain.
+     */
+    fun rungBetweenStops(rungs: List<Rung>, iso: Int, ev: Double, aperture: Double, limits: Limits): Rung? {
+        val needed = shutterSecFor(iso, aperture, ev)
+        val nearest = { list: List<Rung> -> list.minByOrNull { abs(log2(it.shutterSec / needed)) } }
+        val base = nearest(rungs.filter { shutterReason(it.shutterSec, limits) == null })
+            ?: nearest(rungs) ?: return null
+        return base.copy(
+            aperture = aperture,
+            reason = shutterReason(base.shutterSec, limits) ?: apertureReason(aperture, limits),
+        )
     }
 
     // ── The way out ──────────────────────────────────────────────────────────

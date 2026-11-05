@@ -6,7 +6,9 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.analogvault.util.ApertureScale
 import com.analogvault.util.Constants
+import com.analogvault.util.toDecimalOrNull
 
 // ─── Type Converters ────────────────────────────────────────────────────────
 
@@ -113,7 +115,11 @@ data class Camera(
      * unknown means unclamped — the same rule as the shutter range.
      */
     val maxAperture: String = "",
-    val minAperture: String = ""
+    val minAperture: String = "",
+    /** The built-in lens's click spacing, as [Lens.apertureStep]. */
+    val apertureStep: String = ApertureScale.DEFAULT.key,
+    /** The built-in lens's off-scale stops, as [Lens.customApertures]. */
+    val customApertures: List<String> = emptyList()
 )
 
 /**
@@ -122,9 +128,11 @@ data class Camera(
  * bodies, and when neither end of the aperture range is known.
  */
 fun Camera.fixedLens(): Lens? =
-    if (lensSystem != "fixed" || (maxAperture.isBlank() && minAperture.isBlank())) null
+    if (lensSystem != "fixed" || (maxAperture.isBlank() && minAperture.isBlank() &&
+            customApertures.isEmpty() && ApertureScale.Step.of(apertureStep) == ApertureScale.DEFAULT)) null
     else Lens(id = "", name = "${name.ifBlank { "Built-in" }} lens", brand = brand,
-        focalLength = "", maxAperture = maxAperture, minAperture = minAperture)
+        focalLength = "", maxAperture = maxAperture, minAperture = minAperture,
+        apertureStep = apertureStep, customApertures = customApertures)
 
 /**
  * Frames a roll of [film] gives in this body. A 120 roll's count is set by the
@@ -187,6 +195,7 @@ fun FilmStock?.meterFrame(): String? = when (this?.filmFormat) {
 // ─── Lens ─────────────────────────────────────────────────────────────────────
 
 @Entity(tableName = "lenses")
+@TypeConverters(StringListConverter::class)
 data class Lens(
     @PrimaryKey val id: String,
     val name: String = "",
@@ -202,8 +211,25 @@ data class Lens(
      */
     val minAperture: String = "",
     val mount: String = "",
-    val condition: String = "Good"
+    val condition: String = "Good",
+    /**
+     * How far apart the ring's clicks are, as an [ApertureScale.Step] key
+     * ("full", "half", "third"). The meter only offers stops the ring has, so a
+     * full-stop lens never reads f/7.1 just because the light moved a third.
+     */
+    val apertureStep: String = ApertureScale.DEFAULT.key,
+    /**
+     * Stops the ring has off the standard scale, as bare numbers ("4.5", "6.3")
+     * — older lenses are engraved with them. Offered alongside the standard
+     * clicks, inside the [maxAperture]–[minAperture] range.
+     */
+    val customApertures: List<String> = emptyList()
 )
+
+/** Every stop this lens's ring clicks to, widest first. */
+fun Lens.apertureStops(): List<Double> = ApertureScale.onLens(
+    ApertureScale.Step.of(apertureStep), maxAperture.toDecimalOrNull(),
+    minAperture.toDecimalOrNull(), ApertureScale.parseStored(customApertures))
 
 // ─── Accessory ───────────────────────────────────────────────────────────────
 
