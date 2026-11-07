@@ -26,6 +26,7 @@ import com.analogvault.ui.screens.encodeTimers
 import com.analogvault.ui.screens.HomeSection
 import com.analogvault.ui.screens.parseHomeHidden
 import com.analogvault.ui.screens.parseHomeShown
+import com.analogvault.ui.theme.Palette
 import com.analogvault.ui.screens.parseHomeOrder
 import com.analogvault.ui.screens.MeterReading
 import com.analogvault.ui.screens.formatLatLon
@@ -237,7 +238,14 @@ class MainViewModel @Inject constructor(
             // is exactly what the amber theme looked like: a second of neon,
             // then a swap.
             _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
-            _legacyAmber.value = (repo.getSetting("legacy_amber") ?: "false") == "true"
+            // The badges are read here too, before the first frame: a palette
+            // a secret unlocked has to be known as unlocked before it is worn,
+            // or the app would open in Dye Layer and then change its coat.
+            _palette.value = Palette.resolve(
+                stored = repo.getSetting("palette"),
+                legacyAmber = repo.getSetting("legacy_amber"),
+                records = AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING)),
+            )
             _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
             _themeReady.value = true
 
@@ -801,14 +809,16 @@ class MainViewModel @Inject constructor(
     val themeReady: StateFlow<Boolean> = _themeReady.asStateFlow()
 
     /**
-     * The palette the app wore before the Dye Layer redesign — same design,
-     * amber instead of dyes. Ignored while safelight is on, which is its own
-     * scheme (see FilmTheme.kt).
+     * The palette the app wears (see ui/theme/Palette.kt). Ignored while
+     * safelight is on, which is its own scheme. Replaces the old Legacy amber
+     * switch: `legacy_amber` is still read until a palette is first picked.
      */
-    private val _legacyAmber = MutableStateFlow(false)
-    val legacyAmber: StateFlow<Boolean> = _legacyAmber.asStateFlow()
-    fun setLegacyAmber(on: Boolean) = viewModelScope.launch {
-        _legacyAmber.value = on; repo.setSetting("legacy_amber", on.toString())
+    private val _palette = MutableStateFlow(Palette.DYE_LAYER)
+    val palette: StateFlow<Palette> = _palette.asStateFlow()
+    fun setPalette(p: Palette) = viewModelScope.launch {
+        // The picker only lists unlocked palettes; this is the backstop.
+        if (!p.unlocked(achievementRecords.value)) return@launch
+        _palette.value = p; repo.setSetting("palette", p.key)
     }
 
     /**

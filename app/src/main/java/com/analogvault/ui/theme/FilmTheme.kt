@@ -337,7 +337,7 @@ private fun FilmColors.toMaterialScheme(): ColorScheme = darkColorScheme(
 @Composable
 fun FilmTheme(
     safelight: Boolean = false,
-    legacyAmber: Boolean = false,
+    palette: FilmColors = DyeLayerColors,
     saturation: Float = 1f,
     content: @Composable () -> Unit,
 ) {
@@ -346,11 +346,7 @@ fun FilmTheme(
     // the chosen palette, then the saturation slider applied on top of
     // whichever one is in play — muting amber works exactly as muting the dyes
     // does, and both are read through the same five accent roles.
-    val base = when {
-        safelight -> SafelightColors
-        legacyAmber -> LegacyAmberColors
-        else -> DyeLayerColors
-    }
+    val base = if (safelight) SafelightColors else palette
     val colors = remember(base, saturation) {
         if (safelight || saturation == 1f) base else base.withSaturation(saturation)
     }

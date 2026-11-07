@@ -5,7 +5,12 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -19,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.input.KeyboardType
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
+import com.analogvault.ui.theme.Palette
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.util.Constants
@@ -35,7 +41,8 @@ fun SettingsScreen(vm: MainViewModel) {
     val highRefresh by vm.highRefresh.collectAsState()
     val safelight by vm.safelight.collectAsState()
     val saturation by vm.saturation.collectAsState()
-    val legacyAmber by vm.legacyAmber.collectAsState()
+    val palette by vm.palette.collectAsState()
+    val achRecords by vm.achievementRecords.collectAsState()
     val remindersEnabled  by vm.remindersEnabled.collectAsState()
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
@@ -119,21 +126,18 @@ fun SettingsScreen(vm: MainViewModel) {
                 )
             }
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Legacy amber", color = FilmTheme.colors.dim, fontSize = 13.sp)
-                    Text("The palette from before the redesign — amber, brown and " +
-                        "orange. Same layouts, film strips and type; only the " +
-                        "colours change. Safelight overrides it.",
-                        color = FilmTheme.colors.dim, fontSize = 11.sp)
+            Text("Palette", color = FilmTheme.colors.dim, fontSize = 13.sp)
+            Text("Same layouts, film strips and type; only the colours change. " +
+                "Safelight overrides it." +
+                if (safelight) " Turn Safelight off to see the palette you pick." else "",
+                color = FilmTheme.colors.dim, fontSize = 11.sp)
+            Spacer(Modifier.height(8.dp))
+            // Only what is unlocked. A secret's palette is part of the secret:
+            // listing it locked would give away that there is one to find.
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Palette.entries.filter { it.unlocked(achRecords) }.forEach { p ->
+                    PaletteRow(p, selected = p == palette) { vm.setPalette(p) }
                 }
-                Switch(
-                    checked = legacyAmber,
-                    onCheckedChange = { vm.setLegacyAmber(it) },
-                    enabled = !safelight,
-                    colors = settingsSwitchColors(),
-                )
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -371,5 +375,42 @@ private fun ReminderToggle(label: String, checked: Boolean, onChange: (Boolean) 
             onCheckedChange = onChange,
             colors = settingsSwitchColors(),
         )
+    }
+}
+
+/**
+ * One palette in the picker, drawn in its own colours rather than the app's:
+ * a strip of its base with the five accents across it, so choosing is
+ * seeing, not reading a name.
+ */
+@Composable
+private fun PaletteRow(palette: Palette, selected: Boolean, onClick: () -> Unit) {
+    val colors = FilmTheme.colors
+    val own = palette.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (selected) colors.cyan else colors.edge)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = palette.label + if (selected) ", selected" else ""
+            }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            Modifier.background(own.film).border(1.dp, own.edge).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            listOf(own.cyan, own.magenta, own.yellow, own.mask, own.violet).forEach { c ->
+                Box(Modifier.size(width = 10.dp, height = 22.dp).background(c))
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(palette.label, color = if (selected) colors.halide else colors.dim, fontSize = 13.sp)
+            Text(palette.blurb, color = colors.dim, fontSize = 11.sp)
+        }
+        if (selected) Text("✓", color = colors.cyan, fontSize = 15.sp)
     }
 }

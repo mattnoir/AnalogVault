@@ -22,6 +22,7 @@ import com.analogvault.ui.components.VaultProgressBar
 import com.analogvault.ui.components.VaultSheet
 import com.analogvault.ui.theme.FilmColors
 import com.analogvault.ui.theme.FilmTheme
+import com.analogvault.ui.theme.Palette
 import com.analogvault.util.AchCategory
 import com.analogvault.util.AchProgress
 import com.analogvault.util.AchRecord
@@ -210,6 +211,11 @@ private fun BadgeSheet(badge: Badge, roll: Roll?, onDismiss: () -> Unit, onOpenR
         val record = badge.record
         if (badge.earned && record != null) {
             Text("EARNED ${record.unlockedAt}", style = FilmTheme.type.rebate, color = accent)
+            Palette.rewardedBy(a)?.let { p ->
+                Spacer(Modifier.height(4.dp))
+                Text("UNLOCKED THE ${p.label.uppercase()} PALETTE · SETTINGS → DISPLAY",
+                    style = FilmTheme.type.rebate, color = colors.dim)
+            }
             if (roll != null) {
                 Spacer(Modifier.height(4.dp))
                 val frame = record.shotIndex?.let { " · frame ${it + 1}" } ?: ""

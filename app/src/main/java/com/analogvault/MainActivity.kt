@@ -135,11 +135,11 @@ class MainActivity : ComponentActivity() {
             // you were not looking at still burning white.
             val safelight by vm.safelight.collectAsState()
             val saturation by vm.saturation.collectAsState()
-            val legacyAmber by vm.legacyAmber.collectAsState()
+            val palette by vm.palette.collectAsState()
             val themeReady by vm.themeReady.collectAsState()
             FilmTheme(
                 safelight = safelight,
-                legacyAmber = legacyAmber,
+                palette = palette.colors,
                 saturation = saturation,
             ) {
                 // The grain is applied exactly once, here, on the root container —
