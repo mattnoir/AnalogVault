@@ -404,6 +404,30 @@ class AchievementsTest {
         assertEquals(5, AchCounters.merge(after, carried)[AchCounters.BACKUP_EXPORTS])
     }
 
+    @Test fun `summary picks the latest unlock and the nearest goal, never a secret`() {
+        val records = mapOf(
+            Achievement.FIRST_FRAME to AchRecord(1, "2024-01-01"),
+            Achievement.MIXED_BAG to AchRecord(1, "2025-06-01"),
+            Achievement.BULB_NIGHT to AchRecord(1, "2025-06-01"),
+        )
+        // Same day: the later badge in the list wins.
+        assertEquals(Achievement.BULB_NIGHT, AchievementSummary.latest(records)?.first)
+        assertNull(AchievementSummary.latest(emptyMap()))
+
+        val p = eval(
+            listOf(roll("a", shots = (1..30).map { shot("2026-01-10 12:${(it % 60).toString().padStart(2, '0')}") })),
+            counters = mapOf(AchCounters.METER_LOGS to 19),
+        )
+        // 19 of 20 meter frames beats 30 of 1000 frames; no secret is offered.
+        val goal = AchievementSummary.nearestGoal(p.values.toList(), emptyMap())
+        assertEquals(Achievement.USED_WHAT_YOU_METER, goal?.achievement)
+        // Once it is earned for good, the next-best one takes over.
+        val after = AchievementSummary.nearestGoal(p.values.toList(),
+            mapOf(Achievement.USED_WHAT_YOU_METER to AchRecord(1, "2026-01-10")))
+        assertTrue(after?.achievement != Achievement.USED_WHAT_YOU_METER)
+        assertTrue(after?.achievement?.category != AchCategory.SECRET)
+    }
+
     @Test fun `every key is unique`() {
         assertEquals(Achievement.entries.size, Achievement.entries.map { it.key }.toSet().size)
     }

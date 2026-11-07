@@ -53,6 +53,7 @@ private const val TAB_STASH   = 1
 private const val TAB_ACTIVE  = 2
 private const val TAB_METER   = 4
 private const val TAB_WEATHER = 5
+private const val TAB_STATS   = 6
 
 /** A roll is "latent" once its last exposure is this old — shadows start drifting. */
 private const val LATENT_IMAGE_DAYS = 21
@@ -86,6 +87,8 @@ fun DashboardScreen(
     val placeName    by vm.placeName.collectAsState()
     val homeOrder    by vm.homeOrder.collectAsState()
     val homeHidden   by vm.homeHidden.collectAsState()
+    val achProgress  by vm.achievementProgress.collectAsState()
+    val achRecords   by vm.achievementRecords.collectAsState()
 
     // Fetch our own weather when nothing else has.
     //
@@ -229,6 +232,13 @@ fun DashboardScreen(
                         } ?: 100,
                         onOpenMeter = { onNavigate(TAB_METER, 0, null) },
                         onOpenWeather = { onNavigate(TAB_WEATHER, 0, null) },
+                    )
+                }
+                HomeSection.ACHIEVEMENTS -> item(key = "achievements") {
+                    AchievementsRow(
+                        progress = achProgress.orEmpty(),
+                        records = achRecords,
+                        onOpen = { onNavigate(TAB_STATS, STATS_BADGES_PAGE, null) },
                     )
                 }
                 HomeSection.NUDGES -> items(nudges.size, key = { "nudge_$it" }) { i ->
@@ -847,6 +857,48 @@ private fun NudgeCard(title: String, body: String, onClick: () -> Unit) {
             Text(title.uppercase(), style = FilmTheme.type.rebate, color = colors.yellow)
             Spacer(Modifier.height(4.dp))
             Text(body, style = FilmTheme.type.data, color = colors.halide)
+        }
+    }
+}
+
+// ─── Achievements ─────────────────────────────────────────────────────────────
+
+/**
+ * The latest badge and the nearest one to earn, opening Stats → Badges.
+ *
+ * Opt-in (hidden until turned on in Home layout): a score on the first screen
+ * would turn a log of your film into a game, and that is a choice, not a default.
+ */
+@Composable
+private fun AchievementsRow(
+    progress: List<com.analogvault.util.AchProgress>,
+    records: Map<com.analogvault.util.Achievement, com.analogvault.util.AchRecord>,
+    onOpen: () -> Unit,
+) {
+    val colors = FilmTheme.colors
+    val total = com.analogvault.util.Achievement.entries.size
+    SectionCard(title = "Achievements · ${records.size}/$total", onClick = onOpen) {
+        val latest = com.analogvault.util.AchievementSummary.latest(records)
+        val next = com.analogvault.util.AchievementSummary.nearestGoal(progress, records)
+        if (latest == null && next == null) {
+            Text("Log a frame to earn the first one.", style = FilmTheme.type.data, color = colors.dim)
+            return@SectionCard
+        }
+        latest?.let { (a, r) ->
+            Text("LATEST · ${r.unlockedAt}", style = FilmTheme.type.rebate, color = colors.dim)
+            Spacer(Modifier.height(2.dp))
+            Text(a.title.uppercase(), style = FilmTheme.type.stock.copy(fontSize = 18.sp),
+                color = colors.cyan)
+        }
+        if (latest != null && next != null) Spacer(Modifier.height(10.dp))
+        next?.let { p ->
+            Text("NEXT · ${p.current.coerceAtMost(p.target)}/${p.target}",
+                style = FilmTheme.type.rebate, color = colors.dim)
+            Spacer(Modifier.height(2.dp))
+            Text(p.achievement.title.uppercase(), style = FilmTheme.type.stock.copy(fontSize = 18.sp),
+                color = colors.halide)
+            Spacer(Modifier.height(6.dp))
+            com.analogvault.ui.components.VaultProgressBar(p.current.toFloat() / p.target, colors.yellow)
         }
     }
 }

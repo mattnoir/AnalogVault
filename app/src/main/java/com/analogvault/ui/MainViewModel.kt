@@ -25,6 +25,7 @@ import com.analogvault.ui.screens.encodeAgitations
 import com.analogvault.ui.screens.encodeTimers
 import com.analogvault.ui.screens.HomeSection
 import com.analogvault.ui.screens.parseHomeHidden
+import com.analogvault.ui.screens.parseHomeShown
 import com.analogvault.ui.screens.parseHomeOrder
 import com.analogvault.ui.screens.MeterReading
 import com.analogvault.ui.screens.formatLatLon
@@ -249,13 +250,15 @@ class MainViewModel @Inject constructor(
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
             _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
-            _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
+            homeShown = parseHomeShown(repo.getSetting("home_shown"))
+            _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"), homeShown)
             _placeName.value = repo.getSetting("place_name").orEmpty()
             placeLat = repo.getSetting("place_lat")?.toDoubleOrNull()
             placeLon = repo.getSetting("place_lon")?.toDoubleOrNull()
             // Pinned places do not need the device, so the fetch can start here
             // rather than waiting for a screen to ask for a location permission.
             pinnedLatLon()?.let { (la, lo) -> fetchWeather(la, lo) }
+            _achNotify.value          = (repo.getSetting("ach_notify") ?: "true") == "true"
             _remindersEnabled.value   = repo.getSetting("reminders_enabled") == "true"
             _remindExpiry.value       = (repo.getSetting("remind_expiry") ?: "true") == "true"
             _remindUndeveloped.value  = (repo.getSetting("remind_undeveloped") ?: "true") == "true"
@@ -608,7 +611,7 @@ class MainViewModel @Inject constructor(
 
     private val _homeOrder = MutableStateFlow(DEFAULT_HOME_ORDER)
     val homeOrder: StateFlow<List<HomeSection>> = _homeOrder.asStateFlow()
-    private val _homeHidden = MutableStateFlow(emptySet<HomeSection>())
+    private val _homeHidden = MutableStateFlow(parseHomeHidden(null))
     val homeHidden: StateFlow<Set<HomeSection>> = _homeHidden.asStateFlow()
 
     fun moveHomeSection(section: HomeSection, delta: Int) = viewModelScope.launch {
@@ -622,17 +625,31 @@ class MainViewModel @Inject constructor(
         repo.setSetting("home_order", current.joinToString(",") { it.name })
     }
 
+    /** Opt-in sections (see HomeSection.optIn) the user has turned on. */
+    private var homeShown: Set<HomeSection> = emptySet()
+
     fun setHomeSectionVisible(section: HomeSection, visible: Boolean) = viewModelScope.launch {
+        if (section.optIn) {
+            // Stored as shown, not hidden: an opt-in section starts hidden for
+            // everyone, and the hidden list cannot tell "never chose" apart
+            // from "chose to show it".
+            homeShown = if (visible) homeShown + section else homeShown - section
+            repo.setSetting("home_shown", homeShown.joinToString(",") { it.name })
+            _homeHidden.value = if (visible) _homeHidden.value - section else _homeHidden.value + section
+            return@launch
+        }
         val next = if (visible) _homeHidden.value - section else _homeHidden.value + section
         _homeHidden.value = next
-        repo.setSetting("home_hidden", next.joinToString(",") { it.name })
+        repo.setSetting("home_hidden", next.filterNot { it.optIn }.joinToString(",") { it.name })
     }
 
     fun resetHomeLayout() = viewModelScope.launch {
+        homeShown = emptySet()
         _homeOrder.value = DEFAULT_HOME_ORDER
-        _homeHidden.value = emptySet()
+        _homeHidden.value = parseHomeHidden(null)
         repo.setSetting("home_order", "")
         repo.setSetting("home_hidden", "")
+        repo.setSetting("home_shown", "")
     }
 
     // ─── Weather ─────────────────────────────────────────────────────────────
@@ -810,6 +827,14 @@ class MainViewModel @Inject constructor(
     val devTempC: StateFlow<Double> = _devTempC.asStateFlow()
     fun saveDevTempC(t: Double) = viewModelScope.launch {
         _devTempC.value = t; repo.setSetting("dev_temp_c", t.toString())
+    }
+
+    // ─── Achievement notifications ───────────────────────────────────────────
+    /** Notify badges earned in the background. On by default, under its own key. */
+    private val _achNotify = MutableStateFlow(true)
+    val achNotify: StateFlow<Boolean> = _achNotify.asStateFlow()
+    fun saveAchNotify(on: Boolean) = viewModelScope.launch {
+        _achNotify.value = on; repo.setSetting("ach_notify", on.toString())
     }
 
     // ─── Reminders (daily WorkManager check) ─────────────────────────────────
@@ -1104,6 +1129,18 @@ class MainViewModel @Inject constructor(
             .map { AchievementRecords.decode(it) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    private val _unlockNotices = MutableStateFlow<List<UnlockNotice>>(emptyList())
+    /** The banner to show now; the rest wait their turn. */
+    val unlockNotice: StateFlow<UnlockNotice?> = _unlockNotices.map { it.firstOrNull() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    fun dismissUnlockNotice() { _unlockNotices.value = _unlockNotices.value.drop(1) }
+
+    private val _openBadges = MutableStateFlow(false)
+    /** Set by a tapped achievement notification; VaultApp opens Stats → Badges and clears it. */
+    val openBadges: StateFlow<Boolean> = _openBadges.asStateFlow()
+    fun requestOpenBadges() { _openBadges.value = true }
+    fun consumeOpenBadges() { _openBadges.value = false }
+
     /** Counts the things the vault's data cannot show for itself. */
     private fun bumpAchCounters(names: List<String>) {
         if (names.isEmpty()) return
@@ -1115,6 +1152,8 @@ class MainViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             achievementProgress.filterNotNull().collect { progress ->
+                var earned: List<Achievement> = emptyList()
+                var firstRun = false
                 repo.updateSetting(AchievementRecords.SETTING) { raw ->
                     // An empty record set is still written on the first run,
                     // so later runs can tell the vault has been looked at.
@@ -1123,11 +1162,33 @@ class MainViewModel @Inject constructor(
                         progress = progress,
                         today = java.time.LocalDate.now(),
                     )
+                    earned = outcome.newlyEarned
+                    firstRun = raw == null
                     AchievementRecords.encode(outcome.records)
                 }
+                announceUnlocks(earned, firstRun)
             }
         }
     }
+
+    /**
+     * What to say about newly earned badges, if anything.
+     *
+     * The first run with achievements earns the vault's whole history at
+     * once; that is one quiet "you had already earned N", not N banners. On
+     * screen a badge gets a banner, and off screen (a timer finishing in a
+     * pocket) a notification if they are turned on.
+     */
+    private fun announceUnlocks(earned: List<Achievement>, firstRun: Boolean) {
+        if (earned.isEmpty()) return
+        val notice = if (firstRun) UnlockNotice(emptyList(), backfilled = earned.size) else UnlockNotice(earned)
+        if (!firstRun && !com.analogvault.work.AppVisibility.foreground) {
+            if (_achNotify.value) com.analogvault.work.AchievementNotifier.post(appContext, earned)
+            return
+        }
+        _unlockNotices.value = _unlockNotices.value + notice
+    }
+
 }
 
 fun uid() = UUID.randomUUID().toString()
@@ -1152,6 +1213,15 @@ data class DarkroomTimerState(
     val finished: Boolean = false,
     /** True once any step was skipped; such a run does not count as run to the end. */
     val skippedStep: Boolean = false
+)
+
+/**
+ * One banner's worth of news: badges earned together, or the count the first
+ * run found already earned.
+ */
+data class UnlockNotice(
+    val earned: List<Achievement>,
+    val backfilled: Int = 0,
 )
 
 /** What the meter knew about a frame it logged. */

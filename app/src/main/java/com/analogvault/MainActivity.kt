@@ -44,6 +44,7 @@ import com.analogvault.ui.film.rememberShutterController
 import com.analogvault.ui.film.ChromaticText
 import com.analogvault.ui.film.filmGrain
 import com.analogvault.ui.screens.*
+import com.analogvault.ui.components.UnlockBanner
 import com.analogvault.ui.theme.*
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.HiltAndroidApp
@@ -67,8 +68,33 @@ class AnalogVaultApp : Application(), androidx.work.Configuration.Provider {
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
+    override fun onStart() {
+        super.onStart()
+        com.analogvault.work.AppVisibility.foreground = true
+    }
+
+    override fun onStop() {
+        com.analogvault.work.AppVisibility.foreground = false
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    /** A tapped achievement notification asks for Stats → Badges. */
+    private fun handleIntent(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra(com.analogvault.work.AchievementNotifier.EXTRA_OPEN_BADGES, false) == true) {
+            vm.requestOpenBadges()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Only a fresh launch: after a rotation or process restore the intent
+        // is the old one, and its request has already been served.
+        if (savedInstanceState == null) handleIntent(intent)
 
         // Both bars transparent with light icons, so the void black the root
         // container paints runs edge to edge. `dark` here means "dark background,
@@ -184,6 +210,8 @@ fun VaultApp() {
     val activeCount by remember { derivedStateOf { rolls.count { !it.finished && !it.developed } } }
 
     var activeSubTab by remember { mutableIntStateOf(0) }
+    // Which Stats tab to open on; consumed by StatsScreen once it has turned to it.
+    var statsPageRequest by remember { mutableStateOf<Int?>(null) }
     var initialRollId by remember { mutableStateOf<String?>(null) }
     var meterShutter  by remember { mutableStateOf("") }
     var meterAperture by remember { mutableStateOf("") }
@@ -203,6 +231,7 @@ fun VaultApp() {
 
     fun navigateTo(tab: Tab, subTab: Int = 0) {
         if (tab == Tab.ACTIVE) activeSubTab = subTab
+        if (tab == Tab.STATS) statsPageRequest = subTab
         if (tab == Tab.METER && currentTab != Tab.METER) tabBeforeMeter = currentTab
         if (tab == Tab.SHOTMAP && currentTab != Tab.SHOTMAP) tabBeforeMap = currentTab
         currentTab = tab
@@ -362,6 +391,8 @@ fun VaultApp() {
                 Tab.DARK     -> DarkroomScreen(vm)
                 Tab.STATS    -> StatsScreen(
                     vm,
+                    pageRequest = statsPageRequest,
+                    onPageRequestConsumed = { statsPageRequest = null },
                     onOpenMap = { openMap(null) },
                     onOpenRoll = { rollId ->
                         initialRollId = rollId
@@ -383,6 +414,33 @@ fun VaultApp() {
             }
         }
     }
+    // A badge earned while the app is open. It waits while the darkroom's DONE
+    // screen is up: that moment belongs to the timer, and the banner would sit
+    // on top of the one thing you are looking at. Only while it is on screen,
+    // though: a finished timer stays finished until DONE is pressed, and a run
+    // that ended in a pocket must not hold every banner back after it.
+    val unlockNotice by vm.unlockNotice.collectAsState()
+    val timerState by vm.timerState.collectAsState()
+    val doneShowing = currentTab == Tab.DARK && timerState?.finished == true
+    Box(Modifier.fillMaxSize()) {
+        UnlockBanner(
+            notice = unlockNotice.takeIf { !doneShowing },
+            onOpen = {
+                vm.dismissUnlockNotice()
+                navigateTo(Tab.STATS, STATS_BADGES_PAGE)
+            },
+            onDismiss = { vm.dismissUnlockNotice() },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+    val openBadges by vm.openBadges.collectAsState()
+    LaunchedEffect(openBadges) {
+        if (openBadges) {
+            navigateTo(Tab.STATS, STATS_BADGES_PAGE)
+            vm.consumeOpenBadges()
+        }
+    }
+
     // Drawn last, as a sibling of the Scaffold rather than inside its content,
     // so the blades cover the nav bar and the system bars as well. At rest it
     // composes nothing at all.

@@ -32,6 +32,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun StatsScreen(
     vm: MainViewModel,
+    /** A tab to turn to (see STATS_BADGES_PAGE), or null to stay where it is. */
+    pageRequest: Int? = null,
+    onPageRequestConsumed: () -> Unit = {},
     onOpenMap: () -> Unit = {},
     onOpenRoll: (String) -> Unit = {},
 ) {
@@ -47,8 +50,15 @@ fun StatsScreen(
     // the page. It is a screen of its own now, entered from the row at the
     // end of Numbers. Badges sits last, as the view back over everything.
     val tabs = listOf("Numbers", "Habits", "Badges")
-    val pagerState = rememberPagerState { tabs.size }
+    val pagerState = rememberPagerState(initialPage = pageRequest ?: 0) { tabs.size }
     val scope = rememberCoroutineScope()
+    // Also when Stats is already open: a banner tapped on Numbers turns the page.
+    LaunchedEffect(pageRequest) {
+        if (pageRequest != null) {
+            pagerState.scrollToPage(pageRequest.coerceIn(0, tabs.lastIndex))
+            onPageRequestConsumed()
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(colors.void)) {
         TabRow(
@@ -84,6 +94,9 @@ fun StatsScreen(
         }
     }
 }
+
+/** The Badges tab's index, for anything that opens Stats straight onto it. */
+const val STATS_BADGES_PAGE = 2
 
 // ─── Numbers tab ──────────────────────────────────────────────────────────────
 

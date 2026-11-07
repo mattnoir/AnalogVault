@@ -40,6 +40,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
     val remindChemicals   by vm.remindChemicals.collectAsState()
+    val achNotify         by vm.achNotify.collectAsState()
     val zoomLevels        by vm.zoomLevels.collectAsState()
     val cameraOptics      by vm.cameraOptics.collectAsState()
     val focalsUnverified  by vm.zoomFocalsUnverified.collectAsState()
@@ -50,6 +51,10 @@ fun SettingsScreen(vm: MainViewModel) {
     val notifPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { vm.saveRemindersEnabled(true) }
+    // Same for achievement notifications: turning them on asks once.
+    val achPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { vm.saveAchNotify(true) }
 
     var owmDraft      by remember(owmKey)   { mutableStateOf(owmKey) }
     var currencyDraft by remember(currency) { mutableStateOf(currency) }
@@ -295,6 +300,31 @@ fun SettingsScreen(vm: MainViewModel) {
                     ReminderToggle("Undeveloped rolls (3+ weeks)", remindUndeveloped) { vm.saveRemindUndeveloped(it) }
                     ReminderToggle("Chemistry age (60+ days mixed)", remindChemicals) { vm.saveRemindChemicals(it) }
                 }
+            }
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = FilmTheme.colors.edge)
+            Spacer(Modifier.height(12.dp))
+            // Not under "Enable reminders": these are not the daily check, and
+            // they only come when a badge is earned with the app closed (a
+            // timer finishing in a pocket). With the app open, a banner shows.
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Achievement notifications", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                    Text("When a badge is earned with the app in the background",
+                        color = FilmTheme.colors.dim, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = achNotify,
+                    onCheckedChange = { on ->
+                        if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            achPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            vm.saveAchNotify(on)
+                        }
+                    },
+                    colors = settingsSwitchColors(),
+                )
             }
         }
 

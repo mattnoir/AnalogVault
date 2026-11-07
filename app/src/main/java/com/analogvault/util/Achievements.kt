@@ -575,6 +575,28 @@ object Achievements {
         com.analogvault.ui.components.parseLatLon(location)
 }
 
+/** The two lines the Home row shows: the latest unlock, and the closest badge still to earn. */
+object AchievementSummary {
+
+    /** The most recently earned badge; among badges earned the same day, the later one in the list. */
+    fun latest(records: Map<Achievement, AchRecord>): Pair<Achievement, AchRecord>? =
+        records.entries
+            .maxWithOrNull(compareBy<Map.Entry<Achievement, AchRecord>>({ it.value.unlockedAt }, { it.key.ordinal }))
+            ?.toPair()
+
+    /**
+     * The badge closest to being earned, by the share of its next tier
+     * already done. Secrets are never offered: naming one would give it away.
+     * A tiered badge counts while it has a tier left to reach.
+     */
+    fun nearestGoal(progress: List<AchProgress>, records: Map<Achievement, AchRecord>): AchProgress? =
+        progress.filter { p ->
+            val tier = maxOf(p.tier, records[p.achievement]?.tier ?: 0)
+            p.achievement.category != AchCategory.SECRET &&
+                tier < p.achievement.tiers.size && p.target > 0
+        }.maxByOrNull { it.current.coerceAtMost(it.target).toDouble() / it.target }
+}
+
 /** When and with what a badge was earned, as stored in the `achievements` setting. */
 data class AchRecord(
     val tier: Int,
