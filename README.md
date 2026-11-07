@@ -209,7 +209,7 @@ app/src/main/java/com/analogvault/
 
 Report bugs and request features through [GitHub Issues](https://github.com/mattnoir/AnalogVault/issues). For code changes, see [CONTRIBUTING.md](./CONTRIBUTING.md) for branch names, commit and PR titles, versioning and the changelog. In summary:
 
-1. Branch from `redesign` as `feature/…`, `fix/…` or `chore/…`.
+1. Branch from `master` as `feature/…`, `fix/…` or `chore/…`.
 2. Title commits and the PR `feat: …`, `fix: …` or `chore: …`.
 3. Add an entry under `## [Unreleased]` in `CHANGELOG.md` for user-visible changes.
 4. Run a debug build and test on a device. Include screenshots for UI changes.
