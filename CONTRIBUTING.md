@@ -6,7 +6,7 @@ moves, and what goes in the changelog. Nothing here is enforced by a bot.
 
 ## Branches
 
-Work happens on **`redesign`**; pull requests target it. Branch off a freshly
+Work happens on **`master`**; pull requests target it. Branch off a freshly
 fetched copy and name the branch after the kind of change:
 
 | Prefix | For | Example |
@@ -74,9 +74,9 @@ using the app, not for someone reading the code. `chore` PRs don't need an entry
 
 ## Releases
 
-How releases are cut, tagged and built is not settled yet: the existing
-"Build & Release APK" workflow is tied to `master`, while work now lands on
-`redesign`. Until that is sorted out, the only rule is the one above — a
+How releases are cut and tagged is not settled yet; the existing
+"Build & Release APK" workflow builds from `master`, the same branch work lands
+on. Until the process is sorted out, the only rule is the one above — a
 version bump (`appVersion` plus dating the `[Unreleased]` changelog section)
 happens in its own commit, never inside a feature or fix PR.
 
