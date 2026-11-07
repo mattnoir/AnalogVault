@@ -438,6 +438,11 @@ class MainViewModel @Inject constructor(
         iso: String? = null,
         /** What the meter's viewfinder showed when the frame was logged. */
         photo: android.graphics.Bitmap? = null,
+        /**
+         * How the meter read the frame, for the achievements that ask about
+         * it; null when the frame was not logged from the meter.
+         */
+        meterLog: MeterLog? = null,
     ) = viewModelScope.launch {
         // Written before the roll is read, so the roll appended to below is
         // never one that went stale while the JPEG was being encoded.
@@ -467,6 +472,13 @@ class MainViewModel @Inject constructor(
             photoThumbPath = photoPath.orEmpty(),
         )
         repo.upsertRoll(roll.copy(shots = roll.shots + shot))
+        meterLog?.let { m ->
+            bumpAchCounters(listOfNotNull(
+                AchCounters.METER_LOGS,
+                AchCounters.ZONE_LOGS.takeIf { m.zonePlaced },
+                AchCounters.RECIPROCITY_LOGS.takeIf { m.longExposure },
+            ))
+        }
 
         if (hasLocationPermission()) {
             getCurrentLatLon(appContext)?.let { (lat, lon) ->
@@ -486,17 +498,24 @@ class MainViewModel @Inject constructor(
         androidx.core.content.ContextCompat.checkSelfPermission(
             appContext, android.Manifest.permission.ACCESS_COARSE_LOCATION
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    // Each stage keeps the date it was first reached: editing a dev log later
+    // is not developing the roll again. Undoing a stage clears its date.
+    private fun today(): String = java.time.LocalDate.now().toString()
+
     fun markFinished(rollId: String, finished: Boolean) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(finished = finished))
+        repo.upsertRoll(roll.copy(finished = finished,
+            finishedAt = if (finished) roll.finishedAt ?: today() else null))
     }
     fun markDeveloped(rollId: String, devLog: DevLog?, devCost: Double = 0.0, isSelfDev: Boolean = false) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(developed = devLog != null, devLog = devLog, devCost = devCost, isSelfDev = isSelfDev))
+        repo.upsertRoll(roll.copy(developed = devLog != null, devLog = devLog, devCost = devCost, isSelfDev = isSelfDev,
+            developedAt = if (devLog != null) roll.developedAt ?: today() else null))
     }
     fun markScanned(rollId: String, scanLog: ScanLog?, scanCost: Double = 0.0) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(scanned = scanLog != null, scanLog = scanLog, scanCost = scanCost))
+        repo.upsertRoll(roll.copy(scanned = scanLog != null, scanLog = scanLog, scanCost = scanCost,
+            scannedAt = if (scanLog != null) roll.scannedAt ?: today() else null))
     }
 
     // ─── Chemical CRUD ───────────────────────────────────────────────────────
@@ -921,7 +940,8 @@ class MainViewModel @Inject constructor(
         lastAgitationCueSec = -1
         val next = s.currentStep + 1
         _timerState.value = s.copy(
-            currentStep = next, secondsLeft = s.timer.steps[next].durationSec, running = false
+            currentStep = next, secondsLeft = s.timer.steps[next].durationSec, running = false,
+            skippedStep = true,
         )
     }
 
@@ -965,6 +985,13 @@ class MainViewModel @Inject constructor(
             )
         } else {
             _timerState.value = s.copy(secondsLeft = 0, running = false, finished = true)
+            // A run counts for the achievements only when every step ran to
+            // its end: skipping to the last step and letting it finish is not
+            // developing a roll.
+            if (!s.skippedStep) bumpAchCounters(listOfNotNull(
+                AchCounters.TIMER_RUNS,
+                AchCounters.SAFELIGHT_TIMER_RUNS.takeIf { _safelight.value },
+            ))
         }
     }
 
@@ -1077,6 +1104,14 @@ class MainViewModel @Inject constructor(
             .map { AchievementRecords.decode(it) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    /** Counts the things the vault's data cannot show for itself. */
+    private fun bumpAchCounters(names: List<String>) {
+        if (names.isEmpty()) return
+        viewModelScope.launch {
+            repo.updateSetting(AchCounters.SETTING) { AchCounters.increment(it, names) }
+        }
+    }
+
     init {
         viewModelScope.launch {
             achievementProgress.filterNotNull().collect { progress ->
@@ -1117,7 +1152,17 @@ data class DarkroomTimerState(
     val currentStep: Int = 0,
     val secondsLeft: Int = 0,
     val running: Boolean = false,
-    val finished: Boolean = false
+    val finished: Boolean = false,
+    /** True once any step was skipped; such a run does not count as run to the end. */
+    val skippedStep: Boolean = false
+)
+
+/** What the meter knew about a frame it logged. */
+data class MeterLog(
+    /** A zone was placed: zone placement on, with spot metering. */
+    val zonePlaced: Boolean = false,
+    /** One second or longer, where the meter shows its reciprocity correction. */
+    val longExposure: Boolean = false,
 )
 
 data class RollCostSummary(

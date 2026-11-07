@@ -334,6 +334,38 @@ class AchievementsTest {
         assertNull(AchievementRecords.decode("{}")[Achievement.FIRST_FRAME])
     }
 
+    @Test fun `latent image needs a year between the last frame and development`() {
+        val shots = listOf(shot("2024-03-01 10:00"))
+        assertTrue(eval(listOf(roll("a", shots = shots, devLog = developedBw).copy(developedAt = "2025-03-02")))
+            .earned(Achievement.LATENT_IMAGE))
+        assertFalse(eval(listOf(roll("a", shots = shots, devLog = developedBw).copy(developedAt = "2025-02-01")))
+            .earned(Achievement.LATENT_IMAGE))
+        // A recorded finish date beats the last frame.
+        assertFalse(eval(listOf(roll("a", shots = shots, devLog = developedBw)
+            .copy(finishedAt = "2024-12-01", developedAt = "2025-03-02"))).earned(Achievement.LATENT_IMAGE))
+        // Without a development date it cannot be told, so it is not earned.
+        assertFalse(eval(listOf(roll("a", shots = shots, devLog = developedBw))).earned(Achievement.LATENT_IMAGE))
+    }
+
+    @Test fun `stage dates date the evidence when a roll has them`() {
+        val r = roll("a", shots = listOf(shot("2026-01-10 12:00")), devLog = developedBw, scanned = true, selfDev = true)
+            .copy(finishedAt = "2026-02-01", developedAt = "2026-03-01", scannedAt = "2026-04-01")
+        val p = eval(listOf(r))
+        assertEquals("2026-02-01", p.getValue(Achievement.FULL_ROLL).evidence?.date)
+        assertEquals("2026-03-01", p.getValue(Achievement.HOME_BREW).evidence?.date)
+        assertEquals("2026-04-01", p.getValue(Achievement.THROUGH_THE_PIPELINE).evidence?.date)
+        val old = eval(listOf(roll("a", shots = listOf(shot("2026-01-10 12:00")), finished = true)))
+        assertEquals("2026-01-10 12:00", old.getValue(Achievement.FULL_ROLL).evidence?.date)
+    }
+
+    @Test fun `counters increment and merge by the larger count`() {
+        val once = AchCounters.increment(null, listOf(AchCounters.METER_LOGS, AchCounters.ZONE_LOGS))
+        val twice = AchCounters.increment(once, listOf(AchCounters.METER_LOGS))
+        assertEquals(mapOf(AchCounters.METER_LOGS to 2, AchCounters.ZONE_LOGS to 1), AchCounters.decode(twice))
+        val merged = AchCounters.merge(mapOf("a" to 3, "b" to 1), mapOf("a" to 2, "c" to 5))
+        assertEquals(mapOf("a" to 3, "b" to 1, "c" to 5), merged)
+    }
+
     @Test fun `every key is unique`() {
         assertEquals(Achievement.entries.size, Achievement.entries.map { it.key }.toSet().size)
     }

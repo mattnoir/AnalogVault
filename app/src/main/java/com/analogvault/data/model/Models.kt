@@ -304,7 +304,16 @@ data class Roll(
     // ── Cost tracking ───────────────────────────────────────────────────────
     val devCost: Double = 0.0,     // lab dev cost OR self-dev chemical cost
     val scanCost: Double = 0.0,    // scanning cost (lab or home scanner)
-    val isSelfDev: Boolean = false // true = self-developed (cost is chemicals, not lab)
+    val isSelfDev: Boolean = false, // true = self-developed (cost is chemicals, not lab)
+    // ── Stage dates ("yyyy-MM-dd") ──────────────────────────────────────────
+    /**
+     * When the roll was marked finished, developed and scanned. Null on rolls
+     * that reached the stage before these were recorded, and cleared when a
+     * stage is undone.
+     */
+    val finishedAt: String? = null,
+    val developedAt: String? = null,
+    val scannedAt: String? = null
 )
 
 // ─── Chemical ─────────────────────────────────────────────────────────────────

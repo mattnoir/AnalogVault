@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.analogvault.data.model.*
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.util.AchCounters
 import com.analogvault.util.AchievementRecords
 import com.analogvault.util.ApertureScale
 import com.analogvault.util.Constants
@@ -56,7 +57,13 @@ data class VaultBackup(
      * restore as nothing earned — the app then works out what the restored
      * rolls have earned for itself.
      */
-    val achievements: JsonObject? = null
+    val achievements: JsonObject? = null,
+    /**
+     * Counts the achievements need that no record shows (timer runs, frames
+     * logged from the meter, backups made), in the `ach_counters` setting's own
+     * format. Restored by taking the larger of each count, never the sum.
+     */
+    val achCounters: JsonObject? = null
     // photos are stored as separate files inside the ZIP — not embedded here
 )
 
@@ -141,7 +148,8 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
     owmKey      = owmKey ?: "",
     savedTimers = savedTimers,
     savedAgitations = savedAgitations,
-    achievements = achievements
+    achievements = achievements,
+    achCounters = achCounters
 )
 
 // ── Key remapping for obfuscated v2 backups (R8 renamed VaultBackup fields) ──
@@ -206,7 +214,8 @@ class BackupManager @Inject constructor(
                 savedTimers = readSettingArray(Constants.SAVED_TIMERS_SETTING),
                 savedAgitations = readSettingArray(Constants.SAVED_AGITATIONS_SETTING),
                 achievements = AchievementRecords.encodeObject(
-                    AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING)))
+                    AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING))),
+                achCounters = AchCounters.encodeObject(AchCounters.decode(repo.getSetting(AchCounters.SETTING)))
             )
 
             // Collect photo paths referenced by shots
@@ -425,6 +434,12 @@ class BackupManager @Inject constructor(
             val restored = runCatching { AchievementRecords.decodeObject(incoming) }.getOrNull()
             if (!restored.isNullOrEmpty()) repo.updateSetting(AchievementRecords.SETTING) { raw ->
                 AchievementRecords.encode(AchievementRecords.merge(AchievementRecords.decode(raw), restored))
+            }
+        }
+        backup.achCounters?.let { incoming ->
+            val restored = runCatching { AchCounters.decodeObject(incoming) }.getOrNull()
+            if (!restored.isNullOrEmpty()) repo.updateSetting(AchCounters.SETTING) { raw ->
+                AchCounters.encode(AchCounters.merge(AchCounters.decode(raw), restored))
             }
         }
         backup.films.forEach       { repo.upsertFilm(it) }

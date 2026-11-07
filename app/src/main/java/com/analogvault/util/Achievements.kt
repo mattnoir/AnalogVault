@@ -93,7 +93,8 @@ enum class Achievement(
     ZONE_THINKER("zone_thinker", "Zone Thinker",
         "Log a frame from the meter with a zone placed.", AchCategory.CRAFT),
     PATIENT_EYE("patient_eye", "Patient Eye",
-        "Log a frame from the meter with reciprocity corrected.", AchCategory.CRAFT),
+        "Log an exposure of a second or longer from the meter, where it corrects for reciprocity.",
+        AchCategory.CRAFT),
     PUSHER("pusher", "Pusher", "Develop a roll shot away from box speed.", AchCategory.CRAFT),
     GOLDEN_HOUR("golden_hour", "Golden Hour",
         "Log geotagged frames in the hour after sunrise or before sunset.", AchCategory.CRAFT, listOf(10)),
@@ -104,6 +105,8 @@ enum class Achievement(
     STAND_STILL("stand_still", "Stand Still", "Stand-develop a roll.", AchCategory.CRAFT),
 
     // ── Secret ──────────────────────────────────────────────────────────────
+    LATENT_IMAGE("latent_image", "Latent Image",
+        "Develop a roll more than a year after you finished shooting it.", AchCategory.SECRET),
     EXPIRED_WITH_HONOURS("expired_honours", "Expired with Honours",
         "Load a roll more than ten years past its expiry.", AchCategory.SECRET),
     SUNNY_16("sunny_16", "Sunny 16",
@@ -148,12 +151,31 @@ object AchCounters {
     const val FRESH_IMPORTS = "fresh_imports"
 
     fun decode(json: String?): Map<String, Int> = runCatching {
-        JsonParser.parseString(json ?: return emptyMap()).asJsonObject.entrySet()
-            .mapNotNull { (k, v) -> runCatching { k to v.asInt }.getOrNull() }.toMap()
+        decodeObject(JsonParser.parseString(json ?: return emptyMap()).asJsonObject)
     }.getOrDefault(emptyMap())
 
-    fun encode(counters: Map<String, Int>): String =
-        JsonObject().apply { counters.toSortedMap().forEach { (k, v) -> addProperty(k, v) } }.toString()
+    fun encode(counters: Map<String, Int>): String = encodeObject(counters).toString()
+
+    fun encodeObject(counters: Map<String, Int>): JsonObject =
+        JsonObject().apply { counters.toSortedMap().forEach { (k, v) -> addProperty(k, v) } }
+
+    fun decodeObject(obj: JsonObject): Map<String, Int> =
+        obj.entrySet().mapNotNull { (k, v) -> runCatching { k to v.asInt }.getOrNull() }.toMap()
+
+    /** The stored counters, each of [names] one higher. */
+    fun increment(json: String?, names: List<String>): String {
+        val counters = decode(json).toMutableMap()
+        names.forEach { counters[it] = (counters[it] ?: 0) + 1 }
+        return encode(counters)
+    }
+
+    /**
+     * Two sets of counters as one, taking the larger of each. Not the sum: a
+     * backup restored twice, or onto the vault it came from, must not count
+     * the same timer runs again.
+     */
+    fun merge(a: Map<String, Int>, b: Map<String, Int>): Map<String, Int> =
+        (a.keys + b.keys).associateWith { maxOf(a[it] ?: 0, b[it] ?: 0) }
 }
 
 /** Where a badge was earned: a roll, and the frame on it when one frame did it. */
@@ -214,14 +236,19 @@ object Achievements {
         val developed = s.rolls.filter { it.developed }
         val shotRolls = s.rolls.filter { it.shots.isNotEmpty() }
         fun rollEvidence(r: Roll) = AchEvidence(r.id, null, lastDate(r))
+        // Stage dates where the roll has them; rolls from before they were
+        // recorded fall back to their last frame.
+        fun finishedEvidence(r: Roll) = AchEvidence(r.id, null, r.finishedAt ?: lastDate(r))
+        fun developedEvidence(r: Roll) = AchEvidence(r.id, null, r.developedAt ?: lastDate(r))
+        fun scannedEvidence(r: Roll) = AchEvidence(r.id, null, r.scannedAt ?: lastDate(r))
         fun filmOf(r: Roll) = films[r.filmId]
 
         return Achievement.entries.map { a ->
             when (a) {
                 Achievement.FIRST_FRAME -> counted(a, frames.map { it.evidence })
                 Achievement.FULL_ROLL ->
-                    counted(a, s.rolls.filter { it.finished || it.developed || it.scanned }.map(::rollEvidence))
-                Achievement.THROUGH_THE_PIPELINE -> counted(a, s.rolls.filter { it.scanned }.map(::rollEvidence))
+                    counted(a, s.rolls.filter { it.finished || it.developed || it.scanned }.map(::finishedEvidence))
+                Achievement.THROUGH_THE_PIPELINE -> counted(a, s.rolls.filter { it.scanned }.map(::scannedEvidence))
                 Achievement.ROUND_TRIP -> counter(a, s.counters[AchCounters.TIMER_RUNS])
                 Achievement.SHELF_LIFE -> counted(a, s.rolls.filter { r ->
                     val start = parseDay(r.startDate)
@@ -264,15 +291,15 @@ object Achievements {
                     if (total > 0 && r.shots.size >= total)
                         AchEvidence(r.id, total - 1, r.shots[total - 1].date) else null
                 })
-                Achievement.HOME_BREW -> counted(a, developed.filter { it.isSelfDev }.map(::rollEvidence))
+                Achievement.HOME_BREW -> counted(a, developed.filter { it.isSelfDev }.map(::developedEvidence))
                 Achievement.THREE_BATHS -> distinct(a, developed.mapNotNull { r ->
-                    processFamily(r, filmOf(r))?.let { it to rollEvidence(r) }
+                    processFamily(r, filmOf(r))?.let { it to developedEvidence(r) }
                 })
                 Achievement.LAB_NOTES -> counted(a, developed.filter { r ->
                     val d = r.devLog ?: return@filter false
                     d.developer.isNotBlank() && d.dilution.isNotBlank() &&
                         d.temp.isNotBlank() && d.devTime.isNotBlank()
-                }.map(::rollEvidence))
+                }.map(::developedEvidence))
                 Achievement.MIXOLOGIST -> counted(a, s.chemicals.map { AchEvidence(date = it.mixDate) })
                 Achievement.END_OF_THE_REEL ->
                     flag(a, s.bulkRolls.any { it.totalFrames > 0 && it.usedFrames >= it.totalFrames })
@@ -288,7 +315,7 @@ object Achievements {
                 Achievement.ZONE_THINKER -> counter(a, s.counters[AchCounters.ZONE_LOGS])
                 Achievement.PATIENT_EYE -> counter(a, s.counters[AchCounters.RECIPROCITY_LOGS])
                 Achievement.PUSHER -> counted(a, developed.filter { isPushedOrPulled(it, filmOf(it)) }
-                    .map(::rollEvidence))
+                    .map(::developedEvidence))
                 Achievement.GOLDEN_HOUR -> counted(a, geoFrames.filter { inGoldenHour(it, s.zone) }
                     .map { it.evidence })
                 Achievement.USED_WHAT_YOU_METER -> counter(a, s.counters[AchCounters.METER_LOGS])
@@ -302,7 +329,15 @@ object Achievements {
                 }.map { AchEvidence(it.id, null, it.startDate) })
                 Achievement.STAND_STILL -> counted(a, developed.filter {
                     it.devLog?.process?.contains("stand", ignoreCase = true) == true
-                }.map(::rollEvidence))
+                }.map(::developedEvidence))
+
+                Achievement.LATENT_IMAGE -> counted(a, developed.filter { r ->
+                    // Developed is only known from v14 on; finished falls back
+                    // to the last frame, which is when the shooting stopped.
+                    val dev = r.developedAt?.let(::parseDay) ?: return@filter false
+                    val done = parseDay(r.finishedAt ?: lastDate(r)) ?: return@filter false
+                    !dev.isBefore(done.plusYears(1))
+                }.map(::developedEvidence))
 
                 Achievement.EXPIRED_WITH_HONOURS -> counted(a, s.rolls.filter { r ->
                     val start = parseDay(r.startDate)
