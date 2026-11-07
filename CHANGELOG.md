@@ -18,6 +18,7 @@ are added and releases are cut.
 - The light meter's focal lengths now come from your phone's own lens data: lens focal length, sensor size and crop factor. They used to assume every phone's main camera is 23mm. Each zoom level can be set by hand in the meter's EDIT sheet or under Settings → Light meter. A zoom level can also be added by focal length alone, e.g. 50mm. If the phone doesn't report its lens data, the focal lengths are marked with a "?" and a note asks you to set them. Presets the phone's cameras can't reach say OUT OF RANGE. Duplicate presets left behind by earlier restores are merged.
 
 ### Fixed
+- Opening a roll from the shot map or the Home screen sometimes landed on the Rolls list instead of the roll itself.
 - Tapping a selected focal-length preset again in the light meter left the camera zoomed in; it now goes back to 1x.
 - The LOAD ROLL button on bulk film cards in the Stash was missing whenever the card's tags didn't fit on one line: the wrapped line was cut off. Roll cards had the same problem with long tag lists.
 - Backup, restore and shot-log export results now pop up at the bottom of the Backup screen instead of appearing below the cards, where they were missed unless you scrolled. Successes clear after a few seconds; errors stay until you close them.

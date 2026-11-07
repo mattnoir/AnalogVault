@@ -329,7 +329,11 @@ fun VaultApp() {
                 Tab.ACTIVE   -> ActiveScreen(
                     vm = vm,
                     initialSubTab = activeSubTab,
-                    initialRollId = initialRollId.also { initialRollId = null },
+                    // Cleared by ActiveScreen once it has opened the roll.
+                    // Clearing it here, mid-composition, recomposed the screen
+                    // with null before its effect ever saw the id.
+                    initialRollId = initialRollId,
+                    onInitialRollConsumed = { initialRollId = null },
                     meterShutter  = meterShutter,
                     meterAperture = meterAperture,
                     meterIso      = meterIso,

@@ -88,6 +88,7 @@ fun ActiveScreen(
     vm: MainViewModel,
     initialSubTab: Int = 0,
     initialRollId: String? = null,
+    onInitialRollConsumed: () -> Unit = {},
     meterShutter: String = "",
     meterAperture: String = "",
     meterIso: String = "",
@@ -131,7 +132,10 @@ fun ActiveScreen(
 
     // Open specific roll from dashboard tap
     LaunchedEffect(initialRollId) {
-        if (initialRollId != null && selectedRollId == null) selectedRollId = initialRollId
+        if (initialRollId != null) {
+            selectedRollId = initialRollId
+            onInitialRollConsumed()
+        }
     }
 
     // When arriving from meter: auto-select if one roll, show picker if multiple
