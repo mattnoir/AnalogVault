@@ -23,6 +23,13 @@ import com.analogvault.ui.components.VaultSheet
 import com.analogvault.ui.theme.FilmColors
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.theme.Palette
+import com.analogvault.ui.film.LocalEdgePrint
+import com.analogvault.ui.share.BadgeImage
+import com.analogvault.util.BadgeShare
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.analogvault.R
 import com.analogvault.util.EdgePrint
 import com.analogvault.util.GrainStock
@@ -104,7 +111,11 @@ fun StatsBadges(
 
     open?.let { badge ->
         val roll = badge.record?.rollId?.let { id -> rolls.find { it.id == id } }
-        BadgeSheet(badge, roll, onDismiss = { open = null }, onOpenRoll = {
+        BadgeSheet(badge, roll,
+            frameNo = badges.indexOf(badge) + 1,
+            earnedCount = badges.count { it.earned },
+            total = badges.size,
+            onDismiss = { open = null }, onOpenRoll = {
             open = null
             onOpenRoll(it)
         })
@@ -186,8 +197,20 @@ private fun BadgeFrame(badge: Badge, frameNo: Int, modifier: Modifier, onClick: 
 }
 
 @Composable
-private fun BadgeSheet(badge: Badge, roll: Roll?, onDismiss: () -> Unit, onOpenRoll: (String) -> Unit) {
+private fun BadgeSheet(
+    badge: Badge,
+    roll: Roll?,
+    frameNo: Int,
+    earnedCount: Int,
+    total: Int,
+    onDismiss: () -> Unit,
+    onOpenRoll: (String) -> Unit,
+) {
     val colors = FilmTheme.colors
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val edgeText = LocalEdgePrint.current.text
+    var sharing by remember { mutableStateOf(false) }
     val a = badge.achievement
     val accent = colors.accentFor(a.category)
     VaultSheet(title = if (badge.hidden) "???" else a.title, onDismiss = onDismiss) {
@@ -223,8 +246,33 @@ private fun BadgeSheet(badge: Badge, roll: Roll?, onDismiss: () -> Unit, onOpenR
                 val frame = record.shotIndex?.let { " · frame ${it + 1}" } ?: ""
                 Text("On the roll loaded ${roll.startDate}$frame".uppercase(),
                     style = FilmTheme.type.rebate, color = colors.dim)
-                Spacer(Modifier.height(16.dp))
-                VaultButton("Open roll", onClick = { onOpenRoll(roll.id) })
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (roll != null) VaultButton("Open roll", onClick = { onOpenRoll(roll.id) })
+                // Drawn off the main thread: a 1080×1350 bitmap with grain is
+                // a few hundred milliseconds, too long to hold a frame for.
+                VaultButton(
+                    if (sharing) "Preparing…" else "Share image",
+                    ghost = roll != null,
+                    enabled = !sharing,
+                    onClick = {
+                        sharing = true
+                        scope.launch {
+                            val text = BadgeShare.text(
+                                a, record, frameNo, earnedCount, total,
+                                rollLine = roll?.let { "the roll loaded ${it.startDate}" },
+                                shotIndex = record.shotIndex.takeIf { roll != null },
+                                edgePrint = edgeText,
+                            )
+                            val image = withContext(Dispatchers.Default) {
+                                BadgeImage.render(context, text, a.category, colors)
+                            }
+                            runCatching { BadgeImage.share(context, image, BadgeShare.fileName(a, record)) }
+                            sharing = false
+                        }
+                    },
+                )
             }
         } else if (!badge.earned) {
             val p = badge.progress

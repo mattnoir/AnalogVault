@@ -42,6 +42,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Hands a shared badge image to the app it is shared with; cache/shared only. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- No Google Maps API key needed — using OpenStreetMap (osmdroid) -->
 
         <!-- WorkManager: on-demand init via Configuration.Provider (HiltWorkerFactory),
