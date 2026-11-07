@@ -136,6 +136,8 @@ class MainActivity : ComponentActivity() {
             val safelight by vm.safelight.collectAsState()
             val saturation by vm.saturation.collectAsState()
             val palette by vm.palette.collectAsState()
+            val grain by vm.grain.collectAsState()
+            val edgePrint by vm.edgePrint.collectAsState()
             val themeReady by vm.themeReady.collectAsState()
             FilmTheme(
                 safelight = safelight,
@@ -149,13 +151,17 @@ class MainActivity : ComponentActivity() {
                     Modifier
                         .fillMaxSize()
                         .background(FilmTheme.colors.void)
-                        .filmGrain()
+                        .filmGrain(alpha = grain.alpha, tileSize = grain.tileSize, clump = grain.clump)
                 ) {
                     // Nothing until the palette is known. The window background
                     // is black, this container is black, and every scheme starts
                     // from black — so the wait is invisible, where drawing first
                     // and correcting afterwards was not.
-                    if (themeReady) VaultApp()
+                    if (themeReady) {
+                        CompositionLocalProvider(com.analogvault.ui.film.LocalEdgePrint provides edgePrint) {
+                            VaultApp()
+                        }
+                    }
                 }
             }
         }
@@ -249,7 +255,8 @@ fun VaultApp() {
     // exposure for a frame you did not take, and 680ms is a long time to spend
     // leaving somewhere.
     val shutter = rememberShutterController()
-    val shutterConfig = rememberShutterConfig()
+    val iris by vm.iris.collectAsState()
+    val shutterConfig = rememberShutterConfig(blades = iris.blades, twistDegrees = iris.twistDegrees)
 
     /** True while the meter is on screen because the shutter release put it there. */
     var meterViaShutter by remember { mutableStateOf(false) }

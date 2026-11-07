@@ -807,7 +807,8 @@ fun RollDetailScreen(
                 Row(Modifier.fillMaxWidth()) {
                     Box(Modifier.size(28.dp).clip(CircleShape).background(FilmTheme.colors.filmRaised),
                         contentAlignment = Alignment.Center) {
-                        Text("$idx", color = FilmTheme.colors.cyan, fontSize = 11.sp)
+                        Text(com.analogvault.ui.film.LocalEdgePrint.current.frameStyle.format(idx),
+                            color = FilmTheme.colors.cyan, fontSize = 11.sp, maxLines = 1)
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {

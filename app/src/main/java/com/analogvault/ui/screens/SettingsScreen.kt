@@ -25,6 +25,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
 import com.analogvault.ui.theme.Palette
+import com.analogvault.util.EdgePrint
+import com.analogvault.util.FrameNumberStyle
+import com.analogvault.util.GrainStock
+import com.analogvault.util.IrisStyle
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.util.Constants
@@ -42,6 +46,9 @@ fun SettingsScreen(vm: MainViewModel) {
     val safelight by vm.safelight.collectAsState()
     val saturation by vm.saturation.collectAsState()
     val palette by vm.palette.collectAsState()
+    val grain by vm.grain.collectAsState()
+    val iris by vm.iris.collectAsState()
+    val edgePrint by vm.edgePrint.collectAsState()
     val achRecords by vm.achievementRecords.collectAsState()
     val remindersEnabled  by vm.remindersEnabled.collectAsState()
     val remindExpiry      by vm.remindExpiry.collectAsState()
@@ -138,6 +145,38 @@ fun SettingsScreen(vm: MainViewModel) {
                 Palette.entries.filter { it.unlocked(achRecords) }.forEach { p ->
                     PaletteRow(p, selected = p == palette) { vm.setPalette(p) }
                 }
+            }
+
+            // The rest of the look, each shown once a badge has unlocked
+            // something to choose between; until then there is no choice.
+            val grains = GrainStock.entries.filter { it.unlocked(achRecords) }
+            if (grains.size > 1) {
+                Spacer(Modifier.height(16.dp))
+                Text("Grain", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    grains.forEach { g ->
+                        LookOptionRow(g.label, g.blurb, selected = g == grain) { vm.setGrain(g) }
+                    }
+                }
+            }
+            val irises = IrisStyle.entries.filter { it.unlocked(achRecords) }
+            if (irises.size > 1) {
+                Spacer(Modifier.height(16.dp))
+                Text("Shutter iris", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                Text("The blades that close when you press the shutter button.",
+                    color = FilmTheme.colors.dim, fontSize = 11.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    irises.forEach { i ->
+                        LookOptionRow(i.label, i.blurb, selected = i == iris) { vm.setIris(i) }
+                    }
+                }
+            }
+            if (com.analogvault.util.EdgePrint.UNLOCK.isMet(achRecords)) {
+                Spacer(Modifier.height(16.dp))
+                EdgePrintSettings(edgePrint, onText = { vm.setEdgeText(it) },
+                    onStyle = { vm.setEdgeFrameStyle(it) })
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -412,5 +451,80 @@ private fun PaletteRow(palette: Palette, selected: Boolean, onClick: () -> Unit)
             Text(palette.blurb, color = colors.dim, fontSize = 11.sp)
         }
         if (selected) Text("✓", color = colors.cyan, fontSize = 15.sp)
+    }
+}
+
+/** One choice in a look picker: a name, a line about it, and a tick when chosen. */
+@Composable
+private fun LookOptionRow(label: String, blurb: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = FilmTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (selected) colors.cyan else colors.edge)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = label + if (selected) ", selected" else ""
+            }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = if (selected) colors.halide else colors.dim, fontSize = 13.sp)
+            Text(blurb, color = colors.dim, fontSize = 11.sp)
+        }
+        if (selected) Text("✓", color = colors.cyan, fontSize = 15.sp)
+    }
+}
+
+/**
+ * Your own edge printing: a line of text that leads the rebate of every roll
+ * and stock, and the style of the shot log's frame numbers. Saved when Save
+ * is pressed, not on every key, so a half-typed word never reaches the rolls.
+ */
+@Composable
+private fun EdgePrintSettings(
+    edgePrint: EdgePrint,
+    onText: (String) -> Unit,
+    onStyle: (FrameNumberStyle) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    var draft by remember(edgePrint.text) { mutableStateOf(edgePrint.text) }
+    Text("Edge print", color = colors.dim, fontSize = 13.sp)
+    Text("Printed along the edge of every roll and stock, before the camera and dates. " +
+        "Up to ${EdgePrint.MAX_LENGTH} characters; blank prints nothing.",
+        color = colors.dim, fontSize = 11.sp)
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        VaultTextField(
+            draft, { draft = EdgePrint.clean(it) }, "Edge text",
+            modifier = Modifier.weight(1f), placeholder = "SAFETY FILM",
+        )
+        VaultButton("Save", small = true, onClick = { onText(draft) },
+            enabled = draft.trim() != edgePrint.text)
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        (if (draft.isBlank()) "▸  ZORKI 4  ▸  18 OCT 2026" else "▸  ${draft.trim()}  ▸  ZORKI 4  ▸  18 OCT 2026"),
+        style = FilmTheme.type.rebate, color = colors.dim, maxLines = 1,
+    )
+    Spacer(Modifier.height(12.dp))
+    Text("Frame numbers", color = colors.dim, fontSize = 13.sp)
+    Spacer(Modifier.height(6.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FrameNumberStyle.entries.forEach { s ->
+            val selected = s == edgePrint.frameStyle
+            Text(
+                s.label,
+                style = FilmTheme.type.data,
+                color = if (selected) colors.void else colors.dim,
+                modifier = Modifier
+                    .background(if (selected) colors.cyan else colors.film)
+                    .border(1.dp, if (selected) colors.cyan else colors.edge)
+                    .clickable { onStyle(s) }
+                    .semantics { contentDescription = "Frame numbers like ${s.label}" + if (selected) ", selected" else "" }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
     }
 }

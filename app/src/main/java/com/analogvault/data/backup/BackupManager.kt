@@ -63,7 +63,14 @@ data class VaultBackup(
      * logged from the meter, backups made), in the `ach_counters` setting's own
      * format. Restored by taking the larger of each count, never the sum.
      */
-    val achCounters: JsonObject? = null
+    val achCounters: JsonObject? = null,
+    /**
+     * The look the badges unlocked: palette, grain, iris and edge print, as
+     * the settings of those names hold them. Restored as they are; the app
+     * checks each against the restored badges and falls back to the default
+     * for any it has not earned.
+     */
+    val look: JsonObject? = null
     // photos are stored as separate files inside the ZIP — not embedded here
 )
 
@@ -149,8 +156,12 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
     savedTimers = savedTimers,
     savedAgitations = savedAgitations,
     achievements = achievements,
-    achCounters = achCounters
+    achCounters = achCounters,
+    look = look
 )
+
+/** The settings a backup's `look` carries: what the badges let you choose. */
+private val LOOK_SETTINGS = listOf("palette", "grain", "iris", "edge_text", "edge_frame_style")
 
 // ── Key remapping for obfuscated v2 backups (R8 renamed VaultBackup fields) ──
 
@@ -215,7 +226,10 @@ class BackupManager @Inject constructor(
                 savedAgitations = readSettingArray(Constants.SAVED_AGITATIONS_SETTING),
                 achievements = AchievementRecords.encodeObject(
                     AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING))),
-                achCounters = AchCounters.forBackup(repo.getSetting(AchCounters.SETTING))
+                achCounters = AchCounters.forBackup(repo.getSetting(AchCounters.SETTING)),
+                look = JsonObject().apply {
+                    LOOK_SETTINGS.forEach { key -> repo.getSetting(key)?.let { addProperty(key, it) } }
+                }
             )
 
             // Collect photo paths referenced by shots
@@ -434,6 +448,13 @@ class BackupManager @Inject constructor(
             val restored = runCatching { AchievementRecords.decodeObject(incoming) }.getOrNull()
             if (!restored.isNullOrEmpty()) repo.updateSetting(AchievementRecords.SETTING) { raw ->
                 AchievementRecords.encode(AchievementRecords.merge(AchievementRecords.decode(raw), restored))
+            }
+        }
+        // After the badges, so the look they unlock is unlocked when it lands.
+        backup.look?.let { look ->
+            LOOK_SETTINGS.forEach { key ->
+                runCatching { look.get(key)?.takeIf { !it.isJsonNull }?.asString }.getOrNull()
+                    ?.let { repo.setSetting(key, it) }
             }
         }
         backup.achCounters?.let { incoming ->

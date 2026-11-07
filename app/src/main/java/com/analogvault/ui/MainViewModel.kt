@@ -40,6 +40,10 @@ import com.analogvault.util.Achievement
 import com.analogvault.util.AchievementRecords
 import com.analogvault.util.Achievements
 import com.analogvault.util.Constants
+import com.analogvault.util.EdgePrint
+import com.analogvault.util.FrameNumberStyle
+import com.analogvault.util.GrainStock
+import com.analogvault.util.IrisStyle
 import com.analogvault.util.Exposure
 import com.analogvault.util.legacyPhotoCacheDir
 import com.analogvault.util.photoDir
@@ -241,11 +245,15 @@ class MainViewModel @Inject constructor(
             // The badges are read here too, before the first frame: a palette
             // a secret unlocked has to be known as unlocked before it is worn,
             // or the app would open in Dye Layer and then change its coat.
-            _palette.value = Palette.resolve(
-                stored = repo.getSetting("palette"),
+            val records = AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING))
+            applyLook(LookSettings(
+                palette = repo.getSetting("palette"),
                 legacyAmber = repo.getSetting("legacy_amber"),
-                records = AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING)),
-            )
+                grain = repo.getSetting("grain"),
+                iris = repo.getSetting("iris"),
+                edgeText = repo.getSetting("edge_text"),
+                edgeFrameStyle = repo.getSetting("edge_frame_style"),
+            ), records)
             _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
             _themeReady.value = true
 
@@ -819,6 +827,63 @@ class MainViewModel @Inject constructor(
         // The picker only lists unlocked palettes; this is the backstop.
         if (!p.unlocked(achievementRecords.value)) return@launch
         _palette.value = p; repo.setSetting("palette", p.key)
+    }
+
+    // ─── Look: the cosmetic rewards ───────────────────────────────────────────
+    private val _grain = MutableStateFlow(GrainStock.DEFAULT)
+    val grain: StateFlow<GrainStock> = _grain.asStateFlow()
+    fun setGrain(g: GrainStock) = viewModelScope.launch {
+        if (!g.unlocked(achievementRecords.value)) return@launch
+        _grain.value = g; repo.setSetting("grain", g.key)
+    }
+
+    private val _iris = MutableStateFlow(IrisStyle.DEFAULT)
+    val iris: StateFlow<IrisStyle> = _iris.asStateFlow()
+    fun setIris(i: IrisStyle) = viewModelScope.launch {
+        if (!i.unlocked(achievementRecords.value)) return@launch
+        _iris.value = i; repo.setSetting("iris", i.key)
+    }
+
+    private val _edgePrint = MutableStateFlow(EdgePrint())
+    val edgePrint: StateFlow<EdgePrint> = _edgePrint.asStateFlow()
+    fun setEdgeText(text: String) = viewModelScope.launch {
+        if (!EdgePrint.UNLOCK.isMet(achievementRecords.value)) return@launch
+        val clean = EdgePrint.clean(text).trim()
+        _edgePrint.value = _edgePrint.value.copy(text = clean); repo.setSetting("edge_text", clean)
+    }
+    fun setEdgeFrameStyle(style: FrameNumberStyle) = viewModelScope.launch {
+        if (!EdgePrint.UNLOCK.isMet(achievementRecords.value)) return@launch
+        _edgePrint.value = _edgePrint.value.copy(frameStyle = style)
+        repo.setSetting("edge_frame_style", style.key)
+    }
+
+    /** The stored look, before it is checked against what has been earned. */
+    private data class LookSettings(
+        val palette: String?, val legacyAmber: String?, val grain: String?,
+        val iris: String?, val edgeText: String?, val edgeFrameStyle: String?,
+    )
+
+    /** Each choice, or its default where the badge behind it is not (or no longer) earned. */
+    private fun applyLook(s: LookSettings, records: Map<Achievement, AchRecord>) {
+        _palette.value = Palette.resolve(s.palette, s.legacyAmber, records)
+        _grain.value = GrainStock.resolve(s.grain, records)
+        _iris.value = IrisStyle.resolve(s.iris, records)
+        _edgePrint.value = EdgePrint.resolve(s.edgeText, s.edgeFrameStyle, records)
+    }
+
+    init {
+        // Kept live after the first read: a backup restore writes these
+        // settings and the badges under the running app, and the look should
+        // follow without a restart.
+        viewModelScope.launch {
+            val keys = listOf("palette", "legacy_amber", "grain", "iris", "edge_text", "edge_frame_style")
+            combine(keys.map { repo.observeSetting(it) }) { it.toList() }
+                .combine(repo.observeSetting(AchievementRecords.SETTING)) { v, rec ->
+                    LookSettings(v[0], v[1], v[2], v[3], v[4], v[5]) to AchievementRecords.decode(rec)
+                }
+                .drop(1) // the first value is what the theme block already applied
+                .collect { (s, records) -> applyLook(s, records) }
+        }
     }
 
     /**

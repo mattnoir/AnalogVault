@@ -23,6 +23,12 @@ import com.analogvault.ui.components.VaultSheet
 import com.analogvault.ui.theme.FilmColors
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.ui.theme.Palette
+import com.analogvault.R
+import com.analogvault.util.EdgePrint
+import com.analogvault.util.GrainStock
+import com.analogvault.util.IrisStyle
+import com.analogvault.util.Unlock
+import androidx.compose.ui.res.stringResource
 import com.analogvault.util.AchCategory
 import com.analogvault.util.AchProgress
 import com.analogvault.util.AchRecord
@@ -209,13 +215,9 @@ private fun BadgeSheet(badge: Badge, roll: Roll?, onDismiss: () -> Unit, onOpenR
         }
 
         val record = badge.record
+        RewardLines(a, badge.tier)
         if (badge.earned && record != null) {
             Text("EARNED ${record.unlockedAt}", style = FilmTheme.type.rebate, color = accent)
-            Palette.rewardedBy(a)?.let { p ->
-                Spacer(Modifier.height(4.dp))
-                Text("UNLOCKED THE ${p.label.uppercase()} PALETTE · SETTINGS → DISPLAY",
-                    style = FilmTheme.type.rebate, color = colors.dim)
-            }
             if (roll != null) {
                 Spacer(Modifier.height(4.dp))
                 val frame = record.shotIndex?.let { " · frame ${it + 1}" } ?: ""
@@ -230,6 +232,84 @@ private fun BadgeSheet(badge: Badge, roll: Roll?, onDismiss: () -> Unit, onOpenR
                 style = FilmTheme.type.rebate, color = colors.dim)
             Spacer(Modifier.height(6.dp))
             VaultProgressBar(p.current.toFloat() / p.target, accent)
+        }
+        techniqueCard(a)?.let { (title, body) ->
+            Spacer(Modifier.height(18.dp))
+            if (badge.earned) TechniqueCard(title, body, accent)
+            else Text("EARNING IT OPENS A TECHNIQUE CARD", style = FilmTheme.type.rebate, color = colors.dim)
+        }
+    }
+}
+
+/** One line per reward: what it unlocked, or what it will. */
+@Composable
+private fun RewardLines(a: Achievement, tier: Int) {
+    val colors = FilmTheme.colors
+    val rewards = rewardsOf(a)
+    if (rewards.isEmpty()) return
+    rewards.forEach { (unlock, name) ->
+        val got = tier >= unlock.tier
+        val prefix = when {
+            got -> "UNLOCKED"
+            a.tiered -> "TIER ${romanTier(unlock.tier)} UNLOCKS"
+            else -> "UNLOCKS"
+        }
+        Text("$prefix · ${name.uppercase()}", style = FilmTheme.type.rebate,
+            color = if (got) colors.halide else colors.dim)
+        Spacer(Modifier.height(3.dp))
+    }
+    Text("IN SETTINGS → DISPLAY", style = FilmTheme.type.rebate, color = colors.dim)
+    Spacer(Modifier.height(12.dp))
+}
+
+/** Everything [a] unlocks, with the tier that unlocks it. */
+private fun rewardsOf(a: Achievement): List<Pair<Unlock, String>> = buildList {
+    Palette.rewardedBy(a)?.let { add(Unlock(a) to "Palette: ${it.label}") }
+    GrainStock.entries.forEach { g -> g.unlock?.takeIf { it.achievement == a }?.let { add(it to "Grain: ${g.label}") } }
+    IrisStyle.entries.forEach { i -> i.unlock?.takeIf { it.achievement == a }?.let { add(it to "Iris: ${i.label}") } }
+    if (EdgePrint.UNLOCK.achievement == a) add(EdgePrint.UNLOCK to "Your own edge print")
+}
+
+/** The technique card a badge opens, as (title, body), or null. */
+@Composable
+private fun techniqueCard(a: Achievement): Pair<String, String>? {
+    val ids = when (a) {
+        Achievement.ZONE_THINKER -> R.string.technique_zone_title to R.string.technique_zone_body
+        Achievement.PATIENT_EYE -> R.string.technique_reciprocity_title to R.string.technique_reciprocity_body
+        Achievement.PUSHER -> R.string.technique_push_title to R.string.technique_push_body
+        Achievement.GOLDEN_HOUR -> R.string.technique_golden_title to R.string.technique_golden_body
+        Achievement.USED_WHAT_YOU_METER -> R.string.technique_meter_title to R.string.technique_meter_body
+        Achievement.ADAPTED -> R.string.technique_adapted_title to R.string.technique_adapted_body
+        Achievement.STAND_STILL -> R.string.technique_stand_title to R.string.technique_stand_body
+        Achievement.SUNNY_16 -> R.string.technique_sunny16_title to R.string.technique_sunny16_body
+        else -> return null
+    }
+    return stringResource(ids.first) to stringResource(ids.second)
+}
+
+/** A short note on the technique, folded until opened so the sheet stays short. */
+@Composable
+private fun TechniqueCard(title: String, body: String, accent: androidx.compose.ui.graphics.Color) {
+    val colors = FilmTheme.colors
+    var open by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (open) accent else colors.edge)
+            .clickable { open = !open }
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("TECHNIQUE", style = FilmTheme.type.rebate, color = accent)
+            Spacer(Modifier.width(8.dp))
+            Text(title.uppercase(), style = FilmTheme.type.stock.copy(fontSize = 16.sp),
+                color = colors.halide, modifier = Modifier.weight(1f))
+            Text(if (open) "−" else "+", style = FilmTheme.type.data, color = colors.dim)
+        }
+        if (open) {
+            Spacer(Modifier.height(10.dp))
+            // Prose, so the body face rather than the monospaced data one.
+            Text(body, color = colors.halide, fontSize = 14.sp, lineHeight = 21.sp)
         }
     }
 }

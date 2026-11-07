@@ -127,13 +127,23 @@ fun Modifier.hazardHatch(
 fun Modifier.filmGrain(
     alpha: Float = 0.055f,
     tileSize: Int = 128,
+    /**
+     * Screen pixels per grain. Pushed film's grain is not more specks of the
+     * same size but bigger ones, so a coarser stock draws each noise value
+     * as a [clump]×[clump] block rather than raising the alpha.
+     */
+    clump: Int = 1,
 ): Modifier {
-    val brush = remember(tileSize) {
-        val pixels = IntArray(tileSize * tileSize) {
-            val v = Random.nextInt(256)
+    val brush = remember(tileSize, clump) {
+        val c = clump.coerceAtLeast(1)
+        val cells = (tileSize / c).coerceAtLeast(1)
+        val noise = IntArray(cells * cells) { Random.nextInt(256) }
+        val size = cells * c
+        val pixels = IntArray(size * size) { i ->
+            val v = noise[(i / size / c) * cells + (i % size) / c]
             android.graphics.Color.argb(255, v, v, v)
         }
-        val bitmap = Bitmap.createBitmap(pixels, tileSize, tileSize, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
         ShaderBrush(
             ImageShader(bitmap.asImageBitmap(), TileMode.Repeated, TileMode.Repeated)
         )
