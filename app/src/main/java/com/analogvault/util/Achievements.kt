@@ -328,7 +328,9 @@ object Achievements {
                         cam.adapterMounts.any { it.trim().equals(mount, ignoreCase = true) }
                 }.map { AchEvidence(it.id, null, it.startDate) })
                 Achievement.STAND_STILL -> counted(a, developed.filter {
-                    it.devLog?.process?.contains("stand", ignoreCase = true) == true
+                    // "Stand" and "Semi-Stand" as whole words: a plain
+                    // substring match also finds the stand in "Standard".
+                    STAND_PROCESS.containsMatchIn(it.devLog?.process.orEmpty())
                 }.map(::developedEvidence))
 
                 Achievement.LATENT_IMAGE -> counted(a, developed.filter { r ->
@@ -430,6 +432,7 @@ object Achievements {
     // ── Checks too long to sit inline ───────────────────────────────────────
 
     private const val POLAR_CIRCLE = 66.5622
+    private val STAND_PROCESS = Regex("\\bstand\\b", RegexOption.IGNORE_CASE)
     private val RAIN_WORDS = listOf("rain", "drizzle", "snow", "sleet", "thunderstorm", "shower")
 
     private fun everyLens(a: Achievement, s: AchSnapshot, shotRolls: List<Roll>): AchProgress {
@@ -637,16 +640,18 @@ object AchievementRecords {
      * Folds fresh progress into the stored records. Records only ever move up:
      * a tier the data no longer shows (a roll deleted) stays earned.
      *
-     * [backfill] is the first run after achievements arrive, when everything
-     * already in the vault is earned at once. Those badges take the date their
-     * evidence carries rather than today, so a vault five years old does not
-     * claim to have earned its first frame this morning.
+     * A badge is dated by its evidence (the frame, the roll's stage) when it
+     * has one, and by [today] otherwise. Today would be wrong whenever the
+     * evidence is old: the first run after achievements arrive earns a whole
+     * vault's history at once, and so does a backup restored into a fresh
+     * install. Neither should claim a first frame from years ago was earned
+     * this morning. For something earned just now, the evidence is from today
+     * anyway.
      */
     fun reconcile(
         stored: Map<Achievement, AchRecord>,
         progress: List<AchProgress>,
         today: LocalDate,
-        backfill: Boolean,
     ): Outcome {
         val records = stored.toMutableMap()
         val newly = mutableListOf<Achievement>()
@@ -654,9 +659,8 @@ object AchievementRecords {
             if (!p.earned) continue
             val old = records[p.achievement]
             if (old != null && old.tier >= p.tier) continue
-            val date = if (backfill) {
-                p.evidence?.date?.let { Achievements.parseDay(it) }?.takeIf { !it.isAfter(today) } ?: today
-            } else today
+            val date = p.evidence?.date?.let { Achievements.parseDay(it) }
+                ?.takeIf { !it.isAfter(today) } ?: today
             records[p.achievement] = AchRecord(p.tier, date.toString(), p.evidence?.rollId, p.evidence?.shotIndex)
             newly += p.achievement
         }

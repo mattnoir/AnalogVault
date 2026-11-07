@@ -1116,15 +1116,12 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             achievementProgress.filterNotNull().collect { progress ->
                 repo.updateSetting(AchievementRecords.SETTING) { raw ->
-                    // No setting at all is the first run with achievements:
-                    // what the vault already holds is backfilled, dated by
-                    // its own evidence. An empty record set is still written,
-                    // so the next run knows the backfill happened.
+                    // An empty record set is still written on the first run,
+                    // so later runs can tell the vault has been looked at.
                     val outcome = AchievementRecords.reconcile(
                         stored = AchievementRecords.decode(raw),
                         progress = progress,
                         today = java.time.LocalDate.now(),
-                        backfill = raw == null,
                     )
                     AchievementRecords.encode(outcome.records)
                 }

@@ -290,21 +290,32 @@ class AchievementsTest {
 
     // ── Records ─────────────────────────────────────────────────────────────
 
-    @Test fun `backfill dates badges by their evidence, live unlocks by today`() {
+    @Test fun `badges are dated by their evidence, and by today without any`() {
         val progress = Achievements.evaluate(AchSnapshot(
-            rolls = listOf(roll("a", shots = listOf(shot("2023-04-05 10:00")))), films = listOf(hp5)))
+            rolls = listOf(roll("a", shots = listOf(shot("2023-04-05 10:00")))), films = listOf(hp5),
+            counters = mapOf(AchCounters.BACKUP_EXPORTS to 1)))
         val today = LocalDate.of(2026, 11, 7)
-        val back = AchievementRecords.reconcile(emptyMap(), progress, today, backfill = true)
-        assertEquals("2023-04-05", back.records.getValue(Achievement.FIRST_FRAME).unlockedAt)
-        val live = AchievementRecords.reconcile(emptyMap(), progress, today, backfill = false)
-        assertEquals("2026-11-07", live.records.getValue(Achievement.FIRST_FRAME).unlockedAt)
-        assertTrue(Achievement.FIRST_FRAME in live.newlyEarned)
+        val out = AchievementRecords.reconcile(emptyMap(), progress, today)
+        assertEquals("2023-04-05", out.records.getValue(Achievement.FIRST_FRAME).unlockedAt)
+        assertEquals("2026-11-07", out.records.getValue(Achievement.BACKED_UP).unlockedAt)
+        assertTrue(Achievement.FIRST_FRAME in out.newlyEarned)
+        // Evidence dated after today (a clock set wrong) falls back to today.
+        val future = Achievements.evaluate(AchSnapshot(
+            rolls = listOf(roll("a", shots = listOf(shot("2030-01-01 10:00")))), films = listOf(hp5)))
+        assertEquals("2026-11-07", AchievementRecords.reconcile(emptyMap(), future, today)
+            .records.getValue(Achievement.FIRST_FRAME).unlockedAt)
+    }
+
+    @Test fun `standard development is not stand development`() {
+        assertFalse(eval(listOf(roll("a", devLog = DevLog(process = "B&W (Standard)")))).earned(Achievement.STAND_STILL))
+        assertTrue(eval(listOf(roll("a", devLog = DevLog(process = "B&W (Semi-Stand)")))).earned(Achievement.STAND_STILL))
+        assertTrue(eval(listOf(roll("a", devLog = DevLog(process = "Rodinal stand 1:100")))).earned(Achievement.STAND_STILL))
     }
 
     @Test fun `records are sticky and only move up`() {
         val stored = mapOf(Achievement.FULL_ROLL to AchRecord(2, "2025-01-01"))
         val oneRoll = Achievements.evaluate(AchSnapshot(rolls = listOf(roll("a", finished = true))))
-        val out = AchievementRecords.reconcile(stored, oneRoll, LocalDate.of(2026, 1, 1), backfill = false)
+        val out = AchievementRecords.reconcile(stored, oneRoll, LocalDate.of(2026, 1, 1))
         assertEquals(2, out.records.getValue(Achievement.FULL_ROLL).tier)
         assertTrue(out.newlyEarned.isEmpty())
     }
