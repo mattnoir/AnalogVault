@@ -377,6 +377,33 @@ class AchievementsTest {
         assertEquals(mapOf("a" to 3, "b" to 1, "c" to 5), merged)
     }
 
+    @Test fun `a backup counts its own export`() {
+        assertEquals(mapOf(AchCounters.BACKUP_EXPORTS to 1),
+            AchCounters.decodeObject(AchCounters.forBackup(null)))
+        val stored = AchCounters.encode(mapOf(AchCounters.BACKUP_EXPORTS to 2, AchCounters.TIMER_RUNS to 3))
+        assertEquals(mapOf(AchCounters.BACKUP_EXPORTS to 3, AchCounters.TIMER_RUNS to 3),
+            AchCounters.decodeObject(AchCounters.forBackup(stored)))
+        // Unreadable stored counters still give a backup that knows it was made.
+        assertEquals(mapOf(AchCounters.BACKUP_EXPORTS to 1),
+            AchCounters.decodeObject(AchCounters.forBackup("not json")))
+    }
+
+    @Test fun `a vault restored from the first backup has Backed Up`() {
+        // The first export: nothing counted yet when the file is written.
+        val carried = AchCounters.decodeObject(AchCounters.forBackup(null))
+        // Restored into an empty vault: the counters are merged into none.
+        val restored = AchCounters.merge(emptyMap(), carried)
+        assertTrue(eval(counters = restored).earned(Achievement.BACKED_UP))
+    }
+
+    @Test fun `restoring a backup onto the vault that made it counts the export once`() {
+        val before = AchCounters.encode(mapOf(AchCounters.BACKUP_EXPORTS to 4))
+        val carried = AchCounters.decodeObject(AchCounters.forBackup(before))
+        // After a successful export the app bumps its own setting too.
+        val after = AchCounters.decode(AchCounters.increment(before, listOf(AchCounters.BACKUP_EXPORTS)))
+        assertEquals(5, AchCounters.merge(after, carried)[AchCounters.BACKUP_EXPORTS])
+    }
+
     @Test fun `every key is unique`() {
         assertEquals(Achievement.entries.size, Achievement.entries.map { it.key }.toSet().size)
     }

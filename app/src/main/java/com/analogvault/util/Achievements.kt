@@ -170,6 +170,15 @@ object AchCounters {
     }
 
     /**
+     * The counters a backup carries: the stored ones, with that backup's own
+     * export already counted. The export is only counted in the setting once
+     * the file is written, which is too late for the file itself, and a vault
+     * restored from it should still know a backup was made.
+     */
+    fun forBackup(json: String?): JsonObject =
+        encodeObject(decode(increment(json, listOf(BACKUP_EXPORTS))))
+
+    /**
      * Two sets of counters as one, taking the larger of each. Not the sum: a
      * backup restored twice, or onto the vault it came from, must not count
      * the same timer runs again.

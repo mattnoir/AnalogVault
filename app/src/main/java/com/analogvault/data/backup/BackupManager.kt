@@ -215,10 +215,7 @@ class BackupManager @Inject constructor(
                 savedAgitations = readSettingArray(Constants.SAVED_AGITATIONS_SETTING),
                 achievements = AchievementRecords.encodeObject(
                     AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING))),
-                // Counted in the backup it writes: this export is one, and a
-                // vault restored from it should know a backup was made.
-                achCounters = AchCounters.encodeObject(AchCounters.decode(
-                    AchCounters.increment(repo.getSetting(AchCounters.SETTING), listOf(AchCounters.BACKUP_EXPORTS))))
+                achCounters = AchCounters.forBackup(repo.getSetting(AchCounters.SETTING))
             )
 
             // Collect photo paths referenced by shots
