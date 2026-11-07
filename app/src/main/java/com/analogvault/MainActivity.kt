@@ -360,7 +360,14 @@ fun VaultApp() {
                 Tab.WEATHER  -> WeatherScreen(vm)
                 Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
                 Tab.DARK     -> DarkroomScreen(vm)
-                Tab.STATS    -> StatsScreen(vm, onOpenMap = { openMap(null) })
+                Tab.STATS    -> StatsScreen(
+                    vm,
+                    onOpenMap = { openMap(null) },
+                    onOpenRoll = { rollId ->
+                        initialRollId = rollId
+                        navigateTo(Tab.ACTIVE, 0)
+                    },
+                )
                 Tab.SHOTMAP  -> ShotMapScreen(
                     vm = vm,
                     initialRollId = mapRollId,

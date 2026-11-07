@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.analogvault.data.model.*
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.util.AchievementRecords
 import com.analogvault.util.ApertureScale
 import com.analogvault.util.Constants
 import com.analogvault.util.photoDir
@@ -48,7 +49,14 @@ data class VaultBackup(
      */
     val savedTimers: JsonArray? = null,
     /** Named agitation patterns, raw JSON for the same reason (see encodeAgitations). */
-    val savedAgitations: JsonArray? = null
+    val savedAgitations: JsonArray? = null,
+    /**
+     * Earned achievements, in the `achievements` setting's own format (see
+     * AchievementRecords). Absent in backups from before achievements, which
+     * restore as nothing earned — the app then works out what the restored
+     * rolls have earned for itself.
+     */
+    val achievements: JsonObject? = null
     // photos are stored as separate files inside the ZIP — not embedded here
 )
 
@@ -132,7 +140,8 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
         .map { z -> z.copy(label = z.label ?: "").upgradedFromLegacy() },
     owmKey      = owmKey ?: "",
     savedTimers = savedTimers,
-    savedAgitations = savedAgitations
+    savedAgitations = savedAgitations,
+    achievements = achievements
 )
 
 // ── Key remapping for obfuscated v2 backups (R8 renamed VaultBackup fields) ──
@@ -195,7 +204,9 @@ class BackupManager @Inject constructor(
                 zoomLevels  = repo.zoomLevels.first(),
                 owmKey      = repo.getSetting("owm_key") ?: "",
                 savedTimers = readSettingArray(Constants.SAVED_TIMERS_SETTING),
-                savedAgitations = readSettingArray(Constants.SAVED_AGITATIONS_SETTING)
+                savedAgitations = readSettingArray(Constants.SAVED_AGITATIONS_SETTING),
+                achievements = AchievementRecords.encodeObject(
+                    AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING)))
             )
 
             // Collect photo paths referenced by shots
@@ -407,6 +418,15 @@ class BackupManager @Inject constructor(
     // ── Common DB restore ───────────────────────────────────────────────────
 
     private suspend fun restoreData(backup: VaultBackup, rolls: List<Roll>) {
+        // Records first, before the rows that earned them: the app re-checks
+        // achievements as the rows land, and a badge it finds already recorded
+        // keeps the date it was first earned instead of becoming new today.
+        backup.achievements?.let { incoming ->
+            val restored = runCatching { AchievementRecords.decodeObject(incoming) }.getOrNull()
+            if (!restored.isNullOrEmpty()) repo.updateSetting(AchievementRecords.SETTING) { raw ->
+                AchievementRecords.encode(AchievementRecords.merge(AchievementRecords.decode(raw), restored))
+            }
+        }
         backup.films.forEach       { repo.upsertFilm(it) }
         backup.cameras.forEach     { repo.upsertCamera(it) }
         backup.lenses.forEach      { repo.upsertLens(it) }

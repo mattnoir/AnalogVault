@@ -30,17 +30,23 @@ import com.analogvault.ui.theme.FilmTheme
 import kotlinx.coroutines.launch
 
 @Composable
-fun StatsScreen(vm: MainViewModel, onOpenMap: () -> Unit = {}) {
+fun StatsScreen(
+    vm: MainViewModel,
+    onOpenMap: () -> Unit = {},
+    onOpenRoll: (String) -> Unit = {},
+) {
     val colors   = FilmTheme.colors
     val stats    by vm.stats.collectAsState()
     val currency by vm.currency.collectAsState()
     val rolls    by vm.rolls.collectAsState()
+    val achProgress by vm.achievementProgress.collectAsState()
+    val achRecords  by vm.achievementRecords.collectAsState()
 
-    // Two tabs, not three. The map was the third, and a pager is the one parent
-    // a map cannot live inside: the drag that pans it is the same drag that
-    // turns the page, so every attempt to move west went to Habits instead. It
-    // is a screen of its own now, entered from the row at the end of Numbers.
-    val tabs = listOf("Numbers", "Habits")
+    // The map was once a tab here too, and a pager is the one parent a map
+    // cannot live inside: the drag that pans it is the same drag that turns
+    // the page. It is a screen of its own now, entered from the row at the
+    // end of Numbers. Badges sits last, as the view back over everything.
+    val tabs = listOf("Numbers", "Habits", "Badges")
     val pagerState = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
 
@@ -72,7 +78,8 @@ fun StatsScreen(vm: MainViewModel, onOpenMap: () -> Unit = {}) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
                 0    -> StatsNumbers(stats, currency, framesWithGps, onOpenMap)
-                else -> StatsHabits(stats)
+                1    -> StatsHabits(stats)
+                else -> StatsBadges(achProgress, achRecords, rolls, onOpenRoll)
             }
         }
     }

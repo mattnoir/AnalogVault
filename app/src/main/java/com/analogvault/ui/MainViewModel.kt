@@ -30,6 +30,13 @@ import com.analogvault.ui.screens.MeterReading
 import com.analogvault.ui.screens.formatLatLon
 import com.analogvault.ui.screens.formatWeatherString
 import com.analogvault.ui.screens.getCurrentLatLon
+import com.analogvault.util.AchCounters
+import com.analogvault.util.AchProgress
+import com.analogvault.util.AchRecord
+import com.analogvault.util.AchSnapshot
+import com.analogvault.util.Achievement
+import com.analogvault.util.AchievementRecords
+import com.analogvault.util.Achievements
 import com.analogvault.util.Constants
 import com.analogvault.util.Exposure
 import com.analogvault.util.legacyPhotoCacheDir
@@ -501,10 +508,7 @@ class MainViewModel @Inject constructor(
     }
 
     /** Count developed rolls that used this chemical (match by developer name or just total developed) */
-    fun rolledCount(chem: Chemical): Int {
-        if (chem.manualRolls >= 0) return chem.manualRolls
-        return rolls.value.count { r -> r.developed && (r.devLog?.developer?.contains(chem.name, ignoreCase = true) == true) }
-    }
+    fun rolledCount(chem: Chemical): Int = Achievements.chemicalRollCount(chem, rolls.value)
 
     // ─── Zoom levels ─────────────────────────────────────────────────────────
     fun upsertZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.upsertZoomLevel(z) }
@@ -1041,6 +1045,57 @@ class MainViewModel @Inject constructor(
             rollCosts     = rollCosts
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Stats())
+
+    // ─── Achievements ────────────────────────────────────────────────────────
+    /**
+     * Every badge's progress, or null until the vault has been read.
+     *
+     * Built from the repository's own flows rather than the stateIn copies
+     * above: those start as empty lists, and an evaluation of an empty vault
+     * on launch would read as "nothing earned yet" — then everything the vault
+     * already held would arrive a moment later as a burst of new unlocks.
+     */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    val achievementProgress: StateFlow<List<AchProgress>?> =
+        combine(repo.rolls, repo.films, repo.cameras, repo.lenses, repo.chemicals) { r, f, c, l, ch ->
+            AchSnapshot(rolls = r, films = f, cameras = c, lenses = l, chemicals = ch)
+        }
+            .combine(repo.bulkRolls) { snap, b -> snap.copy(bulkRolls = b) }
+            .combine(repo.observeSetting(AchCounters.SETTING)) { snap, k ->
+                snap.copy(counters = AchCounters.decode(k))
+            }
+            // Logging a frame writes the roll once; a restore writes hundreds
+            // of rows. Wait for the writes to settle before asking again.
+            .debounce(300)
+            .map { Achievements.evaluate(it) }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** The stored unlocks: when each badge was earned, and by what. */
+    val achievementRecords: StateFlow<Map<Achievement, AchRecord>> =
+        repo.observeSetting(AchievementRecords.SETTING)
+            .map { AchievementRecords.decode(it) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    init {
+        viewModelScope.launch {
+            achievementProgress.filterNotNull().collect { progress ->
+                repo.updateSetting(AchievementRecords.SETTING) { raw ->
+                    // No setting at all is the first run with achievements:
+                    // what the vault already holds is backfilled, dated by
+                    // its own evidence. An empty record set is still written,
+                    // so the next run knows the backfill happened.
+                    val outcome = AchievementRecords.reconcile(
+                        stored = AchievementRecords.decode(raw),
+                        progress = progress,
+                        today = java.time.LocalDate.now(),
+                        backfill = raw == null,
+                    )
+                    AchievementRecords.encode(outcome.records)
+                }
+            }
+        }
+    }
 }
 
 fun uid() = UUID.randomUUID().toString()

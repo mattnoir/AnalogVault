@@ -133,4 +133,7 @@ dependencies {
 
     // OpenStreetMap
     implementation(libs.osmdroid)
+
+    // JVM unit tests for the pure logic in util/ (achievements, sun times)
+    testImplementation(libs.junit)
 }
