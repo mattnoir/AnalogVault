@@ -17,7 +17,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.analogvault.MainActivity
+import com.analogvault.VaultActivity
 import com.analogvault.R
 import com.analogvault.data.repo.VaultRepository
 import com.analogvault.util.daysUntilDate
@@ -173,7 +173,7 @@ class ReminderWorker @AssistedInject constructor(
             )
         }
         val contentIntent = PendingIntent.getActivity(
-            ctx, 0, Intent(ctx, MainActivity::class.java),
+            ctx, 0, Intent(ctx, VaultActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notification = NotificationCompat.Builder(ctx, CHANNEL_ID)

@@ -11,7 +11,7 @@ import org.osmdroid.config.Configuration
  * list, and both lost the gesture to their parent.
  */
 
-/** Must be called before any MapView is created — done in MainActivity.onCreate. */
+/** Must be called before any MapView is created — done in VaultActivity.onCreate. */
 fun initOsmdroid(context: Context) {
     Configuration.getInstance().apply {
         load(context, context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))

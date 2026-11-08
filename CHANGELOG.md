@@ -8,6 +8,7 @@ are added and releases are cut.
 ## [Unreleased]
 
 ### Added
+- **App icons in each palette**: Settings → Display has an App icon picker. The film-strip icon comes in each palette you've unlocked, its three frames in that palette's colours. The new icon goes in when you next leave the app; a home-screen shortcut follows it on launchers that support that.
 - **Share a badge as an image**: an earned badge's sheet has a Share image button. It draws the badge as a frame on a contact sheet, in the palette you're using, with when and on which roll you earned it and your edge print along the rebate, and opens the share sheet, where you can save it or send it on. Under Safelight the image comes out in Dye Layer.
 - **More rewards from badges**: grain stocks for the app's film grain (T-grain, Pushed, Sheet film), shutter-iris variants for the shutter button (five or nine blades, or rounded), your own edge print (a line of text along the edge of every roll and stock, and how the shot log prints frame numbers), and technique cards: earning a Craft badge or Sunny 16 opens a short note on that technique from its badge. Each badge says what it unlocks before you earn it; secrets keep theirs hidden. Choose them in Settings → Display. They're included in backups, along with the palette.
 - **Palettes as secret rewards**: four secret achievements each unlock a palette of their own (Expired, Cyanotype, Slide and Aerochrome). A palette you haven't earned stays out of sight; once earned, it shows up in Settings → Display, and the badge says which palette it unlocked.
