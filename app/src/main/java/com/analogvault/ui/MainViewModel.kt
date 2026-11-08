@@ -823,10 +823,16 @@ class MainViewModel @Inject constructor(
      */
     private val _palette = MutableStateFlow(Palette.DYE_LAYER)
     val palette: StateFlow<Palette> = _palette.asStateFlow()
+    // The look setters only write the setting. The observer below turns the
+    // stored value into the state the UI reads, so there is one source of it.
+    // Setting the state here as well raced that observer: picking Expired and
+    // then Amber, the database's answer to the first write could land after
+    // the second tap and put Expired back, and the two flicked back and forth
+    // for a moment before settling.
     fun setPalette(p: Palette) = viewModelScope.launch {
         // The picker only lists unlocked palettes; this is the backstop.
         if (!p.unlocked(achievementRecords.value)) return@launch
-        _palette.value = p; repo.setSetting("palette", p.key)
+        repo.setSetting("palette", p.key)
     }
 
     // ─── Look: the cosmetic rewards ───────────────────────────────────────────
@@ -834,26 +840,24 @@ class MainViewModel @Inject constructor(
     val grain: StateFlow<GrainStock> = _grain.asStateFlow()
     fun setGrain(g: GrainStock) = viewModelScope.launch {
         if (!g.unlocked(achievementRecords.value)) return@launch
-        _grain.value = g; repo.setSetting("grain", g.key)
+        repo.setSetting("grain", g.key)
     }
 
     private val _iris = MutableStateFlow(IrisStyle.DEFAULT)
     val iris: StateFlow<IrisStyle> = _iris.asStateFlow()
     fun setIris(i: IrisStyle) = viewModelScope.launch {
         if (!i.unlocked(achievementRecords.value)) return@launch
-        _iris.value = i; repo.setSetting("iris", i.key)
+        repo.setSetting("iris", i.key)
     }
 
     private val _edgePrint = MutableStateFlow(EdgePrint())
     val edgePrint: StateFlow<EdgePrint> = _edgePrint.asStateFlow()
     fun setEdgeText(text: String) = viewModelScope.launch {
         if (!EdgePrint.UNLOCK.isMet(achievementRecords.value)) return@launch
-        val clean = EdgePrint.clean(text).trim()
-        _edgePrint.value = _edgePrint.value.copy(text = clean); repo.setSetting("edge_text", clean)
+        repo.setSetting("edge_text", EdgePrint.clean(text).trim())
     }
     fun setEdgeFrameStyle(style: FrameNumberStyle) = viewModelScope.launch {
         if (!EdgePrint.UNLOCK.isMet(achievementRecords.value)) return@launch
-        _edgePrint.value = _edgePrint.value.copy(frameStyle = style)
         repo.setSetting("edge_frame_style", style.key)
     }
 
@@ -872,17 +876,21 @@ class MainViewModel @Inject constructor(
     }
 
     init {
-        // Kept live after the first read: a backup restore writes these
-        // settings and the badges under the running app, and the look should
-        // follow without a restart.
+        // Kept live after the first read. It is how a pick in Settings reaches
+        // the screen (the setters above only write), and a backup restore
+        // writes these settings and the badges under the running app, so the
+        // look follows that too without a restart. The first value repeats
+        // what the theme block read, unless a pick has landed since; either
+        // way it is the stored look, so it is applied like the rest.
         viewModelScope.launch {
             val keys = listOf("palette", "legacy_amber", "grain", "iris", "edge_text", "edge_frame_style")
             combine(keys.map { repo.observeSetting(it) }) { it.toList() }
                 .combine(repo.observeSetting(AchievementRecords.SETTING)) { v, rec ->
-                    LookSettings(v[0], v[1], v[2], v[3], v[4], v[5]) to AchievementRecords.decode(rec)
+                    LookSettings(v[0], v[1], v[2], v[3], v[4], v[5]) to rec
                 }
-                .drop(1) // the first value is what the theme block already applied
-                .collect { (s, records) -> applyLook(s, records) }
+                // Any write to the settings table wakes all seven queries.
+                .distinctUntilChanged()
+                .collect { (s, rec) -> applyLook(s, AchievementRecords.decode(rec)) }
         }
     }
 
