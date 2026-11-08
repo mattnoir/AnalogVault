@@ -11,13 +11,13 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.analogvault.MainActivity
+import com.analogvault.VaultActivity
 import com.analogvault.R
 import com.analogvault.util.AchCategory
 import com.analogvault.util.Achievement
 
 /**
- * Whether the app is on screen. Set by MainActivity as it starts and stops,
+ * Whether the app is on screen. Set by VaultActivity as it starts and stops,
  * and read when a badge is earned: on screen it gets a banner, off screen a
  * notification, never both.
  */
@@ -36,7 +36,7 @@ object AppVisibility {
 object AchievementNotifier {
     const val CHANNEL_ID = "achievements"
     private const val NOTIFICATION_ID = 2001
-    /** Intent extra asking MainActivity to open Stats → Badges. */
+    /** Intent extra asking VaultActivity to open Stats → Badges. */
     const val EXTRA_OPEN_BADGES = "open_badges"
 
     fun post(context: Context, earned: List<Achievement>) {
@@ -54,7 +54,7 @@ object AchievementNotifier {
                 }
             )
         }
-        val open = Intent(context, MainActivity::class.java)
+        val open = Intent(context, VaultActivity::class.java)
             .putExtra(EXTRA_OPEN_BADGES, true)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val contentIntent = PendingIntent.getActivity(

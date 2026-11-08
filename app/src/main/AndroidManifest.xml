@@ -31,16 +31,95 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true">
 
+        <!-- The app's one activity. It has no launcher entry of its own: the
+             launcher reaches it through one of the aliases below, the icon
+             picked in Settings → Display. Exactly one alias is enabled at a
+             time (AppIconSwitcher). -->
         <activity
-            android:name=".MainActivity"
-            android:exported="true"
+            android:name=".VaultActivity"
+            android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|smallestScreenSize"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- The Dye Layer icon, and the name the launcher has always known: a
+             home-screen shortcut made before alternate icons keeps working. -->
+        <activity-alias
+            android:name=".MainActivity"
+            android:targetActivity=".VaultActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconLegacyAmber"
+            android:targetActivity=".VaultActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_legacy_amber"
+            android:roundIcon="@mipmap/ic_launcher_legacy_amber">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconExpired"
+            android:targetActivity=".VaultActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_expired"
+            android:roundIcon="@mipmap/ic_launcher_expired">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconCyanotype"
+            android:targetActivity=".VaultActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_cyanotype"
+            android:roundIcon="@mipmap/ic_launcher_cyanotype">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconSlide"
+            android:targetActivity=".VaultActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_slide"
+            android:roundIcon="@mipmap/ic_launcher_slide">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconAerochrome"
+            android:targetActivity=".VaultActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_aerochrome"
+            android:roundIcon="@mipmap/ic_launcher_aerochrome">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Hands a shared badge image to the app it is shared with; cache/shared only. -->
         <provider

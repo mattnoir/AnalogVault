@@ -48,7 +48,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
-// Tab indices matching the mapping in MainActivity's DashboardScreen callback.
+// Tab indices matching the mapping in VaultActivity's DashboardScreen callback.
 private const val TAB_STASH   = 1
 private const val TAB_ACTIVE  = 2
 private const val TAB_METER   = 4

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon backgrounds, one per palette: each palette's void. -->
+<resources>
+    <color name="ic_launcher_background_legacy_amber">#FF0E0C0A</color>
+    <color name="ic_launcher_background_expired">#FF0A0F0B</color>
+    <color name="ic_launcher_background_cyanotype">#FF050B1A</color>
+    <color name="ic_launcher_background_slide">#FF0A0605</color>
+    <color name="ic_launcher_background_aerochrome">#FF0E0509</color>
+</resources>

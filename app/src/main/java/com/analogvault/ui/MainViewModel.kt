@@ -236,7 +236,7 @@ class MainViewModel @Inject constructor(
             // The palette first, and nothing before it.
             //
             // These three decide what colour the app is, and the UI waits on
-            // themeReady before it draws anything (see MainActivity). Read
+            // themeReady before it draws anything (see VaultActivity). Read
             // anywhere further down this block and the first frame is the
             // default scheme, with the real one arriving a beat later — which
             // is exactly what the amber theme looked like: a second of neon,

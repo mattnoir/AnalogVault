@@ -64,8 +64,13 @@ class AnalogVaultApp : Application(), androidx.work.Configuration.Provider {
     }
 }
 
+/**
+ * The app's one activity. Until alternate icons it was MainActivity; that
+ * name now belongs to the default launcher alias in the manifest, so the
+ * shortcut a launcher saved for it still opens the app. See AppIconSwitcher.
+ */
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class VaultActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
     override fun onStart() {
@@ -75,7 +80,28 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         com.analogvault.work.AppVisibility.foreground = false
+        if (leavingTheApp()) com.analogvault.ui.theme.AppIconSwitcher.applyPending(this)
         super.onStop()
+    }
+
+    /**
+     * Whether this stop is the user leaving: Home, Recents, another app, or
+     * backing out. Not when the app has opened a file picker, camera or share
+     * target over itself — that lives in this task, and a new launcher icon
+     * closes the task, taking the picker and its result with it. Not when the
+     * screen went off either, or the app would be gone when it came back on.
+     */
+    private fun leavingTheApp(): Boolean {
+        if (isChangingConfigurations) return false
+        val power = getSystemService(android.os.PowerManager::class.java)
+        if (power?.isInteractive == false) return false
+        val am = getSystemService(android.app.ActivityManager::class.java) ?: return false
+        val mine = am.appTasks.map { it.taskInfo }.firstOrNull { info ->
+            @Suppress("DEPRECATION")
+            (if (android.os.Build.VERSION.SDK_INT >= 29) info.taskId else info.id) == taskId
+        }
+        val top = mine?.topActivity
+        return top == null || top.packageName == packageName
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

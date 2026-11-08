@@ -19,11 +19,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.input.KeyboardType
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
+import com.analogvault.ui.theme.AppIcon
+import com.analogvault.ui.theme.AppIconSwitcher
 import com.analogvault.ui.theme.Palette
 import com.analogvault.util.EdgePrint
 import com.analogvault.util.FrameNumberStyle
@@ -144,6 +147,26 @@ fun SettingsScreen(vm: MainViewModel) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Palette.entries.filter { it.unlocked(achRecords) }.forEach { p ->
                     PaletteRow(p, selected = p == palette) { vm.setPalette(p) }
+                }
+            }
+
+            // The launcher icon follows the same unlocks as the palettes, but
+            // not the palette itself: changing it can move the icon on the home
+            // screen, which should never happen as a side effect.
+            val context = androidx.compose.ui.platform.LocalContext.current
+            var appIcon by remember { mutableStateOf(AppIconSwitcher.shown(context)) }
+            Spacer(Modifier.height(16.dp))
+            Text("App icon", color = FilmTheme.colors.dim, fontSize = 13.sp)
+            Text("The film strip on your home screen, in a palette's colours. " +
+                "It changes when you next leave the app.",
+                color = FilmTheme.colors.dim, fontSize = 11.sp)
+            Spacer(Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppIcon.entries.filter { it.palette.unlocked(achRecords) || it == appIcon }.forEach { i ->
+                    AppIconRow(i, selected = i == appIcon) {
+                        AppIconSwitcher.choose(context, i)
+                        appIcon = i
+                    }
                 }
             }
 
@@ -450,6 +473,37 @@ private fun PaletteRow(palette: Palette, selected: Boolean, onClick: () -> Unit)
             Text(palette.label, color = if (selected) colors.halide else colors.dim, fontSize = 13.sp)
             Text(palette.blurb, color = colors.dim, fontSize = 11.sp)
         }
+        if (selected) Text("✓", color = colors.cyan, fontSize = 15.sp)
+    }
+}
+
+/** One launcher icon in the picker, drawn as the launcher draws it. */
+@Composable
+private fun AppIconRow(icon: AppIcon, selected: Boolean, onClick: () -> Unit) {
+    val colors = FilmTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (selected) colors.cyan else colors.edge)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = icon.label + " icon" + if (selected) ", selected" else ""
+            }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(icon.foreground),
+            contentDescription = null,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                .background(icon.palette.colors.void)
+                .border(1.dp, colors.edge, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)),
+        )
+        Text(icon.label, Modifier.weight(1f),
+            color = if (selected) colors.halide else colors.dim, fontSize = 13.sp)
         if (selected) Text("✓", color = colors.cyan, fontSize = 15.sp)
     }
 }
