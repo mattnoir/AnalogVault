@@ -7,13 +7,14 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-08
+
 ### Added
 - **App icons in each palette**: Settings → Display has an App icon picker. The film-strip icon comes in each palette you've unlocked, its three frames in that palette's colours. The new icon goes in when you next leave the app; a home-screen shortcut follows it on launchers that support that.
 - **Share a badge as an image**: an earned badge's sheet has a Share image button. It draws the badge as a frame on a contact sheet, in the palette you're using, with when and on which roll you earned it and your edge print along the rebate, and opens the share sheet, where you can save it or send it on. Under Safelight the image comes out in Dye Layer.
 - **More rewards from badges**: grain stocks for the app's film grain (T-grain, Pushed, Sheet film), shutter-iris variants for the shutter button (five or nine blades, or rounded), your own edge print (a line of text along the edge of every roll and stock, and how the shot log prints frame numbers), and technique cards: earning a Craft badge or Sunny 16 opens a short note on that technique from its badge. Each badge says what it unlocks before you earn it; secrets keep theirs hidden. Choose them in Settings → Display. They're included in backups, along with the palette.
 - **Palettes as secret rewards**: four secret achievements each unlock a palette of their own (Expired, Cyanotype, Slide and Aerochrome). A palette you haven't earned stays out of sight; once earned, it shows up in Settings → Display, and the badge says which palette it unlocked.
 - **Achievements**: Stats has a third tab, Badges, laid out as a contact sheet of 42 achievements in three groups: milestones (first frame, finished rolls, stocks and formats shot, a roll taken all the way to scanned), craft (pushing, stand development, golden hour, shooting through an adapter) and secrets, which stay "???" until you earn them. They're worked out from what your vault already holds, so a vault you've used for a while starts with whatever it has already earned, dated by your own rolls. Tap a badge to see its tiers, when it was earned and the roll that earned it, and to open that roll. Earned badges are included in backups. Some count things only the app sees, such as darkroom timers run to the end, frames logged from the meter and backups made. Rolls now also record the date they were finished, developed and scanned. A new badge is announced with a banner across the top of the screen; tap it to see your badges. A badge earned with the app in the background, such as a darkroom timer finishing, comes as a notification instead, which can be turned off under Settings → Reminders. Home can show your latest badge and the nearest one to earn: turn the Achievements row on in More → Home layout.
-- **Buffer frames when cutting bulk film**: the "Cut rolls" sheet has a Buffer frames field for the film your bulk loader fogs while loading each roll. Those frames come off the canister (and count toward each roll's cost) but not toward the roll's exposures. Change the number and a "Save as default?" button appears; saving makes it the value the field starts with next time.
 - **Meter zoom across every lens, with a slider**: under the light meter's focal-length presets there is now a zoom slider. Below 1x it switches to the phone's ultrawide, and further up to each telephoto lens your phone has. The readout names the lens in use and the focal length it frames like.
 - **Aperture clicks and custom stops per lens**: each lens (and the built-in lens of a fixed-lens camera) now has a Clicks setting, full, half or third stops, and a Custom stops field for off-scale apertures older lenses are engraved with, e.g. f/3.5 or f/4.5. The editor spells out every stop the ring has. The light meter, the shot sheet and the DOF calculator offer exactly those stops.
 - **Set the aperture between its clicks**: in the light meter's A and M modes, a ring slider under the aperture controls sets the held aperture in tenths of a stop between the lens's stops, e.g. f/6.7 between f/5.6 and f/8. It drops onto a stop when you get close to one. Aperture priority picks the nearest shutter speed for it and shows how far off that leaves the frame. Logged frames keep the in-between value.
@@ -26,6 +27,13 @@ are added and releases are cut.
 ### Fixed
 - Opening a roll from the shot map or the Home screen sometimes landed on the Rolls list instead of the roll itself.
 - Tapping a selected focal-length preset again in the light meter left the camera zoomed in; it now goes back to 1x.
+
+## [0.8.0] - 2026-11-01
+
+### Added
+- **Buffer frames when cutting bulk film**: the "Cut rolls" sheet has a Buffer frames field for the film your bulk loader fogs while loading each roll. Those frames come off the canister (and count toward each roll's cost) but not toward the roll's exposures. Change the number and a "Save as default?" button appears; saving makes it the value the field starts with next time.
+
+### Fixed
 - The LOAD ROLL button on bulk film cards in the Stash was missing whenever the card's tags didn't fit on one line: the wrapped line was cut off. Roll cards had the same problem with long tag lists.
 - Backup, restore and shot-log export results now pop up at the bottom of the Backup screen instead of appearing below the cards, where they were missed unless you scrolled. Successes clear after a few seconds; errors stay until you close them.
 
