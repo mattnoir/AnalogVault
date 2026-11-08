@@ -198,13 +198,29 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+/**
+ * Date each stage of a roll (v13 → v14): when it was marked finished,
+ * developed and scanned. Until now only the load date was kept.
+ *
+ * Existing rolls get nulls. The dates were never recorded, and inventing them
+ * would be worse than admitting it; anything that wants a roll's finish date
+ * falls back to its last logged frame.
+ */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        for (column in listOf("finishedAt", "developedAt", "scannedAt")) {
+            db.execSQL("ALTER TABLE rolls ADD COLUMN $column TEXT")
+        }
+    }
+}
+
 @Database(
     entities = [
         FilmStock::class, Camera::class, Lens::class,
         Accessory::class, Roll::class, Chemical::class,
         ZoomLevel::class, Setting::class, BulkRoll::class
     ],
-    version = 13,
+    version = 14,
     // Schemas are exported to app/schemas (see build.gradle.kts) so future
     // migrations can be written/tested against exact historical definitions
     exportSchema = true

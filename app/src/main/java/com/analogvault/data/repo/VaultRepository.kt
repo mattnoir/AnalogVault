@@ -4,6 +4,8 @@ import com.analogvault.data.db.*
 import com.analogvault.data.model.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -84,6 +86,21 @@ class VaultRepository @Inject constructor(
     suspend fun setSetting(key: String, value: String) = settingDao.upsert(Setting(key, value))
     /** A setting as a live value, for the ones a backup restore can change underneath the UI. */
     fun observeSetting(key: String): Flow<String?> = settingDao.observe(key)
+
+    private val settingUpdateLock = Mutex()
+
+    /**
+     * Read, change and write one setting with nothing else changing it in
+     * between. For settings two writers fold into — the achievement records
+     * are reconciled by the app and merged by a backup restore, and a plain
+     * get-then-set from each would let the slower one undo the faster.
+     */
+    suspend fun updateSetting(key: String, transform: (String?) -> String?) =
+        settingUpdateLock.withLock {
+            val old = getSetting(key)
+            val new = transform(old)
+            if (new != null && new != old) setSetting(key, new)
+        }
 
     // Bulk rolls
     val bulkRolls: Flow<List<BulkRoll>> = bulkRollDao.getAll()

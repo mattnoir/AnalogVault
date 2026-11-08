@@ -9,6 +9,7 @@ import com.analogvault.data.backup.BackupResult
 import com.analogvault.data.export.ExportResult
 import com.analogvault.data.export.RollExporter
 import com.analogvault.data.repo.VaultRepository
+import com.analogvault.util.AchCounters
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,15 +32,28 @@ class BackupViewModel @Inject constructor(
 
     fun export(context: Context, uri: Uri, includePhotos: Boolean = true) = viewModelScope.launch {
         _busy.value = true
-        _result.value = backupManager.export(context, uri, includePhotos)
+        val res = backupManager.export(context, uri, includePhotos)
+        if (res is BackupResult.Success) bumpAchCounter(AchCounters.BACKUP_EXPORTS)
+        _result.value = res
         _busy.value = false
     }
 
     fun import(context: Context, uri: Uri) = viewModelScope.launch {
         _busy.value = true
-        _result.value = backupManager.import(context, uri)
+        // An empty vault before the restore is a new phone or a fresh
+        // install: the "Hello, Old Friend" achievement.
+        val wasEmpty = repo.rolls.first().isEmpty() && repo.films.first().isEmpty() &&
+            repo.cameras.first().isEmpty() && repo.lenses.first().isEmpty()
+        val res = backupManager.import(context, uri)
+        if (res is BackupResult.Success && wasEmpty) bumpAchCounter(AchCounters.FRESH_IMPORTS)
+        _result.value = res
         _busy.value = false
     }
+
+    // After the backup's own counters are merged in, so the restore cannot
+    // take this count back down.
+    private suspend fun bumpAchCounter(name: String) =
+        repo.updateSetting(AchCounters.SETTING) { AchCounters.increment(it, listOf(name)) }
 
     /** Every shot from every roll as one flat CSV. */
     fun exportAllCsv(context: Context, uri: Uri) = viewModelScope.launch {

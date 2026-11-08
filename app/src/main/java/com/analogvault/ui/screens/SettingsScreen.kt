@@ -5,7 +5,12 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -19,6 +24,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.input.KeyboardType
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.components.*
+import com.analogvault.ui.theme.Palette
+import com.analogvault.util.EdgePrint
+import com.analogvault.util.FrameNumberStyle
+import com.analogvault.util.GrainStock
+import com.analogvault.util.IrisStyle
 import com.analogvault.ui.theme.*
 import com.analogvault.ui.theme.FilmTheme
 import com.analogvault.util.Constants
@@ -35,11 +45,16 @@ fun SettingsScreen(vm: MainViewModel) {
     val highRefresh by vm.highRefresh.collectAsState()
     val safelight by vm.safelight.collectAsState()
     val saturation by vm.saturation.collectAsState()
-    val legacyAmber by vm.legacyAmber.collectAsState()
+    val palette by vm.palette.collectAsState()
+    val grain by vm.grain.collectAsState()
+    val iris by vm.iris.collectAsState()
+    val edgePrint by vm.edgePrint.collectAsState()
+    val achRecords by vm.achievementRecords.collectAsState()
     val remindersEnabled  by vm.remindersEnabled.collectAsState()
     val remindExpiry      by vm.remindExpiry.collectAsState()
     val remindUndeveloped by vm.remindUndeveloped.collectAsState()
     val remindChemicals   by vm.remindChemicals.collectAsState()
+    val achNotify         by vm.achNotify.collectAsState()
     val zoomLevels        by vm.zoomLevels.collectAsState()
     val cameraOptics      by vm.cameraOptics.collectAsState()
     val focalsUnverified  by vm.zoomFocalsUnverified.collectAsState()
@@ -50,6 +65,10 @@ fun SettingsScreen(vm: MainViewModel) {
     val notifPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { vm.saveRemindersEnabled(true) }
+    // Same for achievement notifications: turning them on asks once.
+    val achPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { vm.saveAchNotify(true) }
 
     var owmDraft      by remember(owmKey)   { mutableStateOf(owmKey) }
     var currencyDraft by remember(currency) { mutableStateOf(currency) }
@@ -114,21 +133,50 @@ fun SettingsScreen(vm: MainViewModel) {
                 )
             }
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text("Legacy amber", color = FilmTheme.colors.dim, fontSize = 13.sp)
-                    Text("The palette from before the redesign — amber, brown and " +
-                        "orange. Same layouts, film strips and type; only the " +
-                        "colours change. Safelight overrides it.",
-                        color = FilmTheme.colors.dim, fontSize = 11.sp)
+            Text("Palette", color = FilmTheme.colors.dim, fontSize = 13.sp)
+            Text("Same layouts, film strips and type; only the colours change. " +
+                "Safelight overrides it." +
+                if (safelight) " Turn Safelight off to see the palette you pick." else "",
+                color = FilmTheme.colors.dim, fontSize = 11.sp)
+            Spacer(Modifier.height(8.dp))
+            // Only what is unlocked. A secret's palette is part of the secret:
+            // listing it locked would give away that there is one to find.
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Palette.entries.filter { it.unlocked(achRecords) }.forEach { p ->
+                    PaletteRow(p, selected = p == palette) { vm.setPalette(p) }
                 }
-                Switch(
-                    checked = legacyAmber,
-                    onCheckedChange = { vm.setLegacyAmber(it) },
-                    enabled = !safelight,
-                    colors = settingsSwitchColors(),
-                )
+            }
+
+            // The rest of the look, each shown once a badge has unlocked
+            // something to choose between; until then there is no choice.
+            val grains = GrainStock.entries.filter { it.unlocked(achRecords) }
+            if (grains.size > 1) {
+                Spacer(Modifier.height(16.dp))
+                Text("Grain", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    grains.forEach { g ->
+                        LookOptionRow(g.label, g.blurb, selected = g == grain) { vm.setGrain(g) }
+                    }
+                }
+            }
+            val irises = IrisStyle.entries.filter { it.unlocked(achRecords) }
+            if (irises.size > 1) {
+                Spacer(Modifier.height(16.dp))
+                Text("Shutter iris", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                Text("The blades that close when you press the shutter button.",
+                    color = FilmTheme.colors.dim, fontSize = 11.sp)
+                Spacer(Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    irises.forEach { i ->
+                        LookOptionRow(i.label, i.blurb, selected = i == iris) { vm.setIris(i) }
+                    }
+                }
+            }
+            if (com.analogvault.util.EdgePrint.UNLOCK.isMet(achRecords)) {
+                Spacer(Modifier.height(16.dp))
+                EdgePrintSettings(edgePrint, onText = { vm.setEdgeText(it) },
+                    onStyle = { vm.setEdgeFrameStyle(it) })
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -296,6 +344,31 @@ fun SettingsScreen(vm: MainViewModel) {
                     ReminderToggle("Chemistry age (60+ days mixed)", remindChemicals) { vm.saveRemindChemicals(it) }
                 }
             }
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = FilmTheme.colors.edge)
+            Spacer(Modifier.height(12.dp))
+            // Not under "Enable reminders": these are not the daily check, and
+            // they only come when a badge is earned with the app closed (a
+            // timer finishing in a pocket). With the app open, a banner shows.
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Achievement notifications", color = FilmTheme.colors.dim, fontSize = 13.sp)
+                    Text("When a badge is earned with the app in the background",
+                        color = FilmTheme.colors.dim, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = achNotify,
+                    onCheckedChange = { on ->
+                        if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            achPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            vm.saveAchNotify(on)
+                        }
+                    },
+                    colors = settingsSwitchColors(),
+                )
+            }
         }
 
         // ── Weather ──────────────────────────────────────────────────────────
@@ -341,5 +414,117 @@ private fun ReminderToggle(label: String, checked: Boolean, onChange: (Boolean) 
             onCheckedChange = onChange,
             colors = settingsSwitchColors(),
         )
+    }
+}
+
+/**
+ * One palette in the picker, drawn in its own colours rather than the app's:
+ * a strip of its base with the five accents across it, so choosing is
+ * seeing, not reading a name.
+ */
+@Composable
+private fun PaletteRow(palette: Palette, selected: Boolean, onClick: () -> Unit) {
+    val colors = FilmTheme.colors
+    val own = palette.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (selected) colors.cyan else colors.edge)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = palette.label + if (selected) ", selected" else ""
+            }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            Modifier.background(own.film).border(1.dp, own.edge).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            listOf(own.cyan, own.magenta, own.yellow, own.mask, own.violet).forEach { c ->
+                Box(Modifier.size(width = 10.dp, height = 22.dp).background(c))
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(palette.label, color = if (selected) colors.halide else colors.dim, fontSize = 13.sp)
+            Text(palette.blurb, color = colors.dim, fontSize = 11.sp)
+        }
+        if (selected) Text("✓", color = colors.cyan, fontSize = 15.sp)
+    }
+}
+
+/** One choice in a look picker: a name, a line about it, and a tick when chosen. */
+@Composable
+private fun LookOptionRow(label: String, blurb: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = FilmTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (selected) colors.cyan else colors.edge)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = label + if (selected) ", selected" else ""
+            }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = if (selected) colors.halide else colors.dim, fontSize = 13.sp)
+            Text(blurb, color = colors.dim, fontSize = 11.sp)
+        }
+        if (selected) Text("✓", color = colors.cyan, fontSize = 15.sp)
+    }
+}
+
+/**
+ * Your own edge printing: a line of text that leads the rebate of every roll
+ * and stock, and the style of the shot log's frame numbers. Saved when Save
+ * is pressed, not on every key, so a half-typed word never reaches the rolls.
+ */
+@Composable
+private fun EdgePrintSettings(
+    edgePrint: EdgePrint,
+    onText: (String) -> Unit,
+    onStyle: (FrameNumberStyle) -> Unit,
+) {
+    val colors = FilmTheme.colors
+    var draft by remember(edgePrint.text) { mutableStateOf(edgePrint.text) }
+    Text("Edge print", color = colors.dim, fontSize = 13.sp)
+    Text("Printed along the edge of every roll and stock, before the camera and dates. " +
+        "Up to ${EdgePrint.MAX_LENGTH} characters; blank prints nothing.",
+        color = colors.dim, fontSize = 11.sp)
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        VaultTextField(
+            draft, { draft = EdgePrint.clean(it) }, "Edge text",
+            modifier = Modifier.weight(1f), placeholder = "SAFETY FILM",
+        )
+        VaultButton("Save", small = true, onClick = { onText(draft) },
+            enabled = draft.trim() != edgePrint.text)
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        (if (draft.isBlank()) "▸  ZORKI 4  ▸  18 OCT 2026" else "▸  ${draft.trim()}  ▸  ZORKI 4  ▸  18 OCT 2026"),
+        style = FilmTheme.type.rebate, color = colors.dim, maxLines = 1,
+    )
+    Spacer(Modifier.height(12.dp))
+    Text("Frame numbers", color = colors.dim, fontSize = 13.sp)
+    Spacer(Modifier.height(6.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FrameNumberStyle.entries.forEach { s ->
+            val selected = s == edgePrint.frameStyle
+            Text(
+                s.label,
+                style = FilmTheme.type.data,
+                color = if (selected) colors.void else colors.dim,
+                modifier = Modifier
+                    .background(if (selected) colors.cyan else colors.film)
+                    .border(1.dp, if (selected) colors.cyan else colors.edge)
+                    .clickable { onStyle(s) }
+                    .semantics { contentDescription = "Frame numbers like ${s.label}" + if (selected) ", selected" else "" }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
     }
 }

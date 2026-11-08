@@ -18,6 +18,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.analogvault.util.EdgePrint
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -171,9 +174,21 @@ fun FilmStockCard(
     }
 }
 
-/** Join rebate segments the way edge printing runs along real film. */
+/**
+ * Your own edge printing (see util/Rewards.kt), provided once at the root.
+ * Empty until the badge that unlocks it is earned.
+ */
+val LocalEdgePrint = staticCompositionLocalOf { EdgePrint() }
+
+/**
+ * Join rebate segments the way edge printing runs along real film. Your own
+ * edge print, when you have one, leads the line, as a film maker's name does.
+ */
+@Composable
+@ReadOnlyComposable
 fun rebateLine(vararg parts: String?): String =
-    parts.filterNot { it.isNullOrBlank() }.joinToString("  ▸  ", prefix = "▸  ")
+    (listOf(LocalEdgePrint.current.text) + parts)
+        .filterNot { it.isNullOrBlank() }.joinToString("  ▸  ", prefix = "▸  ")
 
 @Preview(backgroundColor = 0xFF000000, showBackground = true, widthDp = 380)
 @Composable

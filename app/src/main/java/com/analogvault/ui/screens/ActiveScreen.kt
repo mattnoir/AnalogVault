@@ -88,6 +88,7 @@ fun ActiveScreen(
     vm: MainViewModel,
     initialSubTab: Int = 0,
     initialRollId: String? = null,
+    onInitialRollConsumed: () -> Unit = {},
     meterShutter: String = "",
     meterAperture: String = "",
     meterIso: String = "",
@@ -131,7 +132,10 @@ fun ActiveScreen(
 
     // Open specific roll from dashboard tap
     LaunchedEffect(initialRollId) {
-        if (initialRollId != null && selectedRollId == null) selectedRollId = initialRollId
+        if (initialRollId != null) {
+            selectedRollId = initialRollId
+            onInitialRollConsumed()
+        }
     }
 
     // When arriving from meter: auto-select if one roll, show picker if multiple
@@ -803,7 +807,8 @@ fun RollDetailScreen(
                 Row(Modifier.fillMaxWidth()) {
                     Box(Modifier.size(28.dp).clip(CircleShape).background(FilmTheme.colors.filmRaised),
                         contentAlignment = Alignment.Center) {
-                        Text("$idx", color = FilmTheme.colors.cyan, fontSize = 11.sp)
+                        Text(com.analogvault.ui.film.LocalEdgePrint.current.frameStyle.format(idx),
+                            color = FilmTheme.colors.cyan, fontSize = 11.sp, maxLines = 1)
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {

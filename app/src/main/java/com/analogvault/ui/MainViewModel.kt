@@ -25,12 +25,25 @@ import com.analogvault.ui.screens.encodeAgitations
 import com.analogvault.ui.screens.encodeTimers
 import com.analogvault.ui.screens.HomeSection
 import com.analogvault.ui.screens.parseHomeHidden
+import com.analogvault.ui.screens.parseHomeShown
+import com.analogvault.ui.theme.Palette
 import com.analogvault.ui.screens.parseHomeOrder
 import com.analogvault.ui.screens.MeterReading
 import com.analogvault.ui.screens.formatLatLon
 import com.analogvault.ui.screens.formatWeatherString
 import com.analogvault.ui.screens.getCurrentLatLon
+import com.analogvault.util.AchCounters
+import com.analogvault.util.AchProgress
+import com.analogvault.util.AchRecord
+import com.analogvault.util.AchSnapshot
+import com.analogvault.util.Achievement
+import com.analogvault.util.AchievementRecords
+import com.analogvault.util.Achievements
 import com.analogvault.util.Constants
+import com.analogvault.util.EdgePrint
+import com.analogvault.util.FrameNumberStyle
+import com.analogvault.util.GrainStock
+import com.analogvault.util.IrisStyle
 import com.analogvault.util.Exposure
 import com.analogvault.util.legacyPhotoCacheDir
 import com.analogvault.util.photoDir
@@ -229,7 +242,18 @@ class MainViewModel @Inject constructor(
             // is exactly what the amber theme looked like: a second of neon,
             // then a swap.
             _safelight.value = (repo.getSetting("safelight") ?: "false") == "true"
-            _legacyAmber.value = (repo.getSetting("legacy_amber") ?: "false") == "true"
+            // The badges are read here too, before the first frame: a palette
+            // a secret unlocked has to be known as unlocked before it is worn,
+            // or the app would open in Dye Layer and then change its coat.
+            val records = AchievementRecords.decode(repo.getSetting(AchievementRecords.SETTING))
+            applyLook(LookSettings(
+                palette = repo.getSetting("palette"),
+                legacyAmber = repo.getSetting("legacy_amber"),
+                grain = repo.getSetting("grain"),
+                iris = repo.getSetting("iris"),
+                edgeText = repo.getSetting("edge_text"),
+                edgeFrameStyle = repo.getSetting("edge_frame_style"),
+            ), records)
             _saturation.value = repo.getSetting("saturation")?.toFloatOrNull() ?: 1f
             _themeReady.value = true
 
@@ -242,13 +266,15 @@ class MainViewModel @Inject constructor(
             _agitationCues.value = (repo.getSetting("agitation_cues") ?: "true") == "true"
             _devTempC.value = repo.getSetting("dev_temp_c")?.toDoubleOrNull() ?: 20.0
             _homeOrder.value  = parseHomeOrder(repo.getSetting("home_order"))
-            _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"))
+            homeShown = parseHomeShown(repo.getSetting("home_shown"))
+            _homeHidden.value = parseHomeHidden(repo.getSetting("home_hidden"), homeShown)
             _placeName.value = repo.getSetting("place_name").orEmpty()
             placeLat = repo.getSetting("place_lat")?.toDoubleOrNull()
             placeLon = repo.getSetting("place_lon")?.toDoubleOrNull()
             // Pinned places do not need the device, so the fetch can start here
             // rather than waiting for a screen to ask for a location permission.
             pinnedLatLon()?.let { (la, lo) -> fetchWeather(la, lo) }
+            _achNotify.value          = (repo.getSetting("ach_notify") ?: "true") == "true"
             _remindersEnabled.value   = repo.getSetting("reminders_enabled") == "true"
             _remindExpiry.value       = (repo.getSetting("remind_expiry") ?: "true") == "true"
             _remindUndeveloped.value  = (repo.getSetting("remind_undeveloped") ?: "true") == "true"
@@ -431,6 +457,11 @@ class MainViewModel @Inject constructor(
         iso: String? = null,
         /** What the meter's viewfinder showed when the frame was logged. */
         photo: android.graphics.Bitmap? = null,
+        /**
+         * How the meter read the frame, for the achievements that ask about
+         * it; null when the frame was not logged from the meter.
+         */
+        meterLog: MeterLog? = null,
     ) = viewModelScope.launch {
         // Written before the roll is read, so the roll appended to below is
         // never one that went stale while the JPEG was being encoded.
@@ -460,6 +491,13 @@ class MainViewModel @Inject constructor(
             photoThumbPath = photoPath.orEmpty(),
         )
         repo.upsertRoll(roll.copy(shots = roll.shots + shot))
+        meterLog?.let { m ->
+            bumpAchCounters(listOfNotNull(
+                AchCounters.METER_LOGS,
+                AchCounters.ZONE_LOGS.takeIf { m.zonePlaced },
+                AchCounters.RECIPROCITY_LOGS.takeIf { m.longExposure },
+            ))
+        }
 
         if (hasLocationPermission()) {
             getCurrentLatLon(appContext)?.let { (lat, lon) ->
@@ -479,17 +517,24 @@ class MainViewModel @Inject constructor(
         androidx.core.content.ContextCompat.checkSelfPermission(
             appContext, android.Manifest.permission.ACCESS_COARSE_LOCATION
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    // Each stage keeps the date it was first reached: editing a dev log later
+    // is not developing the roll again. Undoing a stage clears its date.
+    private fun today(): String = java.time.LocalDate.now().toString()
+
     fun markFinished(rollId: String, finished: Boolean) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(finished = finished))
+        repo.upsertRoll(roll.copy(finished = finished,
+            finishedAt = if (finished) roll.finishedAt ?: today() else null))
     }
     fun markDeveloped(rollId: String, devLog: DevLog?, devCost: Double = 0.0, isSelfDev: Boolean = false) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(developed = devLog != null, devLog = devLog, devCost = devCost, isSelfDev = isSelfDev))
+        repo.upsertRoll(roll.copy(developed = devLog != null, devLog = devLog, devCost = devCost, isSelfDev = isSelfDev,
+            developedAt = if (devLog != null) roll.developedAt ?: today() else null))
     }
     fun markScanned(rollId: String, scanLog: ScanLog?, scanCost: Double = 0.0) = viewModelScope.launch {
         val roll = rolls.value.find { it.id == rollId } ?: return@launch
-        repo.upsertRoll(roll.copy(scanned = scanLog != null, scanLog = scanLog, scanCost = scanCost))
+        repo.upsertRoll(roll.copy(scanned = scanLog != null, scanLog = scanLog, scanCost = scanCost,
+            scannedAt = if (scanLog != null) roll.scannedAt ?: today() else null))
     }
 
     // ─── Chemical CRUD ───────────────────────────────────────────────────────
@@ -501,10 +546,7 @@ class MainViewModel @Inject constructor(
     }
 
     /** Count developed rolls that used this chemical (match by developer name or just total developed) */
-    fun rolledCount(chem: Chemical): Int {
-        if (chem.manualRolls >= 0) return chem.manualRolls
-        return rolls.value.count { r -> r.developed && (r.devLog?.developer?.contains(chem.name, ignoreCase = true) == true) }
-    }
+    fun rolledCount(chem: Chemical): Int = Achievements.chemicalRollCount(chem, rolls.value)
 
     // ─── Zoom levels ─────────────────────────────────────────────────────────
     fun upsertZoomLevel(z: ZoomLevel) = viewModelScope.launch { repo.upsertZoomLevel(z) }
@@ -585,7 +627,7 @@ class MainViewModel @Inject constructor(
 
     private val _homeOrder = MutableStateFlow(DEFAULT_HOME_ORDER)
     val homeOrder: StateFlow<List<HomeSection>> = _homeOrder.asStateFlow()
-    private val _homeHidden = MutableStateFlow(emptySet<HomeSection>())
+    private val _homeHidden = MutableStateFlow(parseHomeHidden(null))
     val homeHidden: StateFlow<Set<HomeSection>> = _homeHidden.asStateFlow()
 
     fun moveHomeSection(section: HomeSection, delta: Int) = viewModelScope.launch {
@@ -599,17 +641,31 @@ class MainViewModel @Inject constructor(
         repo.setSetting("home_order", current.joinToString(",") { it.name })
     }
 
+    /** Opt-in sections (see HomeSection.optIn) the user has turned on. */
+    private var homeShown: Set<HomeSection> = emptySet()
+
     fun setHomeSectionVisible(section: HomeSection, visible: Boolean) = viewModelScope.launch {
+        if (section.optIn) {
+            // Stored as shown, not hidden: an opt-in section starts hidden for
+            // everyone, and the hidden list cannot tell "never chose" apart
+            // from "chose to show it".
+            homeShown = if (visible) homeShown + section else homeShown - section
+            repo.setSetting("home_shown", homeShown.joinToString(",") { it.name })
+            _homeHidden.value = if (visible) _homeHidden.value - section else _homeHidden.value + section
+            return@launch
+        }
         val next = if (visible) _homeHidden.value - section else _homeHidden.value + section
         _homeHidden.value = next
-        repo.setSetting("home_hidden", next.joinToString(",") { it.name })
+        repo.setSetting("home_hidden", next.filterNot { it.optIn }.joinToString(",") { it.name })
     }
 
     fun resetHomeLayout() = viewModelScope.launch {
+        homeShown = emptySet()
         _homeOrder.value = DEFAULT_HOME_ORDER
-        _homeHidden.value = emptySet()
+        _homeHidden.value = parseHomeHidden(null)
         repo.setSetting("home_order", "")
         repo.setSetting("home_hidden", "")
+        repo.setSetting("home_shown", "")
     }
 
     // ─── Weather ─────────────────────────────────────────────────────────────
@@ -761,14 +817,73 @@ class MainViewModel @Inject constructor(
     val themeReady: StateFlow<Boolean> = _themeReady.asStateFlow()
 
     /**
-     * The palette the app wore before the Dye Layer redesign — same design,
-     * amber instead of dyes. Ignored while safelight is on, which is its own
-     * scheme (see FilmTheme.kt).
+     * The palette the app wears (see ui/theme/Palette.kt). Ignored while
+     * safelight is on, which is its own scheme. Replaces the old Legacy amber
+     * switch: `legacy_amber` is still read until a palette is first picked.
      */
-    private val _legacyAmber = MutableStateFlow(false)
-    val legacyAmber: StateFlow<Boolean> = _legacyAmber.asStateFlow()
-    fun setLegacyAmber(on: Boolean) = viewModelScope.launch {
-        _legacyAmber.value = on; repo.setSetting("legacy_amber", on.toString())
+    private val _palette = MutableStateFlow(Palette.DYE_LAYER)
+    val palette: StateFlow<Palette> = _palette.asStateFlow()
+    fun setPalette(p: Palette) = viewModelScope.launch {
+        // The picker only lists unlocked palettes; this is the backstop.
+        if (!p.unlocked(achievementRecords.value)) return@launch
+        _palette.value = p; repo.setSetting("palette", p.key)
+    }
+
+    // ─── Look: the cosmetic rewards ───────────────────────────────────────────
+    private val _grain = MutableStateFlow(GrainStock.DEFAULT)
+    val grain: StateFlow<GrainStock> = _grain.asStateFlow()
+    fun setGrain(g: GrainStock) = viewModelScope.launch {
+        if (!g.unlocked(achievementRecords.value)) return@launch
+        _grain.value = g; repo.setSetting("grain", g.key)
+    }
+
+    private val _iris = MutableStateFlow(IrisStyle.DEFAULT)
+    val iris: StateFlow<IrisStyle> = _iris.asStateFlow()
+    fun setIris(i: IrisStyle) = viewModelScope.launch {
+        if (!i.unlocked(achievementRecords.value)) return@launch
+        _iris.value = i; repo.setSetting("iris", i.key)
+    }
+
+    private val _edgePrint = MutableStateFlow(EdgePrint())
+    val edgePrint: StateFlow<EdgePrint> = _edgePrint.asStateFlow()
+    fun setEdgeText(text: String) = viewModelScope.launch {
+        if (!EdgePrint.UNLOCK.isMet(achievementRecords.value)) return@launch
+        val clean = EdgePrint.clean(text).trim()
+        _edgePrint.value = _edgePrint.value.copy(text = clean); repo.setSetting("edge_text", clean)
+    }
+    fun setEdgeFrameStyle(style: FrameNumberStyle) = viewModelScope.launch {
+        if (!EdgePrint.UNLOCK.isMet(achievementRecords.value)) return@launch
+        _edgePrint.value = _edgePrint.value.copy(frameStyle = style)
+        repo.setSetting("edge_frame_style", style.key)
+    }
+
+    /** The stored look, before it is checked against what has been earned. */
+    private data class LookSettings(
+        val palette: String?, val legacyAmber: String?, val grain: String?,
+        val iris: String?, val edgeText: String?, val edgeFrameStyle: String?,
+    )
+
+    /** Each choice, or its default where the badge behind it is not (or no longer) earned. */
+    private fun applyLook(s: LookSettings, records: Map<Achievement, AchRecord>) {
+        _palette.value = Palette.resolve(s.palette, s.legacyAmber, records)
+        _grain.value = GrainStock.resolve(s.grain, records)
+        _iris.value = IrisStyle.resolve(s.iris, records)
+        _edgePrint.value = EdgePrint.resolve(s.edgeText, s.edgeFrameStyle, records)
+    }
+
+    init {
+        // Kept live after the first read: a backup restore writes these
+        // settings and the badges under the running app, and the look should
+        // follow without a restart.
+        viewModelScope.launch {
+            val keys = listOf("palette", "legacy_amber", "grain", "iris", "edge_text", "edge_frame_style")
+            combine(keys.map { repo.observeSetting(it) }) { it.toList() }
+                .combine(repo.observeSetting(AchievementRecords.SETTING)) { v, rec ->
+                    LookSettings(v[0], v[1], v[2], v[3], v[4], v[5]) to AchievementRecords.decode(rec)
+                }
+                .drop(1) // the first value is what the theme block already applied
+                .collect { (s, records) -> applyLook(s, records) }
+        }
     }
 
     /**
@@ -787,6 +902,14 @@ class MainViewModel @Inject constructor(
     val devTempC: StateFlow<Double> = _devTempC.asStateFlow()
     fun saveDevTempC(t: Double) = viewModelScope.launch {
         _devTempC.value = t; repo.setSetting("dev_temp_c", t.toString())
+    }
+
+    // ─── Achievement notifications ───────────────────────────────────────────
+    /** Notify badges earned in the background. On by default, under its own key. */
+    private val _achNotify = MutableStateFlow(true)
+    val achNotify: StateFlow<Boolean> = _achNotify.asStateFlow()
+    fun saveAchNotify(on: Boolean) = viewModelScope.launch {
+        _achNotify.value = on; repo.setSetting("ach_notify", on.toString())
     }
 
     // ─── Reminders (daily WorkManager check) ─────────────────────────────────
@@ -917,7 +1040,8 @@ class MainViewModel @Inject constructor(
         lastAgitationCueSec = -1
         val next = s.currentStep + 1
         _timerState.value = s.copy(
-            currentStep = next, secondsLeft = s.timer.steps[next].durationSec, running = false
+            currentStep = next, secondsLeft = s.timer.steps[next].durationSec, running = false,
+            skippedStep = true,
         )
     }
 
@@ -961,6 +1085,13 @@ class MainViewModel @Inject constructor(
             )
         } else {
             _timerState.value = s.copy(secondsLeft = 0, running = false, finished = true)
+            // A run counts for the achievements only when every step ran to
+            // its end: skipping to the last step and letting it finish is not
+            // developing a roll.
+            if (!s.skippedStep) bumpAchCounters(listOfNotNull(
+                AchCounters.TIMER_RUNS,
+                AchCounters.SAFELIGHT_TIMER_RUNS.takeIf { _safelight.value },
+            ))
         }
     }
 
@@ -1041,6 +1172,98 @@ class MainViewModel @Inject constructor(
             rollCosts     = rollCosts
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Stats())
+
+    // ─── Achievements ────────────────────────────────────────────────────────
+    /**
+     * Every badge's progress, or null until the vault has been read.
+     *
+     * Built from the repository's own flows rather than the stateIn copies
+     * above: those start as empty lists, and an evaluation of an empty vault
+     * on launch would read as "nothing earned yet" — then everything the vault
+     * already held would arrive a moment later as a burst of new unlocks.
+     */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    val achievementProgress: StateFlow<List<AchProgress>?> =
+        combine(repo.rolls, repo.films, repo.cameras, repo.lenses, repo.chemicals) { r, f, c, l, ch ->
+            AchSnapshot(rolls = r, films = f, cameras = c, lenses = l, chemicals = ch)
+        }
+            .combine(repo.bulkRolls) { snap, b -> snap.copy(bulkRolls = b) }
+            .combine(repo.observeSetting(AchCounters.SETTING)) { snap, k ->
+                snap.copy(counters = AchCounters.decode(k))
+            }
+            // Logging a frame writes the roll once; a restore writes hundreds
+            // of rows. Wait for the writes to settle before asking again.
+            .debounce(300)
+            .map { Achievements.evaluate(it) }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** The stored unlocks: when each badge was earned, and by what. */
+    val achievementRecords: StateFlow<Map<Achievement, AchRecord>> =
+        repo.observeSetting(AchievementRecords.SETTING)
+            .map { AchievementRecords.decode(it) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val _unlockNotices = MutableStateFlow<List<UnlockNotice>>(emptyList())
+    /** The banner to show now; the rest wait their turn. */
+    val unlockNotice: StateFlow<UnlockNotice?> = _unlockNotices.map { it.firstOrNull() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    fun dismissUnlockNotice() { _unlockNotices.value = _unlockNotices.value.drop(1) }
+
+    private val _openBadges = MutableStateFlow(false)
+    /** Set by a tapped achievement notification; VaultApp opens Stats → Badges and clears it. */
+    val openBadges: StateFlow<Boolean> = _openBadges.asStateFlow()
+    fun requestOpenBadges() { _openBadges.value = true }
+    fun consumeOpenBadges() { _openBadges.value = false }
+
+    /** Counts the things the vault's data cannot show for itself. */
+    private fun bumpAchCounters(names: List<String>) {
+        if (names.isEmpty()) return
+        viewModelScope.launch {
+            repo.updateSetting(AchCounters.SETTING) { AchCounters.increment(it, names) }
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            achievementProgress.filterNotNull().collect { progress ->
+                var earned: List<Achievement> = emptyList()
+                var firstRun = false
+                repo.updateSetting(AchievementRecords.SETTING) { raw ->
+                    // An empty record set is still written on the first run,
+                    // so later runs can tell the vault has been looked at.
+                    val outcome = AchievementRecords.reconcile(
+                        stored = AchievementRecords.decode(raw),
+                        progress = progress,
+                        today = java.time.LocalDate.now(),
+                    )
+                    earned = outcome.newlyEarned
+                    firstRun = raw == null
+                    AchievementRecords.encode(outcome.records)
+                }
+                announceUnlocks(earned, firstRun)
+            }
+        }
+    }
+
+    /**
+     * What to say about newly earned badges, if anything.
+     *
+     * The first run with achievements earns the vault's whole history at
+     * once; that is one quiet "you had already earned N", not N banners. On
+     * screen a badge gets a banner, and off screen (a timer finishing in a
+     * pocket) a notification if they are turned on.
+     */
+    private fun announceUnlocks(earned: List<Achievement>, firstRun: Boolean) {
+        if (earned.isEmpty()) return
+        val notice = if (firstRun) UnlockNotice(emptyList(), backfilled = earned.size) else UnlockNotice(earned)
+        if (!firstRun && !com.analogvault.work.AppVisibility.foreground) {
+            if (_achNotify.value) com.analogvault.work.AchievementNotifier.post(appContext, earned)
+            return
+        }
+        _unlockNotices.value = _unlockNotices.value + notice
+    }
+
 }
 
 fun uid() = UUID.randomUUID().toString()
@@ -1062,7 +1285,26 @@ data class DarkroomTimerState(
     val currentStep: Int = 0,
     val secondsLeft: Int = 0,
     val running: Boolean = false,
-    val finished: Boolean = false
+    val finished: Boolean = false,
+    /** True once any step was skipped; such a run does not count as run to the end. */
+    val skippedStep: Boolean = false
+)
+
+/**
+ * One banner's worth of news: badges earned together, or the count the first
+ * run found already earned.
+ */
+data class UnlockNotice(
+    val earned: List<Achievement>,
+    val backfilled: Int = 0,
+)
+
+/** What the meter knew about a frame it logged. */
+data class MeterLog(
+    /** A zone was placed: zone placement on, with spot metering. */
+    val zonePlaced: Boolean = false,
+    /** One second or longer, where the meter shows its reciprocity correction. */
+    val longExposure: Boolean = false,
 )
 
 data class RollCostSummary(

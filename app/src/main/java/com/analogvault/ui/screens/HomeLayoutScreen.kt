@@ -41,12 +41,18 @@ import com.analogvault.ui.theme.FilmTheme
  * section that does not exist, and so adding one later is a compile-time
  * prompt to give it a label rather than a silent gap in someone's layout.
  */
-enum class HomeSection(val label: String, val blurb: String) {
+enum class HomeSection(
+    val label: String,
+    val blurb: String,
+    /** Hidden until turned on, for everyone, including layouts saved before it existed. */
+    val optIn: Boolean = false,
+) {
     HERO("Loaded roll", "The roll in your camera, with the frame counter"),
     PIPELINE("Pipeline", "Shooting, to dev, to scan, archived"),
     WEATHER("Weather", "Conditions, the shooting note and a stock pick"),
     LIGHT("Light right now", "Sun arc, golden hour and a suggested exposure"),
     NUDGES("Nudges", "Latent images, expiring stock, bulk running low"),
+    ACHIEVEMENTS("Achievements", "Your latest badge and the nearest one to earn", optIn = true),
 }
 
 /** The order Home ships with, before anyone rearranges anything. */
@@ -56,6 +62,7 @@ val DEFAULT_HOME_ORDER: List<HomeSection> = listOf(
     HomeSection.WEATHER,
     HomeSection.LIGHT,
     HomeSection.NUDGES,
+    HomeSection.ACHIEVEMENTS,
 )
 
 /**
@@ -72,7 +79,18 @@ fun parseHomeOrder(stored: String?): List<HomeSection> {
     return known + DEFAULT_HOME_ORDER.filterNot { it in known }
 }
 
-fun parseHomeHidden(stored: String?): Set<HomeSection> =
+/**
+ * Hidden sections: the ones the stored `home_hidden` names, plus every
+ * opt-in section `home_shown` does not.
+ */
+fun parseHomeHidden(stored: String?, shown: Set<HomeSection> = emptySet()): Set<HomeSection> =
+    parseSectionSet(stored).filterNot { it.optIn }.toSet() +
+        HomeSection.entries.filter { it.optIn && it !in shown }
+
+/** Opt-in sections turned on, from the `home_shown` setting. */
+fun parseHomeShown(stored: String?): Set<HomeSection> = parseSectionSet(stored).filter { it.optIn }.toSet()
+
+private fun parseSectionSet(stored: String?): Set<HomeSection> =
     stored.orEmpty().split(',')
         .mapNotNull { name -> HomeSection.entries.firstOrNull { it.name == name.trim() } }
         .toSet()

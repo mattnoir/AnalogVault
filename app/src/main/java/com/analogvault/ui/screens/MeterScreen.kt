@@ -69,6 +69,7 @@ import com.analogvault.data.model.meterFrame
 import com.analogvault.data.model.fixedLens
 import com.analogvault.data.model.isMonochrome
 import com.analogvault.ui.MainViewModel
+import com.analogvault.ui.MeterLog
 import com.analogvault.ui.MeterPriority
 import com.analogvault.ui.components.VaultButton
 import com.analogvault.ui.components.VaultDropdown
@@ -1239,7 +1240,8 @@ fun MeterContent(
                     ?.takeIf { cameraOn && hasCamPerm && it.isAttachedToWindow }
                     ?.bitmap
                 roll?.let {
-                    vm.quickLogShot(it.id, shutter = sh, aperture = ap, iso = filmIso.toString(), photo = photo)
+                    vm.quickLogShot(it.id, shutter = sh, aperture = ap, iso = filmIso.toString(), photo = photo,
+                        meterLog = MeterLog(zonePlaced = zoneActive, longExposure = displaySec >= 1.0))
                 } ?: photo?.recycle()
             },
             onUseInShot = onUseInShot,

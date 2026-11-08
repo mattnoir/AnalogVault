@@ -105,6 +105,8 @@ data class ShutterConfig(
 @Composable
 fun rememberShutterConfig(
     blades: Int = 8,
+    /** How far the blades rotate as they close; fewer blades read better with more. */
+    twistDegrees: Float = 26f,
     /**
      * Off by default.
      *
@@ -118,9 +120,10 @@ fun rememberShutterConfig(
     flash: Boolean = false,
 ): ShutterConfig {
     val colors = FilmTheme.colors
-    return remember(colors, blades, flash) {
+    return remember(colors, blades, twistDegrees, flash) {
         ShutterConfig(
             blades = blades,
+            twistDegrees = twistDegrees,
             glow = if (colors.safelight) 0.35f else 0.85f,
             flash = flash && !colors.safelight,
             rimCyan = colors.cyan,

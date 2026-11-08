@@ -44,6 +44,7 @@ import com.analogvault.ui.film.rememberShutterController
 import com.analogvault.ui.film.ChromaticText
 import com.analogvault.ui.film.filmGrain
 import com.analogvault.ui.screens.*
+import com.analogvault.ui.components.UnlockBanner
 import com.analogvault.ui.theme.*
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.HiltAndroidApp
@@ -67,8 +68,33 @@ class AnalogVaultApp : Application(), androidx.work.Configuration.Provider {
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
+    override fun onStart() {
+        super.onStart()
+        com.analogvault.work.AppVisibility.foreground = true
+    }
+
+    override fun onStop() {
+        com.analogvault.work.AppVisibility.foreground = false
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    /** A tapped achievement notification asks for Stats → Badges. */
+    private fun handleIntent(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra(com.analogvault.work.AchievementNotifier.EXTRA_OPEN_BADGES, false) == true) {
+            vm.requestOpenBadges()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Only a fresh launch: after a rotation or process restore the intent
+        // is the old one, and its request has already been served.
+        if (savedInstanceState == null) handleIntent(intent)
 
         // Both bars transparent with light icons, so the void black the root
         // container paints runs edge to edge. `dark` here means "dark background,
@@ -109,11 +135,13 @@ class MainActivity : ComponentActivity() {
             // you were not looking at still burning white.
             val safelight by vm.safelight.collectAsState()
             val saturation by vm.saturation.collectAsState()
-            val legacyAmber by vm.legacyAmber.collectAsState()
+            val palette by vm.palette.collectAsState()
+            val grain by vm.grain.collectAsState()
+            val edgePrint by vm.edgePrint.collectAsState()
             val themeReady by vm.themeReady.collectAsState()
             FilmTheme(
                 safelight = safelight,
-                legacyAmber = legacyAmber,
+                palette = palette.colors,
                 saturation = saturation,
             ) {
                 // The grain is applied exactly once, here, on the root container —
@@ -123,13 +151,17 @@ class MainActivity : ComponentActivity() {
                     Modifier
                         .fillMaxSize()
                         .background(FilmTheme.colors.void)
-                        .filmGrain()
+                        .filmGrain(alpha = grain.alpha, tileSize = grain.tileSize, clump = grain.clump)
                 ) {
                     // Nothing until the palette is known. The window background
                     // is black, this container is black, and every scheme starts
                     // from black — so the wait is invisible, where drawing first
                     // and correcting afterwards was not.
-                    if (themeReady) VaultApp()
+                    if (themeReady) {
+                        CompositionLocalProvider(com.analogvault.ui.film.LocalEdgePrint provides edgePrint) {
+                            VaultApp()
+                        }
+                    }
                 }
             }
         }
@@ -184,6 +216,8 @@ fun VaultApp() {
     val activeCount by remember { derivedStateOf { rolls.count { !it.finished && !it.developed } } }
 
     var activeSubTab by remember { mutableIntStateOf(0) }
+    // Which Stats tab to open on; consumed by StatsScreen once it has turned to it.
+    var statsPageRequest by remember { mutableStateOf<Int?>(null) }
     var initialRollId by remember { mutableStateOf<String?>(null) }
     var meterShutter  by remember { mutableStateOf("") }
     var meterAperture by remember { mutableStateOf("") }
@@ -203,6 +237,7 @@ fun VaultApp() {
 
     fun navigateTo(tab: Tab, subTab: Int = 0) {
         if (tab == Tab.ACTIVE) activeSubTab = subTab
+        if (tab == Tab.STATS) statsPageRequest = subTab
         if (tab == Tab.METER && currentTab != Tab.METER) tabBeforeMeter = currentTab
         if (tab == Tab.SHOTMAP && currentTab != Tab.SHOTMAP) tabBeforeMap = currentTab
         currentTab = tab
@@ -220,7 +255,8 @@ fun VaultApp() {
     // exposure for a frame you did not take, and 680ms is a long time to spend
     // leaving somewhere.
     val shutter = rememberShutterController()
-    val shutterConfig = rememberShutterConfig()
+    val iris by vm.iris.collectAsState()
+    val shutterConfig = rememberShutterConfig(blades = iris.blades, twistDegrees = iris.twistDegrees)
 
     /** True while the meter is on screen because the shutter release put it there. */
     var meterViaShutter by remember { mutableStateOf(false) }
@@ -329,7 +365,11 @@ fun VaultApp() {
                 Tab.ACTIVE   -> ActiveScreen(
                     vm = vm,
                     initialSubTab = activeSubTab,
-                    initialRollId = initialRollId.also { initialRollId = null },
+                    // Cleared by ActiveScreen once it has opened the roll.
+                    // Clearing it here, mid-composition, recomposed the screen
+                    // with null before its effect ever saw the id.
+                    initialRollId = initialRollId,
+                    onInitialRollConsumed = { initialRollId = null },
                     meterShutter  = meterShutter,
                     meterAperture = meterAperture,
                     meterIso      = meterIso,
@@ -356,7 +396,16 @@ fun VaultApp() {
                 Tab.WEATHER  -> WeatherScreen(vm)
                 Tab.MORE     -> MoreScreen(currentSub = null, onNavigate = { navigateTo(it) })
                 Tab.DARK     -> DarkroomScreen(vm)
-                Tab.STATS    -> StatsScreen(vm, onOpenMap = { openMap(null) })
+                Tab.STATS    -> StatsScreen(
+                    vm,
+                    pageRequest = statsPageRequest,
+                    onPageRequestConsumed = { statsPageRequest = null },
+                    onOpenMap = { openMap(null) },
+                    onOpenRoll = { rollId ->
+                        initialRollId = rollId
+                        navigateTo(Tab.ACTIVE, 0)
+                    },
+                )
                 Tab.SHOTMAP  -> ShotMapScreen(
                     vm = vm,
                     initialRollId = mapRollId,
@@ -372,6 +421,33 @@ fun VaultApp() {
             }
         }
     }
+    // A badge earned while the app is open. It waits while the darkroom's DONE
+    // screen is up: that moment belongs to the timer, and the banner would sit
+    // on top of the one thing you are looking at. Only while it is on screen,
+    // though: a finished timer stays finished until DONE is pressed, and a run
+    // that ended in a pocket must not hold every banner back after it.
+    val unlockNotice by vm.unlockNotice.collectAsState()
+    val timerState by vm.timerState.collectAsState()
+    val doneShowing = currentTab == Tab.DARK && timerState?.finished == true
+    Box(Modifier.fillMaxSize()) {
+        UnlockBanner(
+            notice = unlockNotice.takeIf { !doneShowing },
+            onOpen = {
+                vm.dismissUnlockNotice()
+                navigateTo(Tab.STATS, STATS_BADGES_PAGE)
+            },
+            onDismiss = { vm.dismissUnlockNotice() },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+    val openBadges by vm.openBadges.collectAsState()
+    LaunchedEffect(openBadges) {
+        if (openBadges) {
+            navigateTo(Tab.STATS, STATS_BADGES_PAGE)
+            vm.consumeOpenBadges()
+        }
+    }
+
     // Drawn last, as a sibling of the Scaffold rather than inside its content,
     // so the blades cover the nav bar and the system bars as well. At rest it
     // composes nothing at all.
