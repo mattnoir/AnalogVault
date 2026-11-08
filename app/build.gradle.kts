@@ -8,7 +8,7 @@ plugins {
 
 // The app's version, and the only place it is written. Feature and fix PRs leave
 // it alone; only a version-bump commit changes it (see CONTRIBUTING.md).
-val appVersion = "0.7.1"
+val appVersion = "0.9.0"
 
 android {
     namespace = "com.analogvault"
