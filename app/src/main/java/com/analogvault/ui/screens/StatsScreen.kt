@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -27,6 +28,7 @@ import com.analogvault.ui.components.*
 import com.analogvault.ui.film.DyeIcon
 import com.analogvault.ui.film.FilmIcons
 import com.analogvault.ui.theme.FilmTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -61,36 +63,63 @@ fun StatsScreen(
     }
 
     Column(Modifier.fillMaxSize().background(colors.void)) {
-        TabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = colors.void, contentColor = colors.cyan,
-            indicator = { positions ->
-                Box(
-                    Modifier
-                        .tabIndicatorOffset(positions[pagerState.currentPage])
-                        .height(2.dp)
-                        .background(colors.cyan)
-                )
-            }
-        ) {
-            tabs.forEachIndexed { i, t ->
-                Tab(selected = pagerState.currentPage == i,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
-                    text = { Text(t.uppercase(), style = FilmTheme.type.eyebrow) },
-                    selectedContentColor = colors.cyan, unselectedContentColor = colors.dim)
-            }
-        }
+        StatsTabRow(tabs, pagerState) { i -> scope.launch { pagerState.animateScrollToPage(i) } }
 
         val framesWithGps = remember(rolls) {
             rolls.sumOf { roll -> roll.shots.count { parseLatLon(it.location) != null } }
         }
 
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        // All three pages stay composed, so turning to one only slides it in.
+        // Left to the default, a page was built from scratch as it came on
+        // screen, in the middle of the slide, and the slide stalled for it.
+        // The pages out of sight are built once Stats has finished sliding in
+        // (VaultActivity's tab transition): built with the first frame, they
+        // doubled the stall at the start of that slide instead.
+        var keptPages by remember { mutableIntStateOf(0) }
+        LaunchedEffect(Unit) {
+            delay(400)
+            keptPages = tabs.lastIndex
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = keptPages,
+        ) { page ->
             when (page) {
                 0    -> StatsNumbers(stats, currency, framesWithGps, onOpenMap)
                 1    -> StatsHabits(stats)
                 else -> StatsBadges(achProgress, achRecords, rolls, onOpenRoll)
             }
+        }
+    }
+}
+
+/**
+ * The tabs over the pager. The current page is read only in here: the page
+ * changes halfway through every slide, and read in StatsScreen it recomposed
+ * the whole screen there, every page with it, mid-slide.
+ */
+@Composable
+private fun StatsTabRow(tabs: List<String>, pagerState: PagerState, onSelect: (Int) -> Unit) {
+    val colors = FilmTheme.colors
+    val current = pagerState.currentPage
+    TabRow(
+        selectedTabIndex = current,
+        containerColor = colors.void, contentColor = colors.cyan,
+        indicator = { positions ->
+            Box(
+                Modifier
+                    .tabIndicatorOffset(positions[current])
+                    .height(2.dp)
+                    .background(colors.cyan)
+            )
+        }
+    ) {
+        tabs.forEachIndexed { i, t ->
+            Tab(selected = current == i,
+                onClick = { onSelect(i) },
+                text = { Text(t.uppercase(), style = FilmTheme.type.eyebrow) },
+                selectedContentColor = colors.cyan, unselectedContentColor = colors.dim)
         }
     }
 }
