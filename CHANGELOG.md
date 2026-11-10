@@ -7,6 +7,9 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+### Fixed
+- Switching between the Numbers, Habits and Badges tabs in Stats no longer stalls partway through the slide.
+
 ## [0.9.0] - 2026-11-08
 
 ### Added
