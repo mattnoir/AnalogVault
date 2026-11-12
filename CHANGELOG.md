@@ -7,6 +7,9 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+### Added
+- A frame logged from the light meter while it previews in black and white is shown in black and white, at the meter's contrast, in the shot log, contact sheet, map and PDF contact sheet. Opening a frame's photo now has a switch between black and white and colour, for frames logged either way.
+
 ### Fixed
 - The light meter's preview keeps the focal length you picked when you come back to the app, instead of dropping to 1x while the preset still showed the old zoom.
 

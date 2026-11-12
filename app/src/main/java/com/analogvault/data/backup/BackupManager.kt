@@ -121,7 +121,8 @@ private fun VaultBackup.sanitized(): VaultBackup = VaultBackup(
                     id = s.id ?: "", shutter = s.shutter ?: "", aperture = s.aperture ?: "",
                     iso = s.iso ?: "", lens = s.lens ?: "", location = s.location ?: "",
                     notes = s.notes ?: "", weather = s.weather ?: "", date = s.date ?: "",
-                    photoThumbPath = s.photoThumbPath ?: ""
+                    photoThumbPath = s.photoThumbPath ?: "",
+                    monoContrast = s.monoContrast,
                 )
             },
             devLog = roll.devLog?.let { d ->

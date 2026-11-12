@@ -646,7 +646,8 @@ fun RollDetailScreen(
     var showDevSheet   by remember { mutableStateOf(false) }
     var showScanSheet  by remember { mutableStateOf(false) }
     var confirmMsg     by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
-    var lightboxPath   by remember { mutableStateOf<String?>(null) }
+    var lightboxShot   by remember { mutableStateOf<Shot?>(null) }
+    val meterMonoContrast by vm.meterMonoContrast.collectAsState()
     var showExportDialog by remember { mutableStateOf(false) }
 
     // Shot-log exports (SAF)
@@ -825,12 +826,10 @@ fun RollDetailScreen(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         if (shot.photoThumbPath.isNotBlank()) {
-                            AsyncImage(
-                                model = File(shot.photoThumbPath),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
+                            FramePhoto(
+                                shot,
                                 modifier = Modifier.size(56.dp)
-                                    .clickable { lightboxPath = shot.photoThumbPath }
+                                    .clickable { lightboxShot = shot }
                             )
                             Spacer(Modifier.height(4.dp))
                         }
@@ -906,17 +905,9 @@ fun RollDetailScreen(
             }
         )
     }
-    lightboxPath?.let { path ->
-        Dialog(onDismissRequest = { lightboxPath = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Box(Modifier.fillMaxSize().background(FilmTheme.colors.void.copy(alpha = 0.95f))
-                .clickable { lightboxPath = null }, contentAlignment = Alignment.Center) {
-                AsyncImage(model = File(path), contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().padding(16.dp))
-            }
-        }
-    }
-}
+    lightboxShot?.let { shot ->
+        FrameLightbox(shot, fallbackContrast = meterMonoContrast / 10f, onDismiss = { lightboxShot = null })
+    }}
 
 // ─── Shot Sheet ───────────────────────────────────────────────────────────────
 
@@ -957,6 +948,9 @@ fun ShotSheet(
     var weather   by remember { mutableStateOf(ed?.weather   ?: "") }
     var date      by remember { mutableStateOf(ed?.date ?: SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())) }
     var thumbPath by remember { mutableStateOf(ed?.photoThumbPath ?: "") }
+    // The meter's black and white belongs to the photo it logged: a photo
+    // taken or picked here instead is a colour one.
+    val monoContrast = ed?.monoContrast?.takeIf { thumbPath == ed?.photoThumbPath }
     var gpsLoading    by remember { mutableStateOf(false) }
     var autoLocation  by remember { mutableStateOf(ed == null) }  // auto-fetch for new shots
     var showCamera    by remember { mutableStateOf(false) }
@@ -1179,13 +1173,13 @@ fun ShotSheet(
         if (thumbPath.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
             AsyncImage(model = File(thumbPath), contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.size(80.dp))
+                colorFilter = monoColorFilter(monoContrast), modifier = Modifier.size(80.dp))
         }
         Spacer(Modifier.height(16.dp))
         VaultButton("Save Shot", modifier = Modifier.fillMaxWidth(), onClick = {
             onSave(Shot(id = ed?.id ?: uid(), shutter = shutter, aperture = aperture, iso = iso,
                 lens = lensName, location = location, notes = notes, weather = weather,
-                date = date, photoThumbPath = thumbPath))
+                date = date, photoThumbPath = thumbPath, monoContrast = monoContrast))
         })
     }
 

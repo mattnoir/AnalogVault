@@ -3,6 +3,7 @@ package com.analogvault.data.export
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
@@ -10,6 +11,7 @@ import android.net.Uri
 import com.analogvault.data.model.Camera
 import com.analogvault.data.model.FilmStock
 import com.analogvault.data.model.Roll
+import com.analogvault.util.monoMatrix
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -158,7 +160,11 @@ class RollExporter @Inject constructor() {
                 val x = margin + col * (cellW + gap)
                 val rect = RectF(x, y, x + cellW, y + thumbH)
                 decodeThumb(shot.photoThumbPath, cellW.toInt() * 2)?.let { bmp ->
-                    canvas.drawBitmap(bmp, null, rect, null)
+                    // A frame logged in black and white prints in grey, as it is shown in the app
+                    val paint = shot.monoContrast?.let { c ->
+                        Paint().apply { colorFilter = ColorMatrixColorFilter(monoMatrix(c)) }
+                    }
+                    canvas.drawBitmap(bmp, null, rect, paint)
                     bmp.recycle()
                 }
                 canvas.drawRect(rect, frame)

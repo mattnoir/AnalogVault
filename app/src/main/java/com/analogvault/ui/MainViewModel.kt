@@ -462,6 +462,8 @@ class MainViewModel @Inject constructor(
          * it; null when the frame was not logged from the meter.
          */
         meterLog: MeterLog? = null,
+        /** The meter's contrast when it previewed in black and white; null in colour. */
+        monoContrast: Float? = null,
     ) = viewModelScope.launch {
         // Written before the roll is read, so the roll appended to below is
         // never one that went stale while the JPEG was being encoded.
@@ -489,6 +491,7 @@ class MainViewModel @Inject constructor(
             date     = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
                 .format(java.util.Date()),
             photoThumbPath = photoPath.orEmpty(),
+            monoContrast = monoContrast,
         )
         repo.upsertRoll(roll.copy(shots = roll.shots + shot))
         meterLog?.let { m ->

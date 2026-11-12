@@ -15,11 +15,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import com.analogvault.ui.components.FramePhoto
 import com.analogvault.data.model.FilmStock
 import com.analogvault.data.model.Roll
 import com.analogvault.data.model.Shot
@@ -125,10 +124,9 @@ private fun ContactFrame(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                photo != null -> AsyncImage(
-                    model = photo,
+                shot != null && photo != null -> FramePhoto(
+                    shot,
                     contentDescription = "Frame $frameNumber",
-                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
                 shot != null -> Text(
