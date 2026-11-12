@@ -7,6 +7,9 @@ are added and releases are cut.
 
 ## [Unreleased]
 
+### Fixed
+- The light meter's preview keeps the focal length you picked when you come back to the app, instead of dropping to 1x while the preset still showed the old zoom.
+
 ## [0.9.1] - 2026-11-10
 
 ### Fixed

@@ -323,6 +323,24 @@ fun MeterContent(
             } catch (_: Exception) { false }
         } catch (e: Exception) { e.printStackTrace() }
     }
+    // CameraX puts the zoom back to 1x whenever the camera closes, and leaving
+    // the app is enough to close it. The binding survives that and so does the
+    // zoom picked here, so the chips would come back showing 2x over a 1x
+    // preview. Each time the camera opens again, send the zoom again.
+    // observeForever, not observe(lifecycleOwner): a lifecycle-bound observer
+    // is paused in the background and would miss the close, seeing only OPEN
+    // both before and after.
+    DisposableEffect(cameraInfoObj) {
+        val states = cameraInfoObj?.cameraState ?: return@DisposableEffect onDispose {}
+        var wasOpen = states.value?.type == CameraState.Type.OPEN
+        val observer = androidx.lifecycle.Observer<CameraState> { s ->
+            val open = s.type == CameraState.Type.OPEN
+            if (open && !wasOpen) appliedZoomRatio = null
+            wasOpen = open
+        }
+        states.observeForever(observer)
+        onDispose { states.removeObserver(observer) }
+    }
 
     // ── The clamp ─────────────────────────────────────────────────────────────
     val limits = remember(camera, lens) { GearClamp.limitsOf(camera, lens) }
