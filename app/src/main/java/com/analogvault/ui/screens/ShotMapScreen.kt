@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
@@ -22,10 +21,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import coil.compose.AsyncImage
 import com.analogvault.data.model.Roll
 import com.analogvault.data.model.Shot
 import com.analogvault.ui.MainViewModel
+import com.analogvault.ui.components.FramePhoto
 import com.analogvault.ui.components.VaultButton
 import com.analogvault.ui.components.initOsmdroid
 import com.analogvault.ui.components.parseLatLon
@@ -47,7 +46,6 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import java.io.File
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -433,10 +431,8 @@ private fun FrameCallout(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (f.shot.photoThumbPath.isNotBlank()) {
-                    AsyncImage(
-                        model = File(f.shot.photoThumbPath),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
+                    FramePhoto(
+                        f.shot,
                         modifier = Modifier.size(42.dp).border(1.dp, colors.edge),
                     )
                     Spacer(Modifier.width(10.dp))

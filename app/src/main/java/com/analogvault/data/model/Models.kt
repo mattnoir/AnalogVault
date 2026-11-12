@@ -255,7 +255,14 @@ data class Shot(
     val notes: String = "",
     val weather: String = "",
     val date: String = "",
-    val photoThumbPath: String = ""  // local file path instead of data URL
+    val photoThumbPath: String = "",  // local file path instead of data URL
+    /**
+     * Set when the frame was logged from the meter while it previewed in black
+     * and white: the contrast multiplier the viewfinder was greyed at. Null for
+     * a frame logged in colour. The photo file itself is always kept in colour,
+     * so it can be shown either way; this only picks how it is shown first.
+     */
+    val monoContrast: Float? = null,
 )
 
 // ─── Dev & Scan Logs ─────────────────────────────────────────────────────────

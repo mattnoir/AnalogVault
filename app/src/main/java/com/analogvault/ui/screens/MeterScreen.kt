@@ -68,6 +68,7 @@ import com.analogvault.data.model.ZoomLevel
 import com.analogvault.data.model.meterFrame
 import com.analogvault.data.model.fixedLens
 import com.analogvault.data.model.isMonochrome
+import com.analogvault.util.monoMatrix
 import com.analogvault.ui.MainViewModel
 import com.analogvault.ui.MeterLog
 import com.analogvault.ui.MeterPriority
@@ -1259,6 +1260,9 @@ fun MeterContent(
                     ?.bitmap
                 roll?.let {
                     vm.quickLogShot(it.id, shutter = sh, aperture = ap, iso = filmIso.toString(), photo = photo,
+                        // The photo is saved in colour whatever the viewfinder
+                        // showed; this says to show it in grey, as it was seen.
+                        monoContrast = if (mono) contrastDraft / 10f else null,
                         meterLog = MeterLog(zonePlaced = zoneActive, longExposure = displaySec >= 1.0))
                 } ?: photo?.recycle()
             },
@@ -2072,24 +2076,6 @@ private fun PreviewView.applyMonoFilter(contrast: Float?) {
         val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(monoMatrix(contrast)) }
         setLayerType(View.LAYER_TYPE_HARDWARE, paint)
     }
-}
-
-/**
- * Luma, then contrast stretched around mid-grey (128 of 255). Rec. 709
- * weights: green carries most of what reads as brightness, which is close
- * enough to an unfiltered panchromatic stock for judging a scene.
- */
-private fun monoMatrix(contrast: Float): FloatArray {
-    val r = 0.2126f * contrast
-    val g = 0.7152f * contrast
-    val b = 0.0722f * contrast
-    val shift = 128f * (1f - contrast)
-    return floatArrayOf(
-        r, g, b, 0f, shift,
-        r, g, b, 0f, shift,
-        r, g, b, 0f, shift,
-        0f, 0f, 0f, 1f, 0f,
-    )
 }
 
 /** The roll's working speed: a push overrides the box, blank or zero does not. */
