@@ -216,6 +216,8 @@ Report bugs and request features through [GitHub Issues](https://github.com/matt
 
 Version history is in [CHANGELOG.md](./CHANGELOG.md).
 
+Project documentation is in [docs/](./docs): the target [architecture](./docs/ARCHITECTURE.md), [naming conventions](./docs/CONVENTIONS.md), the [refactor plan](./docs/REFACTOR_PLAN.md), a proposal for [versioning and releases](./docs/VERSIONING.md), and reviews of the [code](./docs/CODE_REVIEW.md) and the [documentation](./docs/DOCS_REVIEW.md).
+
 Bundled fonts (Big Shoulders Display, Space Grotesk, Space Mono) are licensed under the SIL Open Font License; the license texts are in `app/licenses/`.
 
 ## License
